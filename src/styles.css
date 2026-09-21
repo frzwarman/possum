@@ -128,3 +128,42 @@
 }
 /* Tombol aksi di judul halaman: satu baris, jangan patah jadi dua ("Ekspor / CSV"). */
 @media(max-width:700px){.page-heading>.btn{white-space:nowrap}}
+/* Struk: kertas termal sungguhan sebagai acuan — blok toko di tengah, garis putus-putus,
+   harga rata kanan, total paling besar. Tepi bergerigi dan bayangan hanya untuk layar;
+   saat dicetak semuanya rata, hitam-putih, selebar area cetak. */
+.receipt{font-size:12px;line-height:1.65;color:#1f2a22}
+.receipt-head{text-align:center;padding-bottom:14px}
+.receipt-head h2{font-size:19px;font-weight:750;letter-spacing:.5px;text-transform:uppercase}
+.receipt-head p{font-size:11px;color:#5d6a5f;margin-top:4px}
+.receipt-kind{text-align:center;font-size:11px;font-weight:650;letter-spacing:1.5px;text-transform:uppercase;padding:9px 0;border-top:1px dashed #c8d0c2;border-bottom:1px dashed #c8d0c2}
+.receipt-meta{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;margin:13px 0;font-size:11px}
+.receipt-meta>div{display:contents}
+.receipt-meta dt{color:#6b7a6d}
+.receipt-meta dd{margin:0;text-align:right;font-weight:550}
+.receipt-items{border-top:1px dashed #c8d0c2;padding-top:10px}
+.receipt-columns{display:flex;justify-content:space-between;font-size:10px;font-weight:650;color:#6b7a6d;padding-bottom:8px}
+.receipt-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px;padding:6px 0;align-items:baseline}
+.receipt-qty{font-weight:650}
+.receipt-name{min-width:0}
+.receipt-name small{display:block;font-size:10px;color:#6b7a6d;line-height:1.5}
+.receipt-price{font-weight:550;white-space:nowrap}
+.receipt-sums{border-top:1px dashed #c8d0c2;margin-top:10px;padding-top:10px}
+.receipt-row{display:flex;justify-content:space-between;gap:16px;font-size:11px;color:#4a5a4d;padding:3px 0}
+.receipt-row>span:last-child{white-space:nowrap;font-weight:550;color:#22301f}
+.receipt-total{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin:10px 0;padding:11px 0;border-top:1px dashed #c8d0c2;border-bottom:1px dashed #c8d0c2;font-size:14px;font-weight:650}
+.receipt-total strong{font-size:22px;letter-spacing:-.6px}
+.receipt-flag{color:#8f3c2a;font-weight:650}
+.receipt-foot{text-align:center;margin-top:16px}
+.receipt-thanks{font-size:12px;font-weight:650;letter-spacing:.4px}
+.receipt-id{font-family:ui-monospace,monospace;font-size:9px;letter-spacing:.8px;word-break:break-all;color:#6b7a6d;margin-top:10px;padding-top:10px;border-top:1px dashed #c8d0c2}
+/* Tepi kertas sobek, hanya di layar. */
+.receipt-paper:has(.receipt){border:0;padding:22px 20px;box-shadow:0 10px 30px #2438181a;position:relative}
+.receipt-paper:has(.receipt)::after{content:'';position:absolute;left:0;right:0;bottom:-9px;height:9px;background:linear-gradient(45deg,transparent 50%,#fff 51%) 0 0/14px 9px repeat-x,linear-gradient(-45deg,transparent 50%,#fff 51%) 7px 0/14px 9px repeat-x}
+@media print{
+ .receipt-paper::after{display:none!important}
+ .receipt{font-size:9pt;line-height:1.5;color:#000}
+ .receipt-head h2{font-size:13pt}
+ .receipt-head p,.receipt-meta,.receipt-meta dt,.receipt-columns,.receipt-row,.receipt-row>span:last-child,.receipt-name small,.receipt-id{color:#000}
+ .receipt-total strong{font-size:15pt}
+ .receipt-kind,.receipt-items,.receipt-sums,.receipt-total,.receipt-id{border-color:#000}
+}
