@@ -3,12 +3,17 @@
 // penentu: manage_staff menolak siapa pun yang bukan pemilik aktif restoran ini.
 import { useEffect,useState,type FormEvent } from 'react'
 import { ArrowRight,ShieldCheck,Terminal,LogOut,Store } from 'lucide-react'
+import { useRegisterSW } from 'virtual:pwa-register/react'
 import { Button } from '../../components/ui/button'
 import { configured,supabase } from '../../lib/supabase'
 import type { Role } from '../../domain/types'
 interface Staff { user_id:string; restaurant_id:string; name:string; role:Role; active:boolean }
 const label:Record<Role,string>={owner:'Pemilik',manager:'Manajer',cashier:'Kasir'}
-export default function Admin(){const [me,setMe]=useState<Staff|null>(null);const [staff,setStaff]=useState<Staff[]>([]);const [error,setError]=useState('');const [notice,setNotice]=useState('');const [busy,setBusy]=useState(true);const [pending,setPending]=useState('')
+export default function Admin(){
+ // Tanpa ini bundel lama bisa tertahan selamanya: prompt pembaruan hanya ada di shell kasir,
+ // yang baru dipasang setelah masuk. Di layar ini tidak ada yang bisa hilang saat memuat ulang.
+ const {needRefresh:[needRefresh],updateServiceWorker}=useRegisterSW();useEffect(()=>{if(needRefresh)void updateServiceWorker(true)},[needRefresh])
+ const [me,setMe]=useState<Staff|null>(null);const [staff,setStaff]=useState<Staff[]>([]);const [error,setError]=useState('');const [notice,setNotice]=useState('');const [busy,setBusy]=useState(true);const [pending,setPending]=useState('')
  async function load(){const {data:{session}}=await supabase!.auth.getSession();if(!session){setMe(null);return}
   const {data,error:e}=await supabase!.from('memberships').select('user_id,restaurant_id,name,role,active').order('name');if(e)throw e
   const rows=data as Staff[],mine=rows.find(r=>r.user_id===session.user.id)
