@@ -1,0 +1,118 @@
+import { describe,expect,it } from 'vitest'
+import { draft,identity,line,seed,tea,tick } from './offline-harness'
+import { Commands } from '../../src/lib/commands'
+import { sampleMenu,stock as sampleStock } from '../../src/domain/sample'
+describe('one transaction per command',()=>{
+ it('writes the domain record and exactly one outbox entry',async()=>{
+  const {db,commands}=await seed(identity())
+  const shift=await commands.openShift(200000);await tick()
+  expect(await db.shifts.count()).toBe(1)
+  expect(await db.outbox.count()).toBe(1)
+  const op=(await db.outbox.toArray())[0]
+  expect(op.kind).toBe('shift.open');expect(op.state).toBe('pending');expect(op.attempts).toBe(0)
+  expect(op.payload).toMatchObject({id:shift.id,opening:200000})
+  const order=await commands.save(draft([line()]))
+  expect(await db.orders.count()).toBe(1)
+  expect(await db.outbox.count()).toBe(2)
+  expect((await db.outbox.toArray()).filter(o=>o.kind==='order.save')).toHaveLength(1)
+  expect(order.receiptId).toMatch(/^MJ-/)
+ })
+ it('rolls back the domain record when the mutation throws',async()=>{
+  const {db,commands}=await seed(identity())
+  await commands.openShift(200000);await tick()
+  await expect(commands.save(draft([line({qty:0})]))).rejects.toThrow('Jumlah menu 1–999')
+  expect(await db.orders.count()).toBe(0)
+  expect(await db.drafts.count()).toBe(0)
+  expect(await db.outbox.count()).toBe(1) // still only shift.open
+ })
+ it('rolls back a movement already written inside the aborted transaction',async()=>{
+  // stockRecord adds the movement BEFORE it resolves the shift, so a missing shift aborts mid-write.
+  const {db,commands}=await seed(identity())
+  const before=await db.movements.count()
+  await expect(commands.stockRecord('rice','purchase',5_000_000,'Beli beras',250000,true)).rejects.toThrow('Buka sif Anda terlebih dahulu')
+  expect(await db.movements.count()).toBe(before)
+  expect(await db.cash.count()).toBe(0)
+  expect(await db.outbox.count()).toBe(0)
+ })
+ it('rejects an unknown ingredient without leaving anything behind',async()=>{
+  const {db,commands}=await seed(identity())
+  await expect(commands.stockRecord('durian','purchase',1000,'Beli durian')).rejects.toThrow('Bahan tidak ditemukan')
+  expect(await db.movements.count()).toBe(sampleStock.length)
+  expect(await db.outbox.count()).toBe(0)
+ })
+})
+describe('preparation consumes ingredients exactly once',()=>{
+ it('deducts at prepare, refuses a second prepare, and never deducts at payment',async()=>{
+  const {db,commands}=await seed(identity())
+  await commands.openShift(200000);await tick()
+  const order=await commands.save(draft([line({qty:2}),tea()]));await tick()
+  await commands.prepare(order.id);await tick()
+  const consumed=await db.movements.where('recordId').equals(order.id).toArray()
+  expect(consumed.map(m=>[m.stockId,m.qty]).sort()).toEqual([['rice',-200000],['tea',-1000]].sort())
+  expect(consumed.every(m=>m.kind==='preparation')).toBe(true)
+  await expect(commands.prepare(order.id)).rejects.toThrow('Tidak ada tambahan baru untuk disiapkan')
+  expect(await db.movements.where('recordId').equals(order.id).count()).toBe(2)
+  const paid=await commands.pay(order.id,'cash',100000,true)
+  expect(paid.status).toBe('paid')
+  expect(await db.movements.where('recordId').equals(order.id).count()).toBe(2)
+ })
+})
+describe('refund never restores cooked stock',()=>{
+ it('leaves the consumption movements negative and adds no positive movement',async()=>{
+  const {db,commands}=await seed(identity())
+  await commands.openShift(200000);await tick()
+  const order=await commands.save(draft([line()]));await tick()
+  await commands.prepare(order.id);await tick()
+  await commands.pay(order.id,'cash',50000,true);await tick()
+  await commands.refund(order.id,'Pelanggan komplain rasa')
+  const after=await db.movements.where('recordId').equals(order.id).toArray()
+  expect(after).toHaveLength(1)
+  expect(after[0].qty).toBeLessThan(0)
+  expect(after.some(m=>m.qty>0)).toBe(false)
+  expect((await db.orders.get(order.id))!.status).toBe('refunded')
+ })
+ it('a void before preparation consumed nothing in the first place',async()=>{
+  const {db,commands}=await seed(identity())
+  await commands.openShift(200000);await tick()
+  const order=await commands.save(draft([line()]));await tick()
+  await commands.voidOrder(order.id,'Pelanggan batal pesan')
+  expect(await db.movements.where('recordId').equals(order.id).count()).toBe(0)
+  expect((await db.orders.get(order.id))!.status).toBe('void')
+ })
+})
+describe('device, shift and role authorization',()=>{
+ it('refuses every transaction on a non-primary device',async()=>{
+  const {db,commands}=await seed(identity({primary:false}))
+  await expect(commands.openShift(200000)).rejects.toThrow('Transaksi hanya di perangkat kasir utama')
+  expect(await db.shifts.count()).toBe(0);expect(await db.outbox.count()).toBe(0)
+ })
+ it('blocks operations once the shift authorization has expired',async()=>{
+  const {db,commands}=await seed(identity())
+  const shift=await commands.openShift(200000);await tick()
+  await db.shifts.update(shift.id,{expiresAt:new Date(Date.now()-60000).toISOString()})
+  await expect(commands.save(draft([line()]))).rejects.toThrow('Otorisasi sif berakhir. Hubungkan internet dan tutup sif.')
+  expect(await db.orders.count()).toBe(0)
+ })
+ it('denies manager-only actions to a cashier',async()=>{
+  const user=identity({role:'cashier'})
+  const {db,commands}=await seed(user)
+  await commands.openShift(200000);await tick()
+  const order=await commands.save(draft([line()]));await tick()
+  await expect(commands.save(draft([line()],{orderId:order.id,revision:order.revision,discount:5000,discountReason:'Langganan'}))).rejects.toThrow('Perlu akun manajer')
+  await expect(commands.voidOrder(order.id,'salah pesan')).rejects.toThrow('Perlu akun manajer')
+  await expect(commands.refund(order.id,'salah pesan')).rejects.toThrow('Perlu akun manajer')
+  await expect(commands.stockRecord('rice','waste',1000,'tumpah')).rejects.toThrow('Perlu akun manajer')
+  await expect(commands.publish(sampleMenu,sampleStock)).rejects.toThrow('Perlu akun manajer')
+  expect((await db.orders.get(order.id))!.discount).toBe(0)
+  expect((await db.outbox.orderBy('occurredAt').toArray()).map(o=>o.kind)).toEqual(['shift.open','order.save'])
+ })
+ it('lets a manager do what the cashier could not, on the same database',async()=>{
+  const user=identity()
+  const {db,commands}=await seed(user)
+  await commands.openShift(200000);await tick()
+  const order=await commands.save(draft([line()]));await tick()
+  const manager=new Commands(db,{...user,id:user.id,role:'manager'})
+  await manager.voidOrder(order.id,'Pelanggan batal pesan')
+  expect((await db.orders.get(order.id))!.voidReason).toBe('Pelanggan batal pesan')
+ })
+})

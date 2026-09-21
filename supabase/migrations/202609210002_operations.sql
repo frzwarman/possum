@@ -3,7 +3,7 @@
 create function public.apply_operation(operation jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
 declare
  rid uuid:=(operation->>'restaurantId')::uuid;opid uuid:=(operation->>'id')::uuid;actor uuid:=auth.uid();device uuid:=(operation->>'deviceId')::uuid;k text:=operation->>'kind';p jsonb:=operation->'payload';at timestamptz:=(operation->>'occurredAt')::timestamptz;
- role text;canonical jsonb;previous public.sync_operations%rowtype;restaurant public.restaurants%rowtype;s public.shifts%rowtype;o public.orders%rowtype;pay public.payments%rowtype;
+ role text;canonical jsonb;previous public.sync_operations%rowtype;restaurant public.restaurants%rowtype;s public.shifts%rowtype;o public.orders%rowtype;
  doc jsonb;l jsonb;m jsonb;r jsonb;v jsonb;oldline jsonb;recipe jsonb;total jsonb;sid uuid;oid uuid;qty bigint;cost bigint;balance bigint;amount bigint;expected_value bigint;prepared jsonb;seen text[];result jsonb;
 begin
  if actor is null or operation->>'actor' is distinct from actor::text then raise exception 'Authenticated actor mismatch' using errcode='42501';end if;
@@ -113,9 +113,9 @@ begin
  cost:=case when p->>'method'='cash' then (p->>'tendered')::bigint else amount end;
  if cost<amount then raise exception 'Insufficient tender';end if;
  insert into public.payments values(rid,oid,opid,p->>'method',amount,cost,cost-amount,true,at,now(),actor);
- doc:=doc||jsonb_build_object('status','paid','payment',jsonb_build_object('method',p->>'method','tendered',cost,'change',cost-amount,'verified',true,'at',operation->>'occurredAt));
+ doc:=doc||jsonb_build_object('status','paid','payment',jsonb_build_object('method',p->>'method','tendered',cost,'change',cost-amount,'verified',true,'at',operation->>'occurredAt'));
  end if;end if;
- doc:=doc||jsonb_build_object('revision',o.revision+1,'updatedAt',operation->>'occurredAt);update public.orders set revision=o.revision+1,status=doc->>'status',updated_at=at,snapshot=doc where restaurant_id=rid and id=oid;
+ doc:=doc||jsonb_build_object('revision',o.revision+1,'updatedAt',operation->>'occurredAt');update public.orders set revision=o.revision+1,status=doc->>'status',updated_at=at,snapshot=doc where restaurant_id=rid and id=oid;
  elsif k='stock.record' then
  if length(trim(p->>'reason'))=0 then raise exception 'Reason required';end if;
  qty:=(p->>'qty')::bigint;cost:=(p->>'cost')::bigint;if cost not between 0 and 1000000000 or abs(qty)>1000000000000 then raise exception 'Invalid stock amount';end if;
