@@ -30,7 +30,7 @@ import {
   stockImportSchema,
 } from "../../lib/import";
 import type { Ingredient, MenuItem, StockItem } from "../../domain/types";
-import { convert, rupiah } from "../../domain/calculate";
+import { convert, rupiah, when } from "../../domain/calculate";
 import { supabase } from "../../lib/supabase";
 import { compressMenuPhoto } from "../../lib/menu-photo";
 const schema = z.object({
@@ -569,7 +569,7 @@ export default function SettingsPage() {
                       </span>
                     </div>
                     <small>
-                      {new Date(o.occurredAt).toLocaleString("id-ID")} ·{" "}
+                      {when(o.occurredAt, settings?.timezone)} ·{" "}
                       {o.id.slice(0, 8)}
                     </small>
                     {o.error && <p className="error">{o.error}</p>}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_MONEY, businessDay, change, consumption, convert, expectedCash, money, refundStock, rupiah, totals } from '../../src/domain/calculate'
+import { MAX_MONEY, businessDay, change, consumption, convert, expectedCash, money, refundStock, rupiah, stamp, totals, when } from '../../src/domain/calculate'
 import { defaultSettings } from '../../src/domain/sample'
 import type { CashMovement, Line, Modifier, Order, Settings, Shift } from '../../src/domain/types'
 
@@ -195,5 +195,19 @@ describe('rupiah',()=>{
   expect(rupiah(5_000)).toBe('Rp5.000')
   expect(rupiah(1_250_000)).toBe('Rp1.250.000')
   expect(rupiah(-7_500)).toBe('-Rp7.500')
+ })
+})
+
+describe('restaurant timezone',()=>{
+ const evening='2026-03-15T19:30:00.000Z' // 02.30 WIB, 16 March
+ it('formats in the restaurant timezone rather than the device one',()=>{
+  expect(when(evening,'Asia/Jakarta',{hour:'2-digit',minute:'2-digit'})).toBe('02.30')
+  expect(when(evening,'Europe/London',{hour:'2-digit',minute:'2-digit'})).toBe('19.30')
+  expect(when(evening)).toBe('16 Mar 2026, 02.30')
+ })
+ it('stamps CSV rows as sortable Jakarta wall time, empty timezone included',()=>{
+  expect(stamp(evening)).toBe('2026-03-16 02:30:00')
+  expect(stamp('2026-03-15T00:00:00.000Z')).toBe('2026-03-15 07:00:00')
+  expect(stamp(evening,'')).toBe('2026-03-16 02:30:00')
  })
 })

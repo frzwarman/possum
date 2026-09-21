@@ -35,5 +35,11 @@ export function businessDay(iso:string,timezone='Asia/Jakarta',cutoff=4) {
 }
 // PUEBI: Rp menempel pada angka (Rp50.000), ribuan bertitik, desimal berkoma. ICU menyisipkan
 // spasi tak-putus setelah Rp, jadi dibuang; rupiah tidak memakai pecahan sen.
+export const JAKARTA='Asia/Jakarta'
+// Setiap waktu yang dibaca orang memakai zona restoran (bawaan WIB, UTC+7), bukan zona perangkat:
+// ponsel yang zonanya meleset atau kasir yang sedang bepergian tidak boleh menggeser jam di layar.
+export const when=(iso:string|number|Date,timezone=JAKARTA,options:Intl.DateTimeFormatOptions={dateStyle:'medium',timeStyle:'short'})=>new Intl.DateTimeFormat('id-ID',{timeZone:timezone||JAKARTA,...options}).format(new Date(iso))
+// Untuk CSV: satu kolom yang urut secara leksikografis dan terbaca Excel, tetap zona restoran.
+export const stamp=(iso:string,timezone=JAKARTA)=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:timezone||JAKARTA,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date(iso)).map(x=>[x.type,x.value]));return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`}
 export const rupiah=(v:number)=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(v).replace(/\s/g,'')
 export const quantity=(v:number)=>new Intl.NumberFormat('id-ID',{maximumFractionDigits:3}).format(v/1000)
