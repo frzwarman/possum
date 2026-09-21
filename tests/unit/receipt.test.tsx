@@ -24,6 +24,7 @@ describe('receipt preview is honest about printing',()=>{
   const attempt=(await db.prints.where('orderId').equals(order.id).toArray())[0]
   expect(attempt.status).toBe('requested')
   expect(attempt.kind).toBe('receipt')
+  await vi.waitFor(()=>expect(confirm).toBeEnabled()) // the print request must settle first; a busy button swallows taps
   fireEvent.click(confirm)
   await vi.waitFor(async()=>expect((await db.prints.get(attempt.id))!.status).toBe('confirmed'))
  })

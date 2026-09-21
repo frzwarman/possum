@@ -18,6 +18,8 @@ export async function openShift(page:Page,opening='200000'){
 export async function addItem(page:Page,name:string,{eggs=false,note=''}={}){
  await page.getByRole('button',{name:new RegExp(name)}).first().click()
  const dialog=page.getByRole('dialog')
+ // An item with no add-ons skips the dialog and lands in the cart on one tap.
+ if(!await dialog.waitFor({state:'visible',timeout:1500}).then(()=>true,()=>false))return
  if(eggs)await dialog.getByRole('checkbox',{name:/Tambah telur/}).check()
  if(note)await dialog.getByLabel(/Catatan persiapan/).fill(note)
  await dialog.getByRole('button',{name:/Tambah ke pesanan/}).click()
@@ -34,3 +36,8 @@ export async function sell(page:Page,{tendered}:{tendered?:string}={}){
  await pay.getByRole('button',{name:/Catat pembayaran/}).click()
  await expect(page.getByRole('dialog',{name:'Pembayaran tercatat'})).toBeVisible()
 }
+// Sidebar navigation; only rendered above 700px, so mobile specs must not use it.
+export const go=(page:Page,label:string)=>page.locator('.sidebar').getByRole('link',{name:label}).click()
+export const drawer=(page:Page)=>page.locator('.panel').filter({hasText:'Laci kas'}).locator('.bill-total')
+export const sales=(page:Page)=>page.locator('.metric').filter({hasText:'Penjualan tercatat'}).locator('strong')
+export const balance=(page:Page,name:string)=>page.locator('.stock-row').filter({hasText:name}).locator('.stock-quantity strong')
