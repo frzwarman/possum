@@ -5,6 +5,7 @@ import { useEffect,useState,type FormEvent } from 'react'
 import { ArrowRight,ShieldCheck,Terminal,LogOut,Store } from 'lucide-react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { Button } from '../../components/ui/button'
+import { Select } from '../../components/ui/select'
 import { configured,supabase } from '../../lib/supabase'
 import type { Role } from '../../domain/types'
 interface Staff { user_id:string; restaurant_id:string; name:string; role:Role; active:boolean }
@@ -43,7 +44,7 @@ export default function Admin(){
    <span className="staff-avatar" aria-hidden>{s.name.slice(0,1).toUpperCase()}</span>
    <div><div className="staff-name">{s.name}{s.user_id===me.user_id&&<span className="chip">Anda</span>}</div>
     <div className="staff-meta"><span className={`status-dot ${s.active?'':'offline'}`}/>{s.active?'Aktif':'Nonaktif'}{s.user_id===me.user_id?' · peran dan akses sendiri diubah lewat terminal':s.active?'':' · ditolak server saat masuk'}</div></div>
-   <div className="staff-controls"><select aria-label={`Peran ${s.name}`} disabled={busy||s.user_id===me.user_id} value={s.role} onChange={e=>change(s,{role:e.target.value as Role})}>{(Object.keys(label) as Role[]).map(r=><option key={r} value={r}>{label[r]}</option>)}</select>
+   <div className="staff-controls"><Select ariaLabel={`Peran ${s.name}`} disabled={busy||s.user_id===me.user_id} value={s.role} onChange={v=>change(s,{role:v as Role})} options={(Object.keys(label) as Role[]).map(r=>({value:r,label:label[r]}))}/>
    {s.user_id===me.user_id?<span className="chip">Dikunci</span>:<Button variant={s.active?'destructive':'secondary'} loading={pending===s.user_id} disabled={busy} onClick={()=>change(s,{active:!s.active})}>{s.active?'Nonaktifkan':'Aktifkan'}</Button>}</div></div>)}</article>
   <p className="callout">Menonaktifkan akun berlaku di server: sif yang sedang berjalan tetap harus ditutup dan operasi yang belum tersinkron dari perangkat itu akan ditolak. Nonaktifkan setelah sif selesai.</p>
   <article className="panel"><div className="panel-heading"><h2><Terminal size={17}/> Akun baru dan sandi</h2></div><p className="muted">Pendaftaran publik dimatikan. Membuat akun, mengganti sandi, dan melihat email butuh kunci service role yang hanya ada di terminal pemilik — tidak pernah di aplikasi.</p>

@@ -33,5 +33,7 @@ export function businessDay(iso:string,timezone='Asia/Jakarta',cutoff=4) {
  if(Number(get('hour'))<cutoff)date.setUTCDate(date.getUTCDate()-1)
  return date.toISOString().slice(0,10)
 }
-export const rupiah=(v:number)=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(v)
+// PUEBI: Rp menempel pada angka (Rp50.000), ribuan bertitik, desimal berkoma. ICU menyisipkan
+// spasi tak-putus setelah Rp, jadi dibuang; rupiah tidak memakai pecahan sen.
+export const rupiah=(v:number)=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(v).replace(/\s/g,'')
 export const quantity=(v:number)=>new Intl.NumberFormat('id-ID',{maximumFractionDigits:3}).format(v/1000)

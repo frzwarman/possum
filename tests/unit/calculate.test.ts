@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_MONEY, businessDay, change, consumption, convert, expectedCash, money, refundStock, totals } from '../../src/domain/calculate'
+import { MAX_MONEY, businessDay, change, consumption, convert, expectedCash, money, refundStock, rupiah, totals } from '../../src/domain/calculate'
 import { defaultSettings } from '../../src/domain/sample'
 import type { CashMovement, Line, Modifier, Order, Settings, Shift } from '../../src/domain/types'
 
@@ -186,5 +186,14 @@ describe('businessDay()',()=>{
  it('rolls back across a month boundary',()=>{
   expect(businessDay('2026-03-01T19:00:00.000Z')).toBe('2026-03-01') // 02:00 WIB 2 March
   expect(businessDay('2026-02-28T19:00:00.000Z')).toBe('2026-02-28') // 02:00 WIB 1 March
+ })
+})
+
+describe('rupiah',()=>{
+ it('writes Indonesian currency: Rp glued to the number, dots for thousands, no cents',()=>{
+  expect(rupiah(0)).toBe('Rp0')
+  expect(rupiah(5_000)).toBe('Rp5.000')
+  expect(rupiah(1_250_000)).toBe('Rp1.250.000')
+  expect(rupiah(-7_500)).toBe('-Rp7.500')
  })
 })
