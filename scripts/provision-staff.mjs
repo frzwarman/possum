@@ -10,6 +10,7 @@ for(let i=0;i<argv.length;i++) if(argv[i].startsWith('--')){flags[argv[i].slice(
 const cmd=pos.shift()
 const usage=`Meja — penyediaan akun staf (pendaftaran publik dimatikan)
 
+  pnpm staff init <email-pemilik> [nama] [--restoran <nama restoran>]
   pnpm staff list [--restaurant <uuid>]
   pnpm staff add <email> <${ROLES.join('|')}> <nama> --restaurant <uuid> [--password <sandi>] [--force]
   pnpm staff role <email> <${ROLES.join('|')}>
@@ -46,6 +47,24 @@ if(cmd==='list'){
  const all=await users(),email=id=>all.find(u=>u.id===id)?.email??'(tanpa email)'
  for(const m of data) console.log(`${(m.active?'aktif':'nonaktif').padEnd(8)} ${m.role.padEnd(7)} ${m.name.padEnd(20)} ${email(m.user_id)}  ${m.restaurant_id}`)
  console.log(`\n${data.length} akun staf.`)
+}else if(cmd==='init'){
+ const [email,...rest]=pos,nama=rest.join(' ')||'Pemilik'
+ if(!email) die('Pakai: pnpm staff init <email-pemilik> [nama] [--restoran "Nama Warung"]')
+ const {count,error:ce}=await db.from('restaurants').select('id',{count:'exact',head:true});ok(ce,'menghitung restoran')
+ if(count&&!flags.force) die(`Sudah ada ${count} restoran. init hanya untuk penyiapan pertama; tambah staf dengan add, atau --force bila memang perlu restoran baru.`)
+ const pw=sandi()
+ // Sama dengan defaultSettings di src/domain/sample.ts. id:'settings' wajib: itu kunci tabel settings di perangkat.
+ const settings={id:'settings',appName:'Meja',name:typeof flags.restoran==='string'?flags.restoran:'Restoran Anda',address:'',phone:'',footer:'Terima kasih. Sampai makan lagi!',timezone:'Asia/Jakarta',cutoff:4,taxBps:0,serviceBps:0,receiptWidth:80,printableWidth:72,goLive:new Date().toISOString().slice(0,10),packaging:[]}
+ const {data:restaurant,error:re}=await db.from('restaurants').insert({settings}).select('id').single();ok(re,'membuat restoran')
+ const {data:created,error}=await db.auth.admin.createUser({email,password:pw,email_confirm:true});ok(error,'membuat akun auth')
+ const {error:me}=await db.from('memberships').insert({restaurant_id:restaurant.id,user_id:created.user.id,role:'owner',name:nama,active:true})
+ // Keanggotaan gagal berarti restoran dan akun auth yatim: batalkan keduanya supaya init bisa diulang.
+ if(me){await db.auth.admin.deleteUser(created.user.id);await db.from('restaurants').delete().eq('id',restaurant.id);die(`Gagal menyimpan keanggotaan: ${me.message} — akun auth dan restoran dibatalkan.`)}
+ console.log(`Restoran dibuat: ${settings.name}`)
+ console.log(`ID restoran    : ${restaurant.id}`)
+ console.log(`Pemilik        : ${nama} ${email}`)
+ console.log(`Sandi awal     : ${pw}`)
+ console.log(`Catat sekarang — sandi ini tidak ditampilkan lagi. Tambah staf berikutnya dengan:\n  pnpm staff add <email> <peran> <nama> --restaurant ${restaurant.id}`)
 }else if(cmd==='add'){
  const [email,role,...rest]=pos,nama=rest.join(' ')
  if(!email||!role||!nama) die('Pakai: pnpm staff add <email> <peran> <nama> --restaurant <uuid>')

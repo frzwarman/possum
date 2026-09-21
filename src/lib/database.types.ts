@@ -165,4 +165,4 @@ export interface Database { public: { Tables: {
     received_at: string
     result: Json
   }; Insert: never; Update: never; Relationships: [] }
-}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string }; Returns: undefined }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }
+}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string }; Returns: undefined }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }
