@@ -93,6 +93,9 @@ importers:
       jsdom:
         specifier: ^27.0.0
         version: 27.4.0
+      prettier:
+        specifier: ^3.9.8
+        version: 3.9.8
       tailwindcss:
         specifier: ^4.1.13
         version: 4.3.3
@@ -2419,6 +2422,11 @@ packages:
   postcss@8.5.28:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
     engines: {node: ^10 || ^12 || >=14}
+
+  prettier@3.9.8:
+    resolution: {integrity: sha512-WRFq3Wn3WId7LLROfMLdH7xaFr2jR62wU8nLO6rQUOLOxNZUviyJQs1M0iIhLexSFy+L+w0ch66wtoO2jRjG0A==}
+    engines: {node: '>=14'}
+    hasBin: true
 
   pretty-bytes@5.6.0:
     resolution: {integrity: sha512-FFw039TmrBqFK8ma/7OL3sDz/VytdtJr044/QUJtH0wK9lb9jLq9tJyIxUwtQJHwar2BqtiA4iCWSwo9JLkzFg==}
@@ -5292,6 +5300,8 @@ snapshots:
       nanoid: 3.3.19
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  prettier@3.9.8: {}
 
   pretty-bytes@5.6.0: {}
 

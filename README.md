@@ -84,6 +84,11 @@ when the queue drains, Postgres re-validates every operation before accepting it
   of the name, price, recipe and modifiers. Re-pricing the menu publishes a new version; a
   receipt printed last week never re-prices. The database enforces this
   (`catalog_versions`, and `Catalog version immutable` in the RPC).
+- **Menu photos are optional.** Owners can upload JPG, PNG or WebP files from the menu editor;
+  the browser scales them to a compact WebP (maximum 420 px and roughly 70 KB) before storing
+  the data in the versioned catalog. Photos therefore work in the cached/offline POS without
+  public image URLs. Leaving the field empty uses the built-in warm food illustration; HEIC and
+  animated formats are not accepted by the browser upload control.
 - **Business day** ends at the configured cutoff — default **04:00**, timezone
   **Asia/Jakarta** — so a sale at 01:30 belongs to the night before.
 - **Operations are idempotent by operation id.** A replay returns the first result. The same
@@ -109,10 +114,10 @@ Run on 2026-09-21, macOS, Node v25.8.0:
 | Check | Command | Result |
 |---|---|---|
 | Types | `npx tsc -b --force` | clean |
-| Unit / integration | `npx vitest run` | **109 passed** in 7 files |
-| Database | `node scripts/test-db.mjs` | **19 PostgreSQL integration checks passed** |
-| End-to-end | `npx playwright test` | **3 passed** (Chromium, 1440×900) |
-| Bundle | `node scripts/measure.mjs` | initial JS **260.5 KiB gzip** over 2 chunks (budget 250-300 KiB), CSS 8.4 KiB, lazy 17.8 KiB, PWA precache 287.5 KiB gzip over 13 files |
+| Unit / integration | `pnpm test` | **114 passed** in 8 files |
+| Database | `pnpm test:db` | **24 PostgreSQL integration checks passed** |
+| End-to-end | `pnpm test:e2e` | **10 passed** (Chromium, desktop and 393 px phone), including the optional photo upload flow |
+| Bundle | `pnpm measure` | initial JS **261.1 KiB gzip** over 2 chunks (budget 250-300 KiB), CSS 10.4 KiB, lazy 23.2 KiB, PWA precache 295.8 KiB gzip over 18 files |
 
 The database checks run against PGlite — real PostgreSQL, real migrations, an emulated
 `auth.uid()` — not against a hosted project.

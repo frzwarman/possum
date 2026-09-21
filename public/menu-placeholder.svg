@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 280" role="img" aria-labelledby="title desc">
+  <title id="title">Gambar menu standar</title>
+  <desc id="desc">Ilustrasi mangkuk makanan di atas latar hijau muda</desc>
+  <rect width="420" height="280" fill="#eef1e5"/>
+  <circle cx="335" cy="48" r="82" fill="#e2e9d8"/>
+  <path d="M92 126c5 65 46 103 118 103s113-38 118-103H92Z" fill="#fffdf8" stroke="#66805f" stroke-width="8"/>
+  <path d="M116 126c13-34 42-52 88-52 47 0 76 18 99 52" fill="none" stroke="#66805f" stroke-width="8" stroke-linecap="round"/>
+  <path d="M154 102c-12-18 11-24 0-42M208 96c-12-18 11-24 0-42M260 102c-12-18 11-24 0-42" fill="none" stroke="#9aae84" stroke-width="7" stroke-linecap="round"/>
+  <path d="M158 176h104" stroke="#d1dac6" stroke-width="7" stroke-linecap="round"/>
+</svg>

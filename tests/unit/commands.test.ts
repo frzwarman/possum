@@ -3,6 +3,14 @@ import { draft,identity,line,seed,tea,tick } from './offline-harness'
 import { Commands } from '../../src/lib/commands'
 import { sampleMenu,stock as sampleStock } from '../../src/domain/sample'
 describe('one transaction per command',()=>{
+ it('persists an optional menu photo without requiring one on other items',async()=>{
+  const {db,commands}=await seed(identity({role:'owner'}))
+  const photo='data:image/webp;base64,UklGRg=='
+  await commands.publish([{...sampleMenu[0],photo},...sampleMenu.slice(1)],sampleStock)
+  expect((await db.menu.get(sampleMenu[0].id))?.photo).toBe(photo)
+  expect((await db.menu.get(sampleMenu[1].id))?.photo).toBeUndefined()
+  expect((await db.outbox.filter((op) => op.kind === 'catalog.publish').count())).toBe(1)
+ })
  it('writes the domain record and exactly one outbox entry',async()=>{
   const {db,commands}=await seed(identity())
   const shift=await commands.openShift(200000);await tick()

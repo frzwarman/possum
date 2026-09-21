@@ -34,6 +34,7 @@ begin
  end loop;
  for v in select value from jsonb_array_elements(p->'menu') loop
  if length(v->>'name') not between 1 and 100 or length(v->>'category') not between 1 and 50 or (v->>'price')::numeric<>trunc((v->>'price')::numeric) then raise exception 'Invalid menu';end if;
+ if v ? 'photo' and (length(v->>'photo')>70000 or v->>'photo' !~ '^data:image/webp;base64,[A-Za-z0-9+/=]+$') then raise exception 'Invalid menu photo';end if;
  perform public.validate_recipe(rid,v->'recipe');seen:='{}';
  for m in select value from jsonb_array_elements(v->'modifiers') loop
  if m->>'id'=any(seen) or length(m->>'name') not between 1 and 100 or (m->>'price')::numeric<>trunc((m->>'price')::numeric) or (m->>'price')::bigint not between 0 and 1000000000 then raise exception 'Invalid modifier';end if;seen:=array_append(seen,m->>'id');perform public.validate_recipe(rid,m->'recipe');end loop;
