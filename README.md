@@ -137,8 +137,9 @@ The database checks run against PGlite — real PostgreSQL, real migrations, an 
 | Record stock (opening, purchase, waste, count, adjustment) | yes | yes | no |
 | Publish menu / change settings | yes | yes | no |
 | Server sales report | yes | yes | no |
-| Enroll the primary device | yes | yes | no |
-| Hand the primary device over | yes | no | no |
+| Enroll the primary device (first claim) | yes | yes | no |
+| Move the primary device to another device, any time | yes | no | no |
+| Move the till device from the app (*Penyimpanan perangkat*) | yes | no | no |
 
 **Public registration is disabled.** The app has no sign-up screen. A fresh project is
 bootstrapped once with `pnpm staff init <email> <nama>`, which creates the restaurant row and

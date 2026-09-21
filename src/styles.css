@@ -101,3 +101,13 @@
 .money-prefix{position:absolute;left:12px;font-size:12px;font-weight:550;color:#7c8a78;pointer-events:none}
 .money-field input{padding-left:35px}
 @media(max-width:700px){.money-prefix{font-size:16px;left:13px}.money-field input{padding-left:40px}}
+/* Dua kolom tanggal tidak muat di lebar ponsel: pada 16px angka tanggal berdempetan dengan ikon
+   kalender, dan Safari memotongnya. Satu kolom per baris, tombol ikut selebar layar. */
+@media(max-width:700px){
+ .report-filter{flex-direction:column;align-items:stretch;gap:0}
+ .report-filter label{width:100%;min-width:0;margin:0 0 14px}
+ .report-filter input{padding:12px}
+ .report-filter>.btn{width:100%;margin-bottom:6px}
+}
+/* Tombol aksi di judul halaman: satu baris, jangan patah jadi dua ("Ekspor / CSV"). */
+@media(max-width:700px){.page-heading>.btn{white-space:nowrap}}
