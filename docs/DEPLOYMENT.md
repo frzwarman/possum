@@ -1,12 +1,11 @@
-# Deployment — Cloudflare Workers (Free)
+# Deployment — Cloudflare Pages / Workers (Free)
 
 Meja builds to a folder of static files. There is no server to run: authorization lives in
 Postgres, not in the frontend. Audience: whoever sets up the hosting.
 
-> Status: the build, the headers file and the redirects file are in the repository and the
-> production build has been measured locally. **An actual Cloudflare Pages deployment has not
-> been performed from this environment** — the settings below are what to enter, not a record
-> of a live site.
+> Status: the production build has been measured locally. **An actual Cloudflare deployment
+> has not been performed from this environment** — the settings below are what to enter, not
+> a record of a live site.
 
 ## Build settings
 
@@ -23,6 +22,34 @@ Postgres, not in the frontend. Audience: whoever sets up the hosting.
 
 Vite 7 needs Node 20.19+ or 22.12+. The repository does not pin a version, so pin it in
 Cloudflare; otherwise a future default change can break the build without a code change.
+
+## Deploy with Wrangler
+
+The original hosting target is Cloudflare Pages. After configuring the two
+`VITE_` variables in the Cloudflare project, build and upload the static output
+from the repository root:
+
+```sh
+pnpm build
+pnpm dlx wrangler pages deploy dist --project-name=meja-pos
+```
+
+The first command that uses Wrangler asks you to authenticate or use a
+Cloudflare API token. The production URL will be
+`https://meja-pos.pages.dev` (or the project name you choose). Pages serves the
+static PWA over HTTPS; there is no Node server to keep running.
+
+This repository also contains `wrangler.jsonc` for the equivalent Cloudflare
+Workers Static Assets deployment. If you intentionally choose Workers instead
+of Pages, use:
+
+```sh
+pnpm build
+pnpm dlx wrangler deploy
+```
+
+That creates a `workers.dev` URL and uses the SPA fallback in `wrangler.jsonc`.
+Choose one target for a production URL; the Supabase configuration is the same.
 
 ## Environment variables
 
@@ -42,7 +69,7 @@ read only by `scripts/provision-staff.mjs` on the owner's own machine.
 login button stays disabled and only the local demo works. That is the expected state of a
 deploy with no variables set.
 
-## SPA routing — `wrangler.jsonc`, not `_redirects`
+## SPA routing
 
 ```jsonc
 "assets": { "directory": "dist", "not_found_handling": "single-page-application" }
@@ -51,7 +78,7 @@ deploy with no variables set.
 TanStack Router owns the URL, so a hard refresh of `/orders` — or `/admin`, which is chosen
 from the URL before the router mounts — must still return `index.html` with status 200.
 
-On **Workers** (`wrangler deploy`, which is what this project uses) that is the
+On **Workers** (`wrangler deploy`) that is the
 `not_found_handling` setting above. A `public/_redirects` holding `/* /index.html 200` is
 **rejected**: Workers Assets already strips `.html` and `/index`, so the rule matches its own
 output and the API fails the deploy with *“Infinite loop detected in this rule”* (code 100324).
@@ -61,8 +88,9 @@ Committing `wrangler.jsonc` also stops Wrangler improvising a config on every bu
 generated one has no `not_found_handling`, so every route but `/` would 404 on reload even
 after a green deploy.
 
-On **Pages** the equivalent is still a `_redirects` file with that one line. Pick one target;
-the two are configured differently.
+On **Pages**, the static SPA fallback handles extensionless client routes when there is no
+matching static file. A Pages `_redirects` file can also be used if you need custom routing,
+but do not add one to this repository while using the Workers deployment above.
 
 ## Security headers — `public/_headers`
 
