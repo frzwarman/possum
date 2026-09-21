@@ -1,4 +1,4 @@
-# Deployment — Cloudflare Pages (Free)
+# Deployment — Cloudflare Workers (Free)
 
 Meja builds to a folder of static files. There is no server to run: authorization lives in
 Postgres, not in the frontend. Audience: whoever sets up the hosting.
@@ -42,15 +42,27 @@ read only by `scripts/provision-staff.mjs` on the owner's own machine.
 login button stays disabled and only the local demo works. That is the expected state of a
 deploy with no variables set.
 
-## SPA routing — `public/_redirects`
+## SPA routing — `wrangler.jsonc`, not `_redirects`
 
-```
-/* /index.html 200
+```jsonc
+"assets": { "directory": "dist", "not_found_handling": "single-page-application" }
 ```
 
-One line. TanStack Router owns the URL, so a hard refresh of `/orders` must still return
-`index.html` with status 200 (a rewrite, not a 301/302). Without it, every route except `/`
-returns a Cloudflare 404 on reload.
+TanStack Router owns the URL, so a hard refresh of `/orders` — or `/admin`, which is chosen
+from the URL before the router mounts — must still return `index.html` with status 200.
+
+On **Workers** (`wrangler deploy`, which is what this project uses) that is the
+`not_found_handling` setting above. A `public/_redirects` holding `/* /index.html 200` is
+**rejected**: Workers Assets already strips `.html` and `/index`, so the rule matches its own
+output and the API fails the deploy with *“Infinite loop detected in this rule”* (code 100324).
+That file was removed; `public/_headers` still works and is still used.
+
+Committing `wrangler.jsonc` also stops Wrangler improvising a config on every build — its
+generated one has no `not_found_handling`, so every route but `/` would 404 on reload even
+after a green deploy.
+
+On **Pages** the equivalent is still a `_redirects` file with that one line. Pick one target;
+the two are configured differently.
 
 ## Security headers — `public/_headers`
 

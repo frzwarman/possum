@@ -1,0 +1,12 @@
+{
+  "name": "possum",
+  "compatibility_date": "2026-09-21",
+  "observability": { "enabled": true },
+  "assets": {
+    // SPA fallback lives here, not in public/_redirects: Workers Assets already strips
+    // `.html`/`/index`, so a `/* /index.html 200` rule is rejected as an infinite loop.
+    // Without this, a hard refresh of /pos, /orders or /admin returns 404.
+    "directory": "dist",
+    "not_found_handling": "single-page-application"
+  }
+}
