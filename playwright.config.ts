@@ -6,5 +6,7 @@ export default defineConfig({
  use:{baseURL,trace:'retain-on-failure',locale:'id-ID',timezoneId:'Asia/Jakarta'},
  // One browser; the responsive spec sets its own viewports per describe block.
  projects:[{name:'chromium',use:{...devices['Desktop Chrome'],viewport:{width:1440,height:900}}}],
- webServer:{command:`npx vite dev --host 127.0.0.1 --port ${port} --strictPort`,url:baseURL,reuseExistingServer:!process.env.CI,timeout:120000}
+ // Never a real project: this placeholder passes the "configured" check, and specs that need Supabase
+ // intercept its requests (process env outranks .env in Vite).
+ webServer:{command:`npx vite dev --host 127.0.0.1 --port ${port} --strictPort`,url:baseURL,reuseExistingServer:!process.env.CI,timeout:120000,env:{VITE_SUPABASE_URL:'http://127.0.0.1:54321',VITE_SUPABASE_PUBLISHABLE_KEY:'e2e-placeholder-key'}}
 })

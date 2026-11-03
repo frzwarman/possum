@@ -3,7 +3,7 @@
 // (gitignored). Berkas ini ada di scripts/ sehingga Vite tidak pernah mem-bundle-nya ke web app,
 // dan kunci hanya dibaca dari process.env — tidak pernah dari VITE_*, tidak pernah dicetak.
 import { createClient } from '@supabase/supabase-js'
-import { randomBytes } from 'node:crypto'
+import { randomBytes,randomUUID } from 'node:crypto'
 const ROLES=['owner','manager','cashier'],MIN=8,MAX_STAFF=10
 const argv=process.argv.slice(2),pos=[],flags={}
 for(let i=0;i<argv.length;i++) if(argv[i].startsWith('--')){flags[argv[i].slice(2)]=argv[i+1]&&!argv[i+1].startsWith('--')?argv[++i]:true} else pos.push(argv[i])
@@ -17,6 +17,7 @@ const usage=`Meja — penyediaan akun staf (pendaftaran publik dimatikan)
   pnpm staff disable <email>
   pnpm staff enable <email>
   pnpm staff reset-password <email> [--password <sandi>]
+  pnpm staff link-outlets <uuid-restoran> <uuid-restoran-lain>   (outlet baru: init --force)
 
 Butuh SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY dari .env.admin (salin dari .env.admin.example,
 jangan pernah di-commit, jangan pernah pakai awalan VITE_ untuk kunci ini).
@@ -98,4 +99,12 @@ if(cmd==='list'){
  const {error}=await db.auth.admin.updateUserById(user.id,{password:pw});ok(error,'mengganti sandi')
  console.log(`Sandi baru ${email}: ${pw}`)
  console.log('Ditampilkan SEKALI. Serahkan langsung ke staf, jangan lewat chat atau email.')
+}else if(cmd==='link-outlets'){
+ // Outlet = restoran sendiri (staf, kasir utama, stok). Outlet dalam satu grup boleh saling transfer stok.
+ const ids=pos;if(ids.length<2) die('Pakai: pnpm staff link-outlets <uuid-restoran> <uuid-restoran-lain> [...]')
+ const {data,error}=await db.from('restaurants').select('id,group_id,settings').in('id',ids);ok(error,'membaca restoran')
+ if(data.length!==new Set(ids).size) die('Ada id restoran yang tidak ditemukan. Lihat id dengan: pnpm staff list')
+ const group=data.find(r=>r.group_id)?.group_id??randomUUID()
+ const {error:ue}=await db.from('restaurants').update({group_id:group}).in('id',ids);ok(ue,'menghubungkan outlet')
+ console.log(`Terhubung dalam satu grup (${group}):\n${data.map(r=>`  ${r.settings?.name} ${r.id}`).join('\n')}`)
 }else die(`Perintah tidak dikenal: ${cmd}\n\n${usage}`)

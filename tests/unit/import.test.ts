@@ -61,6 +61,9 @@ describe('menuImportSchema',()=>{
  it('rejects a fractional price — rupiah has no cents',()=>{
   expect(menuImportSchema.safeParse(menuRow({price:'18500.5'})).success).toBe(false)
  })
+ it('rejects a price with thousand separators or left blank — "25.000" must not become Rp25',()=>{
+  for(const price of ['25.000','1.500.000','25,000','','Rp18000'])expect(menuImportSchema.safeParse(menuRow({price})).success,price).toBe(false)
+ })
  it('rejects a non-numeric price rather than importing NaN',()=>{
   expect(menuImportSchema.safeParse(menuRow({price:'delapan belas ribu'})).success).toBe(false)
  })

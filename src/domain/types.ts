@@ -1,4 +1,14 @@
 export type Role = "owner" | "manager" | "cashier";
+// A manager's or the owner's PIN entered at the till, checked by the server; good for one action.
+export type ApprovalAction = "discount" | "void" | "refund" | "cashout";
+export interface Approval {
+  id: string;
+  by: string;
+  action: ApprovalAction;
+  amount?: number;
+  orderId?: string;
+  at: number;
+}
 export interface Identity {
   id: string;
   name: string;
@@ -52,6 +62,92 @@ export interface StockItem {
   name: string;
   unit: "g" | "ml" | "pcs";
   threshold: number;
+  // Made in-house: what one batch uses and how much it yields, in thousandths of the base unit.
+  production?: { inputs: Ingredient[]; output: number };
+}
+// A line is what was ordered or received: quantity in thousandths of the base unit, cost = line total.
+export interface PurchaseLine {
+  stockId: string;
+  qty: number;
+  cost: number;
+}
+// Money that changed hands: from the till's cash drawer, or outside it (transfer, owner's cash).
+// Negative = given back.
+export interface Payment {
+  at: string;
+  amount: number;
+  from: "drawer" | "outside";
+}
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  note: string;
+  active: boolean;
+}
+// lines = what was ordered; receipts = each delivery as it arrived. Owed = received − paid.
+export interface PurchaseOrder {
+  id: string;
+  number: string;
+  supplierId?: string;
+  supplier: string;
+  note: string;
+  lines: PurchaseLine[];
+  total: number;
+  receipts: { at: string; lines: PurchaseLine[] }[];
+  payments: Payment[];
+  status: "ordered" | "partial" | "received" | "cancelled";
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  closeReason?: string;
+  cancelReason?: string;
+}
+export interface SalesLine {
+  id: string;
+  itemId: string;
+  name: string;
+  qty: number;
+  price: number;
+  catalogVersion: number;
+}
+// Catering / B2B: delivered later, at a negotiated price, paid with a down payment and the rest later.
+export interface SalesOrder {
+  id: string;
+  number: string;
+  customer: { name: string; phone: string; address: string };
+  deliverAt: string;
+  lines: SalesLine[];
+  discount: number;
+  note: string;
+  totals: Totals;
+  payments: Payment[];
+  status: "confirmed" | "delivered" | "cancelled";
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  deliveredAt?: string;
+  cancelReason?: string;
+}
+export interface Outlet {
+  id: string;
+  name: string;
+}
+export interface Transfer {
+  id: string;
+  number: string;
+  from: string;
+  fromName: string;
+  to: string;
+  toName: string;
+  lines: { stockId: string; name: string; unit: StockItem["unit"]; qty: number; value: number }[];
+  note: string;
+  status: "sent" | "received" | "cancelled";
+  sentAt: string;
+  received?: { stockId: string; target: string; qty: number }[];
+  receivedAt?: string;
+  cancelReason?: string;
 }
 export interface Line {
   id: string;
@@ -99,8 +195,10 @@ export interface Order {
     verified: boolean;
     at: string;
   };
-  refund?: { reason: string; at: string; actor: string };
+  refund?: { reason: string; at: string; actor: string; approvedBy?: string };
   voidReason?: string;
+  voidApprovedBy?: string;
+  discountApprovedBy?: string;
 }
 export interface Shift {
   id: string;
@@ -120,7 +218,14 @@ export interface Movement {
   stockId: string;
   qty: number;
   kind:
-    "opening" | "purchase" | "waste" | "count" | "adjustment" | "preparation";
+    | "opening"
+    | "purchase"
+    | "waste"
+    | "count"
+    | "adjustment"
+    | "preparation"
+    | "production"
+    | "transfer";
   reason: string;
   actor: string;
   at: string;
@@ -135,6 +240,7 @@ export interface CashMovement {
   at: string;
   actor: string;
   recordId?: string;
+  approvedBy?: string;
 }
 export type OpKind =
   | "shift.open"
@@ -148,7 +254,20 @@ export type OpKind =
   | "refund.record"
   | "stock.record"
   | "catalog.publish"
-  | "settings.update";
+  | "settings.update"
+  | "purchase.save"
+  | "purchase.receive"
+  | "purchase.cancel"
+  | "purchase.pay"
+  | "production.record"
+  | "supplier.save"
+  | "salesorder.save"
+  | "salesorder.pay"
+  | "salesorder.deliver"
+  | "salesorder.cancel"
+  | "transfer.send"
+  | "transfer.receive"
+  | "transfer.cancel";
 export interface Operation {
   id: string;
   kind: OpKind;
@@ -181,4 +300,5 @@ export interface Draft {
   lines: Line[];
   discount: number;
   discountReason: string;
+  discountApproval?: Approval;
 }

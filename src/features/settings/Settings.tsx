@@ -17,6 +17,7 @@ import {
   UserCog,
   Image as ImageIcon,
   Trash2,
+  KeyRound,
 } from "lucide-react";
 import { useApp, logout } from "../../app/context";
 import { Button } from "../../components/ui/button";
@@ -33,20 +34,25 @@ import type { Ingredient, MenuItem, StockItem } from "../../domain/types";
 import { convert, rupiah, when } from "../../domain/calculate";
 import { supabase } from "../../lib/supabase";
 import { compressMenuPhoto } from "../../lib/menu-photo";
+import { bootstrap } from "../auth/Login";
+import { roleTitle } from "../../domain/permissions";
 const schema = z.object({
   appName: z.string().min(1).max(30),
   name: z.string().min(1).max(100),
   address: z.string().max(200),
   phone: z.string().max(40),
   footer: z.string().max(150),
-  timezone: z.string().refine((v) => {
+  // Intl accepts any letter case ("asia/jakarta"); the server checks the exact IANA name, so
+  // store the canonical form.
+  timezone: z.string().transform((v, ctx) => {
     try {
-      new Intl.DateTimeFormat("id", { timeZone: v });
-      return true;
+      return new Intl.DateTimeFormat("id", { timeZone: v }).resolvedOptions()
+        .timeZone;
     } catch {
-      return false;
+      ctx.addIssue({ code: "custom", message: "Zona waktu tidak valid" });
+      return z.NEVER;
     }
-  }, "Zona waktu tidak valid"),
+  }),
   cutoff: z.coerce.number<number>().int().min(0).max(23),
   taxBps: z.coerce.number<number>().int().min(0).max(10000),
   serviceBps: z.coerce.number<number>().int().min(0).max(10000),
@@ -65,7 +71,6 @@ export default function SettingsPage() {
     act,
     outbox,
     sync,
-    setNotice,
     setError,
     busy,
   } = useApp();
@@ -83,6 +88,11 @@ export default function SettingsPage() {
   const [claim, setClaim] = useState(false);
   const [testPrint, setTestPrint] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [pinDialog, setPinDialog] = useState(false);
+  const [bomStock, setBomStock] = useState("");
+  const [bomQty, setBomQty] = useState("");
+  const [pin, setPin] = useState("");
+  const [pinAgain, setPinAgain] = useState("");
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     values: settings,
@@ -736,15 +746,23 @@ export default function SettingsPage() {
         <div className="account-id">
           <strong>{user.name}</strong>
           <p className="muted small">
-            {user.role === "owner"
-              ? "Pemilik"
-              : user.role === "manager"
-                ? "Manajer"
-                : "Kasir"}{" "}
-            · {user.demo ? "Demo lokal" : "Akun restoran"}
+            {roleTitle[user.role]} · {user.demo ? "Demo lokal" : "Akun restoran"}
           </p>
         </div>
         <div className="account-actions">
+          {manager && !user.demo && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setPin("");
+                setPinAgain("");
+                setPinDialog(true);
+              }}
+            >
+              <KeyRound size={16} /> PIN persetujuan
+            </Button>
+          )}
           {user.role === "owner" && (
             <Button asChild variant="secondary" size="sm">
               <a href="/admin">
@@ -1050,6 +1068,103 @@ export default function SettingsPage() {
                 }
               />
             </label>
+            <label className="inline-check mt">
+              <input
+                type="checkbox"
+                checked={Boolean(stock.production)}
+                onChange={(e) =>
+                  setStock({
+                    ...stock,
+                    production: e.target.checked ? { inputs: [], output: 1000 } : undefined,
+                  })
+                }
+              />
+              Dibuat sendiri dari bahan lain (Produksi)
+            </label>
+            {stock.production && (
+              <>
+                <p className="small muted">
+                  Resep satu batch. Produksi mengurangi bahan ini dan menambah
+                  hasilnya ke stok.
+                </p>
+                {stock.production.inputs.map((i) => (
+                  <div className="bill-row" key={i.stockId}>
+                    <span>
+                      {stockItems.find((x) => x.id === i.stockId)?.name}: {i.qty / 1000}{" "}
+                      {stockItems.find((x) => x.id === i.stockId)?.unit}
+                    </span>
+                    <button
+                      className="text-button"
+                      onClick={() =>
+                        setStock({
+                          ...stock,
+                          production: {
+                            ...stock.production!,
+                            inputs: stock.production!.inputs.filter((x) => x.stockId !== i.stockId),
+                          },
+                        })
+                      }
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                ))}
+                <div className="form-grid">
+                  <Select
+                    label="Bahan per batch"
+                    value={bomStock}
+                    onChange={setBomStock}
+                    options={[
+                      { value: "", label: "Pilih bahan" },
+                      ...stockItems
+                        .filter((x) => x.id !== stock.id)
+                        .map((x) => ({ value: x.id, label: `${x.name} (${x.unit})` })),
+                    ]}
+                  />
+                  <label>
+                    Jumlah satuan dasar
+                    <input inputMode="decimal" value={bomQty} onChange={(e) => setBomQty(e.target.value)} />
+                  </label>
+                </div>
+                <Button
+                  variant="secondary"
+                  disabled={!bomStock || !bomQty}
+                  onClick={() => {
+                    const input = stockItems.find((x) => x.id === bomStock)!;
+                    try {
+                      const qty = convert(bomQty, input.unit, input.unit);
+                      setStock({
+                        ...stock,
+                        production: {
+                          ...stock.production!,
+                          inputs: [...stock.production!.inputs.filter((x) => x.stockId !== input.id), { stockId: input.id, qty }],
+                        },
+                      });
+                      setBomStock("");
+                      setBomQty("");
+                    } catch (e) {
+                      setError(String(e));
+                    }
+                  }}
+                >
+                  Tambah bahan produksi
+                </Button>
+                <label>
+                  Hasil per batch ({stock.unit})
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={stock.production.output / 1000}
+                    onChange={(e) =>
+                      setStock({
+                        ...stock,
+                        production: { ...stock.production!, output: Math.round(Number(e.target.value) * 1000) },
+                      })
+                    }
+                  />
+                </label>
+              </>
+            )}
             <Button
               className="full"
               disabled={!stock.name || busy}
@@ -1067,6 +1182,52 @@ export default function SettingsPage() {
             </Button>
           </>
         )}
+      </Dialog>
+      <Dialog
+        open={pinDialog}
+        onOpenChange={setPinDialog}
+        title="PIN persetujuan"
+        description="Dipakai saat kasir meminta diskon, pembatalan, refund, atau kas keluar."
+      >
+        <label>
+          PIN baru (6 angka)
+          <input
+            type="password"
+            inputMode="numeric"
+            autoComplete="new-password"
+            maxLength={6}
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+        <label>
+          Ulangi PIN
+          <input
+            type="password"
+            inputMode="numeric"
+            autoComplete="new-password"
+            maxLength={6}
+            value={pinAgain}
+            onChange={(e) => setPinAgain(e.target.value.replace(/\D/g, ""))}
+          />
+        </label>
+        <p className="small muted">
+          Jangan beri tahu kasir. Server hanya menyimpan sidik PIN, dan lima
+          PIN salah dalam 15 menit menghentikan persetujuan sementara.
+        </p>
+        <Button
+          className="full"
+          loading={busy}
+          disabled={busy || pin.length !== 6 || pin !== pinAgain}
+          onClick={() =>
+            void act(async () => {
+              await commands.setPin(pin);
+              setPinDialog(false);
+            }, "PIN persetujuan tersimpan")
+          }
+        >
+          Simpan PIN
+        </Button>
       </Dialog>
       <Dialog open={signout} onOpenChange={setSignout} title="Keluar akun?">
         <p>
@@ -1099,10 +1260,13 @@ export default function SettingsPage() {
                 device_id: user.deviceId,
               });
               if (error) throw error;
-              setClaim(false);
-              setNotice(
-                "Kasir utama pindah ke perangkat ini. Keluar dan masuk kembali.",
+              // "Primary" is cached from sign-in; refresh it (and the server's data) now rather
+              // than asking for a sign-out in a toast that is gone before anyone reads it.
+              localStorage.setItem(
+                "meja-identity",
+                JSON.stringify(await bootstrap(user.id, user.deviceId)),
               );
+              location.reload();
             })
           }
         >

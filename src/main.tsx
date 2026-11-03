@@ -12,9 +12,14 @@ const Inventory=lazy(()=>import('./features/inventory/Inventory'))
 const Reports=lazy(()=>import('./features/reports/Reports'))
 const Settings=lazy(()=>import('./features/settings/Settings'))
 const Admin=lazy(()=>import('./features/admin/Admin'))
+const Sales=lazy(()=>import('./features/sales/Sales'))
+const Purchases=lazy(()=>import('./features/purchases/Purchases'))
+const Production=lazy(()=>import('./features/production/Production'))
+const Catering=lazy(()=>import('./features/catering/Catering'))
+const Transfers=lazy(()=>import('./features/transfers/Transfers'))
 const skeleton=<div className="page-content" role="status" aria-label="Memuat halaman"><div className="skeleton skeleton-line short"/><div className="skeleton skeleton-title"/><div className="panel">{[0,1,2,3].map(i=><div className="skeleton skeleton-row" key={i}/>)}</div></div>
 const root=createRootRoute({component:Shell,notFoundComponent:()=> <Navigate to="/pos"/>})
-const routes=[createRoute({getParentRoute:()=>root,path:'/',component:()=> <Navigate to="/pos"/>}),createRoute({getParentRoute:()=>root,path:'/pos',component:Pos}),createRoute({getParentRoute:()=>root,path:'/orders',component:()=> <Suspense fallback={skeleton}><Orders/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/inventory',component:()=> <Suspense fallback={skeleton}><Inventory/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/reports',component:()=> <Suspense fallback={skeleton}><Reports/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/settings',component:()=> <Suspense fallback={skeleton}><Settings/></Suspense>})]
+const routes=[createRoute({getParentRoute:()=>root,path:'/',component:()=> <Navigate to="/pos"/>}),createRoute({getParentRoute:()=>root,path:'/pos',component:Pos}),createRoute({getParentRoute:()=>root,path:'/orders',component:()=> <Suspense fallback={skeleton}><Orders/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/inventory',component:()=> <Suspense fallback={skeleton}><Inventory/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/reports',component:()=> <Suspense fallback={skeleton}><Reports/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/settings',component:()=> <Suspense fallback={skeleton}><Settings/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/sales',component:()=> <Suspense fallback={skeleton}><Sales/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/purchases',component:()=> <Suspense fallback={skeleton}><Purchases/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/production',component:()=> <Suspense fallback={skeleton}><Production/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/catering',component:()=> <Suspense fallback={skeleton}><Catering/></Suspense>}),createRoute({getParentRoute:()=>root,path:'/transfers',component:()=> <Suspense fallback={skeleton}><Transfers/></Suspense>})]
 const router=createRouter({routeTree:root.addChildren(routes),defaultPreload:'intent'})
 declare module '@tanstack/react-router' {interface Register {router:typeof router}}
 // Area pemilik punya pintu masuk sendiri: dipilih dari URL sebelum router kasir dipasang,

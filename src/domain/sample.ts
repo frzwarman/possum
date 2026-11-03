@@ -1,5 +1,8 @@
-import type { MenuItem, Settings, StockItem } from './types'
+import type { MenuItem,Settings,StockItem,Transfer } from './types'
 export const defaultSettings:Settings={id:'settings',appName:'Meja',name:'Warung Daun',address:'Jl. Melati No. 12, Bandung',phone:'',footer:'Terima kasih. Sampai makan lagi!',timezone:'Asia/Jakarta',cutoff:4,taxBps:0,serviceBps:0,receiptWidth:80,printableWidth:72,goLive:new Date().toISOString().slice(0,10),packaging:[]}
+// The demo has one other outlet and something already on its way, so receiving a transfer can be tried.
+export const demoOutlet={id:'demo-dago',name:'Cabang Dago (demo)'}
+export const demoTransfer=(to:string,toName:string,sentAt:string):Transfer=>({id:'demo-transfer-1',number:'TR-DEMO0001',from:demoOutlet.id,fromName:demoOutlet.name,to,toName,note:'Contoh kiriman dari cabang lain',status:'sent',sentAt,lines:[{stockId:'rice',name:'Beras',unit:'g',qty:5_000_000,value:75000},{stockId:'egg',name:'Telur',unit:'pcs',qty:30_000,value:60000}]})
 export const stock:StockItem[]=[{id:'rice',name:'Beras',unit:'g',threshold:3000000},{id:'chicken',name:'Ayam ungkep (porsi)',unit:'pcs',threshold:10000},{id:'egg',name:'Telur',unit:'pcs',threshold:10000},{id:'tea',name:'Teh (porsi)',unit:'pcs',threshold:10000},{id:'water',name:'Air mineral botol',unit:'pcs',threshold:12000},{id:'box',name:'Kotak bungkus',unit:'pcs',threshold:20000}]
 const egg={id:'extra-egg',name:'Tambah telur',price:5000,recipe:[{stockId:'egg',qty:1000}]}
 const raw:Array<[string,string,string,number,boolean,MenuItem['recipe'],MenuItem['modifiers']]>=[

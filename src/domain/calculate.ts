@@ -1,7 +1,7 @@
 import type { CashMovement, Ingredient, Line, Order, Settings, Shift, Totals } from './types'
 export const MAX_MONEY = 1_000_000_000
 export function money(value:number):number { if(!Number.isSafeInteger(value)||value<0||value>MAX_MONEY) throw new Error('Nilai rupiah tidak valid'); return value }
-export function totals(lines:Line[], discount:number, settings:Pick<Settings,'taxBps'|'serviceBps'>):Totals {
+export function totals(lines:Pick<Line,'price'|'qty'|'cancelled'|'modifiers'>[], discount:number, settings:Pick<Settings,'taxBps'|'serviceBps'>):Totals {
  const subtotal=money(lines.filter(l=>!l.cancelled).reduce((n,l)=>n+(l.price+l.modifiers.reduce((s,m)=>s+m.price,0))*l.qty,0))
  money(discount); if(discount>subtotal) throw new Error('Diskon melebihi subtotal')
  for(const bps of [settings.taxBps,settings.serviceBps]) if(!Number.isInteger(bps)||bps<0||bps>10000) throw new Error('Tarif tidak valid')
@@ -42,4 +42,15 @@ export const when=(iso:string|number|Date,timezone=JAKARTA,options:Intl.DateTime
 // Untuk CSV: satu kolom yang urut secara leksikografis dan terbaca Excel, tetap zona restoran.
 export const stamp=(iso:string,timezone=JAKARTA)=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:timezone||JAKARTA,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date(iso)).map(x=>[x.type,x.value]));return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`}
 export const rupiah=(v:number)=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(v).replace(/\s/g,'')
+// Back office arithmetic, mirroring received_value/received_qty/paid_value/unit_cost on the server.
+export const receivedQty=(po:{receipts:{lines:{stockId:string;qty:number}[]}[]},stockId:string)=>po.receipts.flatMap(r=>r.lines).filter(l=>l.stockId===stockId).reduce((n,l)=>n+l.qty,0)
+export const receivedValue=(po:{receipts:{lines:{cost:number}[]}[]})=>po.receipts.flatMap(r=>r.lines).reduce((n,l)=>n+l.cost,0)
+export const paidValue=(doc:{payments:{amount:number}[]})=>doc.payments.reduce((n,p)=>n+p.amount,0)
+// Latest price per thousandth of a base unit for each item that came in with a cost; the server's
+// figures from sign-in (seed) fill in what this device never saw.
+export function unitCosts(movements:{stockId:string;qty:number;cost:number;kind:string;at:string}[],seed:Record<string,number>={}){
+ const latest=new Map<string,{at:string;unit:number}>()
+ for(const m of movements)if(m.qty>0&&m.cost>0&&['purchase','production','transfer'].includes(m.kind)&&(latest.get(m.stockId)?.at??'')<=m.at)latest.set(m.stockId,{at:m.at,unit:m.cost/m.qty})
+ const costs=new Map(Object.entries(seed));for(const [id,{unit}] of latest)costs.set(id,unit);return costs
+}
 export const quantity=(v:number)=>new Intl.NumberFormat('id-ID',{maximumFractionDigits:3}).format(v/1000)

@@ -8,8 +8,8 @@ import { Button } from '../../components/ui/button'
 import { Select } from '../../components/ui/select'
 import { configured,supabase } from '../../lib/supabase'
 import type { Role } from '../../domain/types'
+import { access,roleTitle } from '../../domain/permissions'
 interface Staff { user_id:string; restaurant_id:string; name:string; role:Role; active:boolean }
-const label:Record<Role,string>={owner:'Pemilik',manager:'Manajer',cashier:'Kasir'}
 export default function Admin(){
  // Tanpa ini bundel lama bisa tertahan selamanya: prompt pembaruan hanya ada di shell kasir,
  // yang baru dipasang setelah masuk. Di layar ini tidak ada yang bisa hilang saat memuat ulang.
@@ -44,8 +44,12 @@ export default function Admin(){
    <span className="staff-avatar" aria-hidden>{s.name.slice(0,1).toUpperCase()}</span>
    <div><div className="staff-name">{s.name}{s.user_id===me.user_id&&<span className="chip">Anda</span>}</div>
     <div className="staff-meta"><span className={`status-dot ${s.active?'':'offline'}`}/>{s.active?'Aktif':'Nonaktif'}{s.user_id===me.user_id?' · peran dan akses sendiri diubah lewat terminal':s.active?'':' · ditolak server saat masuk'}</div></div>
-   <div className="staff-controls"><Select ariaLabel={`Peran ${s.name}`} disabled={busy||s.user_id===me.user_id} value={s.role} onChange={v=>change(s,{role:v as Role})} options={(Object.keys(label) as Role[]).map(r=>({value:r,label:label[r]}))}/>
+   <div className="staff-controls"><Select ariaLabel={`Peran ${s.name}`} disabled={busy||s.user_id===me.user_id} value={s.role} onChange={v=>change(s,{role:v as Role})} options={(Object.keys(roleTitle) as Role[]).map(r=>({value:r,label:roleTitle[r]}))}/>
    {s.user_id===me.user_id?<span className="chip">Dikunci</span>:<Button variant={s.active?'destructive':'secondary'} loading={pending===s.user_id} disabled={busy} onClick={()=>change(s,{active:!s.active})}>{s.active?'Nonaktifkan':'Aktifkan'}</Button>}</div></div>)}</article>
+  <article className="panel"><div className="panel-heading"><h2>Hak akses per peran</h2><span className="badge">Diperiksa server</span></div>
+   <div className="table-scroll"><table className="data-table"><thead><tr><th>Tindakan</th>{(Object.keys(roleTitle) as Role[]).map(r=><th key={r}>{roleTitle[r]}</th>)}</tr></thead>
+   <tbody>{access.map(([what,...grants])=><tr key={what}><td>{what}</td>{grants.map((g,i)=><td key={i}>{g}</td>)}</tr>)}</tbody></table></div>
+   <p className="small muted">PIN manajer: kasir tetap masuk, manajer atau pemilik mengetik PIN-nya di kasir untuk satu tindakan itu. Setiap manajer membuat PIN sendiri di Lainnya → PIN persetujuan.</p></article>
   <p className="callout">Menonaktifkan akun berlaku di server: sif yang sedang berjalan tetap harus ditutup dan operasi yang belum tersinkron dari perangkat itu akan ditolak. Nonaktifkan setelah sif selesai.</p>
   <article className="panel"><div className="panel-heading"><h2><Terminal size={17}/> Akun baru dan sandi</h2></div><p className="muted">Pendaftaran publik dimatikan. Membuat akun, mengganti sandi, dan melihat email butuh kunci service role yang hanya ada di terminal pemilik — tidak pernah di aplikasi.</p>
   <div className="code-block"><code>{`pnpm staff add <email> <peran> <nama> --restaurant ${me.restaurant_id}\npnpm staff reset-password <email>\npnpm staff list`}</code></div>

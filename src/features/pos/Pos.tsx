@@ -16,6 +16,7 @@ import {
   Check,
 } from "lucide-react";
 import { useApp } from "../../app/context";
+import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
 import { Dialog } from "../../components/ui/dialog";
@@ -45,6 +46,7 @@ export default function Pos() {
     user,
     manager,
     setError,
+    orders,
   } = useApp();
   const saved = useLiveQuery(() => db.drafts.get("current"), [db]);
   const [draft, setDraft] = useState<Draft>(empty);
@@ -65,6 +67,7 @@ export default function Pos() {
   const [discountDialog, setDiscountDialog] = useState(false);
   const [discountValue, setDiscountValue] = useState("0");
   const [discountReason, setDiscountReason] = useState("");
+  const [ask, setAsk] = useState<ApprovalRequest>();
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (!initialized.current && saved !== undefined) {
@@ -81,10 +84,16 @@ export default function Pos() {
     });
   }, [db]);
   async function update(next: Draft) {
+    // A discount belongs to the order it was given for: once a new cart is emptied, drop it so it
+    // cannot slide onto the next customer's order.
+    if (!next.orderId && !next.lines.length)
+      next = { ...next, discount: 0, discountReason: "", discountApproval: undefined };
+    // State first, storage second: a quick second tap or keystroke must see this draft, not the
+    // one from before IndexedDB answered.
+    setDraft(next);
     setSaving(true);
     try {
       await db.drafts.put(next);
-      setDraft(next);
     } catch {
       setError(
         "Draf gagal disimpan. Penyimpanan perangkat penuh atau tidak tersedia. Ekspor data di Lainnya.",
@@ -93,9 +102,21 @@ export default function Pos() {
       setSaving(false);
     }
   }
-  const total = settings
-    ? totals(draft.lines, draft.discount, settings)
-    : { subtotal: 0, discount: 0, service: 0, tax: 0, total: 0 };
+  let total = { subtotal: 0, discount: 0, service: 0, tax: 0, total: 0 };
+  let invalid = "";
+  if (settings)
+    try {
+      total = totals(draft.lines, draft.discount, settings);
+    } catch (e) {
+      // e.g. a discount given before a line was removed. The draft is persisted, so throwing here
+      // would break every reload too: show the problem and the undiscounted bill instead.
+      invalid = e instanceof Error ? e.message : "Total pesanan tidak valid";
+      try {
+        total = totals(draft.lines, 0, settings);
+      } catch {
+        // the lines themselves are out of range; keep zeros
+      }
+    }
   const count = draft.lines
     .filter((l) => !l.cancelled)
     .reduce((n, l) => n + l.qty, 0);
@@ -131,11 +152,13 @@ export default function Pos() {
       "Pesanan tersimpan di perangkat",
     );
     if (o) {
+      // The approval went out with this save and the server accepts it once.
       await update({
         ...draft,
         orderId: o.id,
         revision: o.revision,
         lines: o.lines,
+        discountApproval: undefined,
       });
       return o;
     }
@@ -155,6 +178,13 @@ export default function Pos() {
           lines: p.lines,
         });
     }
+  }
+  async function newOrder() {
+    // The saved order stays in Pesanan. Save edits first so nothing typed is lost, unless there is
+    // nothing savable: an emptied cart (an order needs a line), or an order no longer open because
+    // it was voided from Pesanan, where saving can only fail and would trap the cart.
+    const open = orders.some((o) => o.id === draft.orderId && o.status === "open");
+    if (!count || !open || (await save())) await update(empty());
   }
   async function payStart() {
     const o = await save();
@@ -325,21 +355,19 @@ export default function Pos() {
           <span>Subtotal</span>
           <span>{rupiah(total.subtotal)}</span>
         </div>
-        {manager && (
-          <div className="bill-row">
-            <button
-              className="text-button"
-              onClick={() => {
-                setDiscountValue(String(draft.discount));
-                setDiscountReason(draft.discountReason);
-                setDiscountDialog(true);
-              }}
-            >
-              Tambah diskon
-            </button>
-            <span>−{rupiah(total.discount)}</span>
-          </div>
-        )}
+        <div className="bill-row">
+          <button
+            className="text-button"
+            onClick={() => {
+              setDiscountValue(String(draft.discount));
+              setDiscountReason(draft.discountReason);
+              setDiscountDialog(true);
+            }}
+          >
+            Tambah diskon
+          </button>
+          <span>−{rupiah(draft.discount)}</span>
+        </div>
         {total.service > 0 && (
           <div className="bill-row">
             <span>Layanan</span>
@@ -356,6 +384,11 @@ export default function Pos() {
           <strong>Total</strong>
           <strong>{rupiah(total.total)}</strong>
         </div>
+        {invalid && (
+          <p className="error" role="alert">
+            {invalid}
+          </p>
+        )}
         {!shift ? (
           <Button
             className="full"
@@ -401,6 +434,17 @@ export default function Pos() {
               </p>
             )}
           </>
+        )}
+        {draft.orderId && (
+          <p className="center">
+            <button
+              className="text-button"
+              disabled={busy}
+              onClick={() => void newOrder()}
+            >
+              Mulai pesanan baru
+            </button>
+          </p>
         )}
         <p className="save-status">
           <span className="status-dot" />
@@ -609,6 +653,7 @@ export default function Pos() {
         open={discountDialog}
         onOpenChange={setDiscountDialog}
         title="Diskon manajer"
+        description={manager ? undefined : "Kasir memerlukan PIN manajer untuk memberi diskon."}
       >
         <label>
           Potongan
@@ -630,13 +675,28 @@ export default function Pos() {
               setError("Periksa jumlah dan alasan diskon");
               return;
             }
-            void update({ ...draft, discount: d, discountReason });
+            // Same rule as Commands.save: a cashier changing the saved order's discount needs a PIN.
+            const saved = orders.find((o) => o.id === draft.orderId)?.discount ?? 0;
+            if (!manager && d !== saved) {
+              setAsk({ action: "discount", amount: d, what: `Diskon ${rupiah(d)} · ${discountReason.trim()}` });
+              return;
+            }
+            void update({ ...draft, discount: d, discountReason, discountApproval: undefined });
             setDiscountDialog(false);
           }}
         >
           Terapkan diskon
         </Button>
       </Dialog>
+      <ApprovalDialog
+        request={ask}
+        onClose={() => setAsk(undefined)}
+        onApproved={(discountApproval) => {
+          setAsk(undefined);
+          setDiscountDialog(false);
+          void update({ ...draft, discount: discountApproval.amount!, discountReason, discountApproval });
+        }}
+      />
       <Dialog
         open={Boolean(checkout)}
         onOpenChange={() => setCheckout(undefined)}
