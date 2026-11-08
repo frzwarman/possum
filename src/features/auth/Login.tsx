@@ -51,7 +51,7 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
  const member=members.find(m=>m.id===who);const people=!byEmail&&members.length>0
  const initials=(n:string)=>n.split(/\s+/).slice(0,2).map(w=>w[0]??'').join('').toUpperCase()
  return <main className="login-page">
-  <div className="login-brand"><span className="brand-mark"><Mark size={32}/></span><span>takar</span></div>
+  <header className="login-top"><div className="login-brand"><span className="brand-mark"><Mark size={32}/></span><span>takar</span></div><small>{new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long'})}</small></header>
   <section className={`login-card ${people?'wide':''}`}>
    <span className="eyebrow">Setiap gram tercatat</span>
    {people?<><h1>Siapa yang bertugas hari ini?</h1><p className="muted">Ketuk nama Anda, lalu masukkan PIN.</p></>:<><h1>Siap melayani,<br/>satu pesanan lagi.</h1><p className="muted">Catat pesanan, kirim ke stasiun, dan tutup hari dengan stok yang cocok.</p></>}

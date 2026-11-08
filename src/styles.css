@@ -246,10 +246,10 @@ input[type=checkbox]{accent-color:var(--ink)}
 .nav-link.active{background:var(--lime);color:#101113;font-weight:600}.nav-link.active svg{color:#101113}.nav-shortcut{border-color:var(--border-strong);color:var(--text-disabled);border-radius:6px}
 .shift-note{margin:20px 4px;padding:14px 8px}.shift-note strong{font-size:13px}.shift-note p{font-size:12px;color:var(--text-secondary)}
 .avatar{background:var(--lime-subtle);color:var(--ink);border:0;font-weight:600}.profile strong{font-size:13px}.profile small{font-size:11px;color:var(--text-secondary)}
-.sidebar.rail{width:88px;padding:20px 12px 16px;align-items:center}.sidebar.rail .brand{padding:0;font-size:0;gap:0}.sidebar.rail .brand-mark{width:36px;height:36px}
+.sidebar.rail{width:96px;padding:20px 8px 16px;align-items:center}.sidebar.rail .brand{padding:0;font-size:0;gap:0}.sidebar.rail .brand-mark{width:36px;height:36px}
 .sidebar.rail .restaurant-switch,.sidebar.rail .nav-caption,.sidebar.rail .shift-note,.sidebar.rail .profile>div,.sidebar.rail .profile>svg,.sidebar.rail .nav-shortcut{display:none}
-.sidebar.rail nav{margin-top:28px;gap:8px;align-items:center}.sidebar.rail .nav-link{flex-direction:column;justify-content:center;gap:4px;width:64px;min-height:56px;padding:8px 4px;font-size:12px;font-weight:500;line-height:16px;border-radius:14px}
-.sidebar.rail .profile{justify-content:center;padding:16px 0 0;border:0}.workspace.rail{margin-left:88px;width:calc(100% - 88px)}
+.sidebar.rail nav{margin-top:28px;gap:8px;align-items:center}.sidebar.rail .nav-link{flex-direction:column;justify-content:center;gap:4px;width:80px;min-height:56px;padding:8px 2px;font-size:11px;font-weight:500;line-height:14px;border-radius:14px;white-space:nowrap;text-align:center}
+.sidebar.rail .profile{justify-content:center;padding:16px 0 0;border:0}.workspace.rail{margin-left:96px;width:calc(100% - 96px)}
 .topbar{height:56px;border:0;background:transparent;padding:0 28px}.topbar-breadcrumb{font-size:13px;color:var(--text-secondary)}.topbar-breadcrumb>span:first-of-type{color:var(--text);font-weight:500}
 .sync-status{font-size:12px;color:var(--text-secondary)}.date-label{font-size:12px;color:var(--text-secondary)}.demo-badge{font-size:11px;background:var(--lime-subtle);color:var(--ink);border-radius:999px;padding:4px 10px}
 .demo-strip{background:var(--lime-subtle);color:var(--ink);font-size:12px;min-height:36px}.demo-strip>span{color:var(--text-secondary)}
@@ -316,7 +316,7 @@ input[type=checkbox]{accent-color:var(--ink)}
 .mobile-cart-summary{background:var(--ink);border-color:var(--ink);box-shadow:none;border-radius:14px}
 .bottom-nav{background:var(--surface);border-color:var(--border)}.bottom-nav>a{color:var(--text-secondary);font-size:11px;border-radius:12px}.bottom-nav>a.active{color:#101113;background:var(--lime);font-weight:600}
 /* Login: pick your name, then the PIN pad. */
-.login-page{background:var(--canvas);padding:24px 20px}.login-brand{font-size:28px;font-weight:700;letter-spacing:-1px;margin:8px 0 28px;align-self:flex-start;color:var(--text)}.login-brand .brand-mark{width:32px;height:32px}
+.login-page{background:var(--canvas);padding:20px 28px 28px;min-height:100dvh}.login-top{width:100%;display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}.login-top>small{font-size:12px;color:var(--text-secondary);text-align:right}.login-brand{font-size:24px;font-weight:700;letter-spacing:-.8px;margin:0;color:var(--text)}.login-brand .brand-mark{width:32px;height:32px}.login-card{margin:auto 0}.login-foot{margin:28px 0 0}
 .login-card{max-width:520px;padding:32px;border-radius:20px}.login-card h1{font-size:28px;letter-spacing:-.6px;color:var(--text);margin-bottom:8px}.login-card>.muted{font-size:14px}
 .login-card.wide{max-width:760px}.login-foot{font-size:12px;color:var(--text-disabled)}
 .people{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin:24px 0 8px}
@@ -346,8 +346,8 @@ input[type=checkbox]{accent-color:var(--ink)}
 .reason-chips>button{border-color:var(--border-strong);background:var(--surface);color:var(--text);font-size:14px;font-weight:500;border-radius:999px}.reason-chips>button.active{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
 .low-label{background:var(--warning-bg);color:var(--warning-fg);box-shadow:none;border-radius:999px;font-size:12px}
 @media(max-width:1190px){.sidebar{width:220px}.workspace{margin-left:220px;width:calc(100% - 220px)}.pos-layout{grid-template-columns:minmax(0,1fr) 320px}}
-@media(max-width:950px){.sidebar:not(.rail){width:88px;padding:20px 12px 16px}.sidebar:not(.rail) .nav-link{flex-direction:column;gap:4px;font-size:11px;width:64px;min-height:56px;padding:8px 4px;justify-content:center}.sidebar:not(.rail) .nav-link>span{display:block}.workspace{margin-left:88px;width:calc(100% - 88px)}.pin-panel{grid-template-columns:1fr}}
-@media(max-width:700px){h1,.metric>strong{font-size:26px;line-height:32px}.sidebar,.sidebar.rail{display:none}.workspace,.workspace.rail{margin:0;width:100%}.topbar{height:52px}.menu-area{padding:16px 16px 180px}.menu-card h3{font-size:14px}.menu-card{min-height:0}.page-content{padding:20px 16px 100px}.login-card{padding:24px 20px}.people{grid-template-columns:1fr 1fr}.dialog-content{padding:22px 20px}.dialog-wide{border-radius:0}.lock-card{padding:28px 20px}}
+@media(max-width:950px){.sidebar:not(.rail){width:96px;padding:20px 8px 16px}.sidebar:not(.rail) .nav-link{flex-direction:column;gap:4px;font-size:11px;line-height:14px;white-space:nowrap;text-align:center;width:80px;min-height:56px;padding:8px 2px;justify-content:center}.sidebar:not(.rail) .nav-link>span{display:block}.workspace{margin-left:96px;width:calc(100% - 96px)}.pin-panel{grid-template-columns:1fr}}
+@media(max-width:700px){h1,.metric>strong{font-size:26px;line-height:32px}.login-top>small{display:none}.login-page{padding:16px 16px 24px}.sidebar,.sidebar.rail{display:none}.workspace,.workspace.rail{margin:0;width:100%}.topbar{height:52px}.menu-area{padding:16px 16px 180px}.menu-card h3{font-size:14px}.menu-card{min-height:0}.page-content{padding:20px 16px 100px}.login-card{padding:24px 20px}.people{grid-template-columns:1fr 1fr}.dialog-content{padding:22px 20px}.dialog-wide{border-radius:0}.lock-card{padding:28px 20px}}
 /* The workspace is one viewport tall and the main area scrolls inside it, so on the till the order panel always
    spans the full column (as in the design) while the menu scrolls on its own; other pages simply scroll inside main. */
 .workspace{display:flex;flex-direction:column;height:100vh;height:100dvh}

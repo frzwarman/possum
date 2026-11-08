@@ -113,8 +113,8 @@ The CSP, directive by directive:
 | `default-src` | `'self'` | the fallback: same origin only |
 | `script-src` | `'self'` | only bundled scripts. No inline script, no CDN, no `eval` |
 | `style-src` | `'self' 'unsafe-inline'` | inline styles are allowed because the receipt preview sets paper width through inline CSS custom properties |
-| `img-src` | `'self' data: blob:` | bundled images, plus the `data:`/`blob:` URLs used for icons and file downloads |
-| `connect-src` | `'self' https://*.supabase.co` | the app may call its own origin and Supabase — nothing else |
+| `img-src` | `'self' data: blob: https://images.unsplash.com` | bundled images, the `data:`/`blob:` URLs used for icons and file downloads, and the hotlinked Unsplash photos of the demo catalogue |
+| `connect-src` | `'self' https://*.supabase.co https://images.unsplash.com` | the app may call its own origin and Supabase; the service worker may fetch Unsplash photos to cache them offline — nothing else |
 | `worker-src` | `'self'` | the service worker may only come from this origin |
 | `frame-ancestors` | `'none'` | the modern equivalent of `X-Frame-Options: DENY`; both are sent |
 | `base-uri` | `'self'` | an injected `<base>` tag cannot re-point relative URLs |
