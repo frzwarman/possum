@@ -32,6 +32,7 @@ export interface Database { public: { Tables: {
     actor: string
     occurred_at: string
     purchase_id: string | null
+    received_at: string
   }; Insert: never; Update: never; Relationships: [] }
   catalog_items: { Row: {
     restaurant_id: string
@@ -44,6 +45,18 @@ export interface Database { public: { Tables: {
     version: number
     snapshot: Json
     created_at: string
+  }; Insert: never; Update: never; Relationships: [] }
+  counts: { Row: {
+    restaurant_id: string
+    id: string
+    area: string
+    actor: string
+    approver: string | null
+    lines: Json
+    status: string
+    occurred_at: string
+    received_at: string
+    operation_id: string
   }; Insert: never; Update: never; Relationships: [] }
   device_handovers: { Row: {
     id: string
@@ -60,6 +73,7 @@ export interface Database { public: { Tables: {
     enrolled_by: string
     enrolled_at: string
     revoked_at: string | null
+    mode: string
   }; Insert: never; Update: never; Relationships: [] }
   inventory_items: { Row: {
     restaurant_id: string
@@ -68,6 +82,12 @@ export interface Database { public: { Tables: {
     unit: string
     threshold: number
     production: Json | null
+    aliases: Json
+    area: string
+    packs: Json
+    shelf_life: number | null
+    station: string | null
+    updated_at: string
   }; Insert: never; Update: never; Relationships: [] }
   memberships: { Row: {
     restaurant_id: string
@@ -75,6 +95,7 @@ export interface Database { public: { Tables: {
     role: string
     name: string
     active: boolean
+    login: string | null
   }; Insert: never; Update: never; Relationships: [] }
   order_lines: { Row: {
     restaurant_id: string
@@ -135,6 +156,7 @@ export interface Database { public: { Tables: {
     reason: string
     actor: string
     occurred_at: string
+    photo: string | null
   }; Insert: never; Update: never; Relationships: [] }
   refunds: { Row: {
     restaurant_id: string
@@ -152,6 +174,7 @@ export interface Database { public: { Tables: {
     primary_device_id: string | null
     created_at: string
     group_id: string | null
+    settings_at: string
   }; Insert: never; Update: never; Relationships: [] }
   sales_orders: { Row: {
     restaurant_id: string
@@ -177,6 +200,8 @@ export interface Database { public: { Tables: {
     variance: number | null
     cashier: string
     catalog: Json
+    received_at: string
+    variance_approved_by: string | null
   }; Insert: never; Update: never; Relationships: [] }
   stock_balances: { Row: {
     restaurant_id: string | null
@@ -223,4 +248,4 @@ export interface Database { public: { Tables: {
     created_at: string
     updated_at: string
   }; Insert: never; Update: never; Relationships: [] }
-}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string }; Returns: undefined }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }
+}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }

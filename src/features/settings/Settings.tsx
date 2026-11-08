@@ -30,8 +30,10 @@ import {
   menuImportSchema,
   stockImportSchema,
 } from "../../lib/import";
-import type { Ingredient, MenuItem, StockItem } from "../../domain/types";
-import { convert, rupiah, when } from "../../domain/calculate";
+import type { Ingredient, MenuItem, MenuType, OptionGroup, Pack, Station, StockItem } from "../../domain/types";
+import { convert, describeDelta, itemStation, menuType, quantity, rupiah, typeLabel, when } from "../../domain/calculate";
+import { can } from "../../domain/permissions";
+import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { supabase } from "../../lib/supabase";
 import { compressMenuPhoto } from "../../lib/menu-photo";
 import { bootstrap } from "../auth/Login";
@@ -58,7 +60,16 @@ const schema = z.object({
   serviceBps: z.coerce.number<number>().int().min(0).max(10000),
   goLive: z.string().min(10),
   printableWidth: z.coerce.number<number>().min(32).max(76),
+  // Takar: station targets in minutes, the cash gap a cashier may close without a PIN, "running low" portions.
+  stationTablets: z.boolean(),
+  kitchenTarget: z.coerce.number<number>().int().min(1).max(600),
+  barTarget: z.coerce.number<number>().int().min(1).max(600),
+  varianceLimit: z.coerce.number<number>().int().min(0).max(1000000000),
+  lowAt: z.coerce.number<number>().int().min(0).max(999),
 });
+const SIGNS = [{ value: "add", label: "tambah" }, { value: "remove", label: "kurangi / ganti" }];
+const KINDS: [OptionGroup["kind"], string][] = [["add", "Tambahan (boleh beberapa)"], ["swap", "Ganti (pilih satu)"], ["level", "Tingkat (pilih satu)"], ["size", "Ukuran (pilih satu)"]];
+const words = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
 export default function SettingsPage() {
   const {
     settings,
@@ -68,13 +79,26 @@ export default function SettingsPage() {
     commands,
     user,
     manager,
+    costs,
+    shift,
     act,
     outbox,
     sync,
     setError,
     busy,
   } = useApp();
-  const [tab, setTab] = useState("restaurant");
+  // Owner and manager tune the restaurant; chef and admin keep menu and ingredients; everyone has sync and device.
+  const tillLocked = user.primary && Boolean(shift);
+  const settingsRole = can(user.role, "settings") && !tillLocked, catalogRole = can(user.role, "catalog") && !tillLocked;
+  const [tab, setTab] = useState(settingsRole ? "restaurant" : catalogRole ? "menu" : "sync");
+  const [recipeUnit, setRecipeUnit] = useState("");
+  const [effectFor, setEffectFor] = useState<number>();
+  const [effect, setEffect] = useState({ stockId: "", amount: "", unit: "", sign: "add" });
+  const [pack, setPack] = useState({ name: "", amount: "", unit: "" });
+  const [ask, setAsk] = useState<ApprovalRequest>();
+  const [mode, setMode] = useState<"pos" | "station" | "office">(user.role === "owner" ? "pos" : "station");
+  const areas = [...new Set(stockItems.map((x) => x.area).filter((a): a is string => Boolean(a)))];
+  const tags = [...new Set(menu.flatMap((m) => m.tags ?? []))];
   const [storage, setStorage] = useState("Belum diperiksa");
   const [item, setItem] = useState<MenuItem>();
   const [stock, setStock] = useState<StockItem>();
@@ -95,7 +119,7 @@ export default function SettingsPage() {
   const [pinAgain, setPinAgain] = useState("");
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
-    values: settings,
+    values: settings && { ...settings, stationTablets: Boolean(settings.stationTablets), kitchenTarget: settings.stations?.kitchen ?? 15, barTarget: settings.stations?.bar ?? 8, varianceLimit: settings.varianceLimit ?? 10000, lowAt: settings.lowAt ?? 5 },
   });
   const errors = form.formState.errors;
   async function saveSettings(values: z.infer<typeof schema>) {
@@ -104,22 +128,42 @@ export default function SettingsPage() {
       setError("Lebar area cetak harus lebih kecil dari lebar kertas");
       return;
     }
+    const { kitchenTarget, barTarget, varianceLimit, lowAt, stationTablets, ...rest } = values;
     await act(
-      () => commands.settings({ ...settings, ...values, receiptWidth: width }),
+      () => commands.settings({ ...settings, ...rest, receiptWidth: width, stations: { kitchen: kitchenTarget, bar: barTarget }, varianceLimit, lowAt, stationTablets }),
       "Pengaturan tersimpan",
     );
   }
+  // MENU-1 / MENU-7: one form publishes at once; a chef or admin needs a manager's PIN when an active item has no recipe.
+  async function saveItem(approval?: import("../../domain/types").Approval) {
+    if (!item) return;
+    if (!Number.isInteger(item.price) || item.price < 0) { setError("Harga tidak valid"); return; }
+    const next = { ...item, category: typeLabel[menuType(item)], version: item.version + 1 };
+    const catalog = [...menu.filter((m) => m.id !== item.id), next];
+    if (!manager && !approval && catalog.some((m) => m.active && !m.recipe.length)) {
+      setAsk({ action: "publish", what: `Terbitkan menu dengan ${catalog.filter((m) => m.active && !m.recipe.length).length} menu aktif tanpa resep` });
+      return;
+    }
+    await act(async () => {
+      await commands.publish(catalog, stockItems, approval);
+      setItem(undefined);
+    }, "Versi menu tersimpan; struk lama tidak berubah");
+  }
+  // MENU-3: cost, margin and food-cost % from each ingredient's latest purchase price.
+  const recipeCost = (recipe: Ingredient[]) => recipe.every((r) => costs.has(r.stockId)) ? Math.round(recipe.reduce((n, r) => n + r.qty * costs.get(r.stockId)!, 0)) : undefined;
+  const unitsFor = (s?: StockItem) => s ? [{ value: s.unit, label: s.unit }, ...(s.unit === "g" ? [{ value: "kg", label: "kg" }] : s.unit === "ml" ? [{ value: "l", label: "liter" }] : []), ...(s.packs ?? []).map((pk) => ({ value: pk.name, label: `${pk.name} (${quantity(pk.qty)} ${s.unit})` }))] : [{ value: "", label: "Pilih bahan dulu" }];
   function template() {
     download(
       `meja-template-${importType}.csv`,
       importType === "menu"
         ? csv([
-            ["name", "category", "price"],
-            ["Nasi kuning", "Makanan", 18000],
+            ["name", "type", "price"],
+            ["Nasi kuning", "food", 18000],
+            ["Es teh", "beverage", 8000],
           ])
         : csv([
-            ["name", "unit", "quantity", "threshold"],
-            ["Beras", "g", 10000, 2000],
+            ["name", "unit", "quantity", "threshold", "area", "pack_name", "pack_qty"],
+            ["Beras", "g", 10000, 2000, "Dry store", "karung", 25000],
           ]),
       "text/csv",
     );
@@ -157,30 +201,42 @@ export default function SettingsPage() {
       setPreview([]);
     }
   }
-  async function applyImport() {
+  async function applyImport(approval?: import("../../domain/types").Approval) {
     await act(async () => {
       if (importErrors.length || !preview.length)
         throw new Error("Perbaiki CSV dahulu");
       if (importType === "menu") {
-        const added = preview.map((r) => ({
-          id: uid(),
-          name: r.name,
-          category: r.category,
-          price: Number(r.price),
-          active: true,
-          soldOut: false,
-          favorite: false,
-          version: 1,
-          modifiers: [],
-          recipe: [],
-        }));
-        await commands.publish([...menu, ...added], stockItems);
+        const added = preview.map((r) => {
+          const parsed = menuImportSchema.parse(r);
+          return {
+            id: uid(),
+            name: r.name,
+            category: typeLabel[parsed.type],
+            type: parsed.type,
+            station: itemStation({ type: parsed.type, category: "" }),
+            tags: [],
+            aliases: [],
+            groups: [],
+            lowAt: settings?.lowAt ?? 5,
+            price: Number(r.price),
+            active: true,
+            soldOut: false,
+            favorite: false,
+            version: 1,
+            modifiers: [],
+            recipe: [],
+          };
+        });
+        await commands.publish([...menu, ...added], stockItems, approval);
       } else {
         const added = preview.map((r) => ({
           id: uid(),
           name: r.name,
           unit: r.unit as StockItem["unit"],
-          threshold: Math.round(Number(r.threshold) * 1000),
+          threshold: convert(r.threshold || "0", r.unit, r.unit) || 0,
+          area: r.area || "",
+          aliases: [],
+          packs: r.pack_name ? [{ name: r.pack_name, qty: convert(r.pack_qty, r.unit, r.unit) }] : [],
         }));
         await commands.publish(menu, [...stockItems, ...added]);
         for (let i = 0; i < added.length; i++)
@@ -201,7 +257,7 @@ export default function SettingsPage() {
     try {
       const r: Ingredient = {
         stockId: s.id,
-        qty: convert(recipeQty, s.unit, s.unit),
+        qty: convert(recipeQty, recipeUnit || s.unit, s.unit, s.packs),
       };
       setItem({
         ...item,
@@ -237,9 +293,9 @@ export default function SettingsPage() {
       </div>
       <div className="category-tabs">
         {[
-          ...(manager
+          ...(settingsRole ? [["restaurant", "Restoran"]] : []),
+          ...(catalogRole
             ? [
-                ["restaurant", "Restoran"],
                 ["menu", "Menu & resep"],
                 ["stock", "Daftar bahan"],
                 ["import", "Impor CSV"],
@@ -257,7 +313,7 @@ export default function SettingsPage() {
           </button>
         ))}
       </div>
-      {manager && tab === "restaurant" && (
+      {settingsRole && tab === "restaurant" && (
         <div className="settings-columns">
           <form className="panel" onSubmit={form.handleSubmit(saveSettings)}>
             <h2>Identitas restoran</h2>
@@ -326,6 +382,33 @@ export default function SettingsPage() {
                 <input type="number" {...form.register("printableWidth")} />
               </label>
             </div>
+            <div className="form-grid">
+              <label>
+                Target dapur (menit)
+                <input type="number" {...form.register("kitchenTarget")} />
+              </label>
+              <label>
+                Target bar (menit)
+                <input type="number" {...form.register("barTarget")} />
+              </label>
+            </div>
+            <label className="inline-check">
+              <input type="checkbox" {...form.register("stationTablets")} />
+              Tablet dapur & bar menerima tiket (tanpa ini kasir memberi tahu, dan stok berkurang saat bayar)
+            </label>
+            <div className="form-grid">
+              <label>
+                Selisih kas tanpa PIN (Rp)
+                <input type="number" {...form.register("varianceLimit")} />
+              </label>
+              <label>
+                "Hampir habis" di bawah (porsi)
+                <input type="number" {...form.register("lowAt")} />
+              </label>
+            </div>
+            <p className="small muted">
+              Tiket berubah merah setelah target stasiun. Kasir menutup sif tanpa PIN selama selisihnya di bawah batas.
+            </p>
             {Object.entries(errors).map(([key, e]) => (
               <p className="error" key={key}>
                 {key}: {e?.message}
@@ -398,7 +481,7 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-      {manager && tab === "menu" && (
+      {catalogRole && tab === "menu" && (
         <article className="panel">
           <div className="panel-heading">
             <h2>Menu restoran</h2>
@@ -408,6 +491,12 @@ export default function SettingsPage() {
                   id: uid(),
                   name: "",
                   category: "Makanan",
+                  type: "food",
+                  station: "kitchen",
+                  tags: [],
+                  aliases: [],
+                  groups: [],
+                  lowAt: settings?.lowAt ?? 5,
                   price: 0,
                   active: true,
                   soldOut: false,
@@ -431,12 +520,12 @@ export default function SettingsPage() {
               <div>
                 <strong>{m.name}</strong>
                 <p className="small muted">
-                  {m.category} · {rupiah(m.price)} ·{" "}
-                  {m.photo ? "Dengan foto" : "Gambar standar"} ·{" "}
-                  {m.recipe.length ? "Resep dipantau" : "Stok tidak dipantau"} ·
-                  v{m.version}
+                  {typeLabel[menuType(m)]} · {itemStation(m) === "bar" ? "Bar" : "Dapur"} · {rupiah(m.price)} ·{" "}
+                  {m.photo ? "Dengan foto" : "Gambar standar"}
+                  {m.tags?.length ? ` · ${m.tags.join(", ")}` : ""} · v{m.version}
                 </p>
               </div>
+              {!m.recipe.length && m.active && <span className="badge badge-warning">Belum ada resep</span>}
               <span className="badge">
                 {!m.active ? "Nonaktif" : m.soldOut ? "Habis" : "Aktif"}
               </span>
@@ -450,13 +539,13 @@ export default function SettingsPage() {
           ))}
         </article>
       )}
-      {manager && tab === "stock" && (
+      {catalogRole && tab === "stock" && (
         <article className="panel">
           <div className="panel-heading">
             <h2>Bahan dan satuan dasar</h2>
             <Button
               onClick={() =>
-                setStock({ id: uid(), name: "", unit: "pcs", threshold: 0 })
+                setStock({ id: uid(), name: "", unit: "pcs", threshold: 0, aliases: [], area: "", packs: [] })
               }
             >
               <Plus size={17} /> Tambah bahan
@@ -467,7 +556,9 @@ export default function SettingsPage() {
               <div>
                 <strong>{s.name}</strong>
                 <p className="small muted">
-                  {s.unit} · Batas minimum {s.threshold / 1000}
+                  {s.unit} · par {quantity(s.threshold)} {s.unit}{s.area ? ` · ${s.area}` : ""}
+                  {s.packs?.length ? ` · ${s.packs.map((pk) => `1 ${pk.name} = ${quantity(pk.qty)} ${s.unit}`).join(", ")}` : ""}
+                  {s.production ? " · bahan olahan" : ""}
                 </p>
               </div>
               <Button variant="secondary" onClick={() => setStock({ ...s })}>
@@ -477,7 +568,7 @@ export default function SettingsPage() {
           ))}
         </article>
       )}
-      {manager && tab === "import" && (
+      {catalogRole && tab === "import" && (
         <article className="panel">
           <h2>Impor dengan pratinjau</h2>
           <p className="muted">
@@ -525,7 +616,7 @@ export default function SettingsPage() {
               <Button
                 loading={busy}
                 disabled={busy || importErrors.length > 0}
-                onClick={() => void applyImport()}
+                onClick={() => (!manager && importType === "menu" ? setAsk({ action: "publish", what: `Impor ${preview.length} menu tanpa resep` }) : void applyImport())}
               >
                 Konfirmasi impor {preview.length} baris
               </Button>
@@ -605,6 +696,20 @@ export default function SettingsPage() {
                         }
                       >
                         Coba ulang operasi asli
+                      </Button>
+                    )}
+                    {o.state === "rejected" && manager && (
+                      <Button
+                        variant="destructive"
+                        onClick={() =>
+                          void act(async () => {
+                            download("takar-pemulihan.json", JSON.stringify(await exportData(db, true), null, 2));
+                            await db.outbox.delete(o.id);
+                            await sync();
+                          }, "Operasi dibuang; catatan lokalnya tetap ada di ekspor pemulihan")
+                        }
+                      >
+                        Buang operasi ini
                       </Button>
                     )}
                   </div>
@@ -718,11 +823,37 @@ export default function SettingsPage() {
             </p>
             <p className="small">
               Perangkat:{" "}
-              {user.primary ? "Kasir utama" : "Dashboard / administrasi"}
+              {user.primary ? "Kasir utama" : user.mode === "station" ? "Stasiun (dapur / bar)" : user.mode === "office" ? "Back office" : "Belum dipasangkan (hanya membaca)"}
             </p>
+            {manager && !user.demo && (
+              <>
+                <Select
+                  label="Pasangkan perangkat ini sebagai"
+                  value={mode}
+                  onChange={(v) => setMode(v as typeof mode)}
+                  options={[{ value: "station", label: "Stasiun (tablet dapur / bar)" }, { value: "office", label: "Back office (laptop)" }, ...(user.role === "owner" ? [{ value: "pos", label: "Kasir utama" }] : [])]}
+                />
+                {mode !== "pos" && (
+                  <Button
+                    className="full"
+                    loading={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        const { error } = await supabase!.rpc("enroll_device", { device_id: user.deviceId, mode });
+                        if (error) throw error;
+                        localStorage.setItem("meja-identity", JSON.stringify(await bootstrap(user.id, user.deviceId)));
+                        location.reload();
+                      })
+                    }
+                  >
+                    Pasangkan sebagai {mode === "station" ? "stasiun" : "back office"}
+                  </Button>
+                )}
+              </>
+            )}
             {user.role === "owner" ? (
               <>
-                {!user.primary && !user.demo && (
+                {!user.primary && !user.demo && mode === "pos" && (
                   <Button className="full mt" onClick={() => setClaim(true)}>
                     Jadikan perangkat ini kasir utama
                   </Button>
@@ -831,21 +962,41 @@ export default function SettingsPage() {
               />
             </label>
             <div className="form-grid">
-              <label>
-                Kategori
-                <input
-                  value={item.category}
-                  onChange={(e) =>
-                    setItem({ ...item, category: e.target.value })
-                  }
-                />
-              </label>
+              <Select
+                label="Jenis"
+                value={menuType(item)}
+                onChange={(v) => setItem({ ...item, type: v as MenuType, category: typeLabel[v as MenuType], station: v === "beverage" ? "bar" : "kitchen" })}
+                options={(Object.keys(typeLabel) as MenuType[]).map((t) => ({ value: t, label: typeLabel[t] }))}
+              />
               <label>
                 Harga
                 <Money
                   value={String(item.price)}
                   onChange={(v) => setItem({ ...item, price: Number(v || 0) })}
                 />
+              </label>
+            </div>
+            <div className="form-grid">
+              <Select
+                label="Stasiun"
+                value={itemStation(item)}
+                onChange={(v) => setItem({ ...item, station: v as Station })}
+                options={[{ value: "kitchen", label: "Dapur" }, { value: "bar", label: "Bar" }]}
+              />
+              <label>
+                "Hampir habis" di bawah (porsi)
+                <input type="number" inputMode="numeric" value={item.lowAt ?? settings?.lowAt ?? 5} onChange={(e) => setItem({ ...item, lowAt: Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
+              </label>
+            </div>
+            <div className="form-grid">
+              <label>
+                Tag (pisahkan dengan koma)
+                <input list="takar-tags" value={(item.tags ?? []).join(", ")} onChange={(e) => setItem({ ...item, tags: words(e.target.value) })} placeholder="Signature, Kopi" />
+                <datalist id="takar-tags">{tags.map((t) => <option key={t} value={t} />)}</datalist>
+              </label>
+              <label>
+                Nama lain untuk pencarian
+                <input value={(item.aliases ?? []).join(", ")} onChange={(e) => setItem({ ...item, aliases: words(e.target.value) })} placeholder="americano panas, kopi hitam" />
               </label>
             </div>
             <div className="button-row">
@@ -865,6 +1016,10 @@ export default function SettingsPage() {
                       : "Favorit"}
                 </label>
               ))}
+              <label className="inline-check">
+                <input type="checkbox" checked={Boolean(item.ignoreStock)} onChange={(e) => setItem({ ...item, ignoreStock: e.target.checked })} />
+                Tetap jual walau bahan habis
+              </label>
             </div>
             <h3 className="mt">Resep per porsi</h3>
             <p className="small muted">
@@ -875,8 +1030,9 @@ export default function SettingsPage() {
               <div className="bill-row" key={r.stockId}>
                 <span>
                   {stockItems.find((s) => s.id === r.stockId)?.name}:{" "}
-                  {r.qty / 1000}{" "}
+                  {quantity(r.qty)}{" "}
                   {stockItems.find((s) => s.id === r.stockId)?.unit}
+                  {costs.has(r.stockId) && <small className="muted"> · {rupiah(Math.round(r.qty * costs.get(r.stockId)!))}</small>}
                 </span>
                 <button
                   className="text-button"
@@ -907,7 +1063,7 @@ export default function SettingsPage() {
                 ]}
               />
               <label>
-                Jumlah satuan dasar
+                Jumlah
                 <input
                   inputMode="decimal"
                   value={recipeQty}
@@ -915,9 +1071,28 @@ export default function SettingsPage() {
                 />
               </label>
             </div>
+            <Select label="Satuan" value={recipeUnit || stockItems.find((s) => s.id === recipeStock)?.unit || ""} onChange={setRecipeUnit} options={unitsFor(stockItems.find((s) => s.id === recipeStock))} />
             <Button variant="secondary" onClick={addRecipe}>
               Tambah bahan resep
             </Button>
+            <p className="callout">
+              {recipeCost(item.recipe) === undefined
+                ? "Biaya bahan belum lengkap: harga sebagian bahan belum pernah tercatat."
+                : `Biaya bahan ${rupiah(recipeCost(item.recipe)!)} · margin ${rupiah(item.price - recipeCost(item.recipe)!)} · food cost ${item.price ? Math.round((recipeCost(item.recipe)! / item.price) * 100) : 0}%`}
+            </p>
+            <h3 className="mt">Grup pilihan</h3>
+            <p className="small muted">Ukuran, susu, gula, tambahan. Pilihan "ganti" dan "tingkat" mengurangi bahan dasar, "tambahan" menambah.</p>
+            {(item.groups ?? []).map((g, gi) => (
+              <div className="form-grid" key={g.id}>
+                <label>
+                  Nama grup
+                  <input value={g.name} onChange={(e) => setItem({ ...item, groups: item.groups!.map((x, j) => (j === gi ? { ...x, name: e.target.value } : x)) })} />
+                </label>
+                <Select label="Jenis grup" value={g.kind} onChange={(v) => setItem({ ...item, groups: item.groups!.map((x, j) => (j === gi ? { ...x, kind: v as OptionGroup["kind"], required: v !== "add" } : x)) })} options={KINDS.map(([value, label]) => ({ value, label }))} />
+                <button className="text-button" onClick={() => setItem({ ...item, groups: item.groups!.filter((_, j) => j !== gi), modifiers: item.modifiers.map((m) => (m.group === g.id ? { ...m, group: undefined } : m)) })}>Hapus grup</button>
+              </div>
+            ))}
+            <Button variant="secondary" onClick={() => setItem({ ...item, groups: [...(item.groups ?? []), { id: uid(), name: "", kind: "add" }] })}>Tambah grup pilihan</Button>
             <h3 className="mt">Tambahan</h3>
             {item.modifiers.map((m, i) => (
               <div className="modifier-editor" key={m.id}>
@@ -949,32 +1124,57 @@ export default function SettingsPage() {
                     }
                   />
                 </label>
-                <Select
-                  label="Bahan tambahan (1 satuan dasar)"
-                  value={m.recipe[0]?.stockId || ""}
-                  onChange={(value) =>
-                    setItem({
-                      ...item,
-                      modifiers: item.modifiers.map((mod, j) =>
-                        j === i
-                          ? {
-                              ...mod,
-                              recipe: value
-                                ? [{ stockId: value, qty: 1000 }]
-                                : [],
-                            }
-                          : mod,
-                      ),
-                    })
-                  }
-                  options={[
-                    { value: "", label: "Tidak dipantau" },
-                    ...stockItems.map((s) => ({
-                      value: s.id,
-                      label: `${s.name} (${s.unit})`,
-                    })),
-                  ]}
-                />
+                {(item.groups ?? []).length > 0 && (
+                  <Select
+                    label="Grup"
+                    value={m.group ?? ""}
+                    onChange={(value) => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, group: value || undefined } : mod)) })}
+                    options={[{ value: "", label: "Tanpa grup (tambahan lepas)" }, ...(item.groups ?? []).map((g) => ({ value: g.id, label: g.name || "(grup tanpa nama)" }))]}
+                  />
+                )}
+                {m.group && item.groups?.find((g) => g.id === m.group)?.kind !== "add" && (
+                  <label className="inline-check">
+                    <input type="checkbox" checked={Boolean(m.default)} onChange={(e) => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, default: e.target.checked } : mod.group === m.group && e.target.checked ? { ...mod, default: false } : mod)) })} />
+                    Pilihan bawaan
+                  </label>
+                )}
+                <p className="small muted">Efek ke stok: {describeDelta(m.recipe, stockItems) || "tidak ada"}</p>
+                {m.recipe.map((r) => (
+                  <div className="bill-row" key={r.stockId}>
+                    <span>{r.qty > 0 ? "+" : "−"}{quantity(Math.abs(r.qty))} {stockItems.find((s) => s.id === r.stockId)?.unit} {stockItems.find((s) => s.id === r.stockId)?.name}</span>
+                    <button className="text-button" onClick={() => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, recipe: mod.recipe.filter((x) => x.stockId !== r.stockId) } : mod)) })}>Hapus</button>
+                  </div>
+                ))}
+                {effectFor === i ? (
+                  <div className="form-grid">
+                    <Select label="Bahan" value={effect.stockId} onChange={(v) => setEffect({ ...effect, stockId: v, unit: stockItems.find((s) => s.id === v)?.unit ?? "" })} options={[{ value: "", label: "Pilih bahan" }, ...stockItems.map((s) => ({ value: s.id, label: `${s.name} (${s.unit})` }))]} />
+                    <Select label="Efek" value={effect.sign} onChange={(v) => setEffect({ ...effect, sign: v })} options={SIGNS} />
+                    <label>
+                      Jumlah
+                      <input inputMode="decimal" value={effect.amount} onChange={(e) => setEffect({ ...effect, amount: e.target.value })} />
+                    </label>
+                    <Select label="Satuan" value={effect.unit} onChange={(v) => setEffect({ ...effect, unit: v })} options={unitsFor(stockItems.find((s) => s.id === effect.stockId))} />
+                    <Button
+                      variant="secondary"
+                      disabled={!effect.stockId || !effect.amount}
+                      onClick={() => {
+                        const s = stockItems.find((x) => x.id === effect.stockId)!;
+                        try {
+                          const qty = convert(effect.amount, effect.unit || s.unit, s.unit, s.packs) * (effect.sign === "add" ? 1 : -1);
+                          setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, recipe: [...mod.recipe.filter((x) => x.stockId !== s.id), { stockId: s.id, qty }] } : mod)) });
+                          setEffect({ stockId: "", amount: "", unit: "", sign: "add" });
+                          setEffectFor(undefined);
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Jumlah tidak valid");
+                        }
+                      }}
+                    >
+                      Simpan efek
+                    </Button>
+                  </div>
+                ) : (
+                  <button className="text-button" onClick={() => { setEffectFor(i); setEffect({ stockId: "", amount: "", unit: "", sign: "add" }); }}>Tambah efek bahan</button>
+                )}
                 <button
                   className="text-button"
                   onClick={() =>
@@ -1003,24 +1203,16 @@ export default function SettingsPage() {
             >
               Tambah pilihan
             </Button>
+            {item.active && !item.recipe.length && (
+              <p className="callout">
+                <AlertTriangle size={18} /> Menu aktif tanpa resep tidak memotong stok. {manager ? "" : "Menerbitkannya perlu PIN manajer."}
+              </p>
+            )}
             <Button
               className="full mt"
               loading={busy}
-              disabled={busy || !item.name || !item.category}
-              onClick={() =>
-                void act(async () => {
-                  if (!Number.isInteger(item.price) || item.price < 0)
-                    throw new Error("Harga tidak valid");
-                  await commands.publish(
-                    [
-                      ...menu.filter((m) => m.id !== item.id),
-                      { ...item, version: item.version + 1 },
-                    ],
-                    stockItems,
-                  );
-                  setItem(undefined);
-                }, "Versi menu tersimpan; struk lama tidak berubah")
-              }
+              disabled={busy || !item.name}
+              onClick={() => void saveItem()}
             >
               Simpan versi menu
             </Button>
@@ -1054,20 +1246,65 @@ export default function SettingsPage() {
                 { value: "ml", label: "mililiter" },
               ]}
             />
+            <div className="form-grid">
+              <label>
+                Par (batas minimum, {stock.unit})
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={stock.threshold / 1000}
+                  onChange={(e) =>
+                    setStock({
+                      ...stock,
+                      threshold: Math.round(Number(e.target.value) * 1000),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Area simpan
+                <input list="takar-areas" value={stock.area ?? ""} onChange={(e) => setStock({ ...stock, area: e.target.value })} placeholder="Kulkas bar, Dry store, Freezer" />
+                <datalist id="takar-areas">{areas.map((a) => <option key={a} value={a} />)}</datalist>
+              </label>
+            </div>
             <label>
-              Batas stok minimum
-              <input
-                type="number"
-                inputMode="decimal"
-                value={stock.threshold / 1000}
-                onChange={(e) =>
-                  setStock({
-                    ...stock,
-                    threshold: Math.round(Number(e.target.value) * 1000),
-                  })
-                }
-              />
+              Nama lain untuk pencarian
+              <input value={(stock.aliases ?? []).join(", ")} onChange={(e) => setStock({ ...stock, aliases: words(e.target.value) })} placeholder="fresh milk, susu cair" />
             </label>
+            <h3 className="mt">Kemasan beli</h3>
+            <p className="small muted">Kiriman dicatat dalam kemasan, stok tetap dalam {stock.unit}.</p>
+            {(stock.packs ?? []).map((pk) => (
+              <div className="bill-row" key={pk.name}>
+                <span>1 {pk.name} = {quantity(pk.qty)} {stock.unit}</span>
+                <button className="text-button" onClick={() => setStock({ ...stock, packs: stock.packs!.filter((x) => x.name !== pk.name) })}>Hapus</button>
+              </div>
+            ))}
+            <div className="form-grid">
+              <label>
+                Nama kemasan
+                <input value={pack.name} onChange={(e) => setPack({ ...pack, name: e.target.value })} placeholder="karton" />
+              </label>
+              <label>
+                Isi per kemasan
+                <input inputMode="decimal" value={pack.amount} onChange={(e) => setPack({ ...pack, amount: e.target.value })} placeholder="12" />
+              </label>
+            </div>
+            <Select label="Satuan isi" value={pack.unit || stock.unit} onChange={(v) => setPack({ ...pack, unit: v })} options={[{ value: stock.unit, label: stock.unit }, ...(stock.unit === "g" ? [{ value: "kg", label: "kg" }] : stock.unit === "ml" ? [{ value: "l", label: "liter" }] : [])]} />
+            <Button
+              variant="secondary"
+              disabled={!pack.name.trim() || !pack.amount}
+              onClick={() => {
+                try {
+                  const qty = convert(pack.amount, pack.unit || stock.unit, stock.unit);
+                  setStock({ ...stock, packs: [...(stock.packs ?? []).filter((x) => x.name !== pack.name.trim()), { name: pack.name.trim(), qty } as Pack] });
+                  setPack({ name: "", amount: "", unit: "" });
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Isi kemasan tidak valid");
+                }
+              }}
+            >
+              Tambah kemasan
+            </Button>
             <label className="inline-check mt">
               <input
                 type="checkbox"
@@ -1163,6 +1400,13 @@ export default function SettingsPage() {
                     }
                   />
                 </label>
+                <div className="form-grid">
+                  <label>
+                    Masa simpan (jam)
+                    <input type="number" inputMode="numeric" value={stock.shelfLife ?? ""} onChange={(e) => setStock({ ...stock, shelfLife: e.target.value ? Math.max(1, Math.round(Number(e.target.value))) : undefined })} placeholder="48" />
+                  </label>
+                  <Select label="Dibuat di" value={stock.station ?? "kitchen"} onChange={(v) => setStock({ ...stock, station: v as Station })} options={[{ value: "kitchen", label: "Dapur" }, { value: "bar", label: "Bar" }]} />
+                </div>
               </>
             )}
             <Button
@@ -1183,6 +1427,7 @@ export default function SettingsPage() {
           </>
         )}
       </Dialog>
+      <ApprovalDialog request={ask} onClose={() => setAsk(undefined)} onApproved={(a) => { setAsk(undefined); if (item) void saveItem(a); else void applyImport(a); }} />
       <Dialog
         open={pinDialog}
         onOpenChange={setPinDialog}

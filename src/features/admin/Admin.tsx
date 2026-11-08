@@ -18,7 +18,7 @@ export default function Admin(){
  async function load(){const {data:{session}}=await supabase!.auth.getSession();if(!session){setMe(null);return}
   const {data,error:e}=await supabase!.from('memberships').select('user_id,restaurant_id,name,role,active').order('name');if(e)throw e
   const rows=data as Staff[],mine=rows.find(r=>r.user_id===session.user.id)
-  if(!mine||!mine.active||mine.role!=='owner'){await supabase!.auth.signOut();setMe(null);throw new Error('Area ini hanya untuk pemilik restoran. Staf masuk lewat halaman kasir.')}
+  if(!mine||!mine.active||!['owner','manager'].includes(mine.role)){await supabase!.auth.signOut();setMe(null);throw new Error('Area ini hanya untuk pemilik dan manajer. Staf masuk lewat halaman kasir.')}
   setMe(mine);setStaff(rows)}
  async function run(action:()=>Promise<void>,message?:string){if(busy)return;setBusy(true);setError('');setNotice('');try{await action();if(message)setNotice(message)}catch(e){setError(e instanceof Error?e.message:'Tindakan gagal')}finally{setBusy(false)}}
  // busy mulai true: daftar staf tampil sebagai skeleton sampai pembacaan pertama selesai.
@@ -52,7 +52,7 @@ export default function Admin(){
    <p className="small muted">PIN manajer: kasir tetap masuk, manajer atau pemilik mengetik PIN-nya di kasir untuk satu tindakan itu. Setiap manajer membuat PIN sendiri di Lainnya → PIN persetujuan.</p></article>
   <p className="callout">Menonaktifkan akun berlaku di server: sif yang sedang berjalan tetap harus ditutup dan operasi yang belum tersinkron dari perangkat itu akan ditolak. Nonaktifkan setelah sif selesai.</p>
   <article className="panel"><div className="panel-heading"><h2><Terminal size={17}/> Akun baru dan sandi</h2></div><p className="muted">Pendaftaran publik dimatikan. Membuat akun, mengganti sandi, dan melihat email butuh kunci service role yang hanya ada di terminal pemilik — tidak pernah di aplikasi.</p>
-  <div className="code-block"><code>{`pnpm staff add <email> <peran> <nama> --restaurant ${me.restaurant_id}\npnpm staff reset-password <email>\npnpm staff list`}</code></div>
+  <div className="code-block"><code>{`pnpm staff add <email> <peran> <nama> --restaurant ${me.restaurant_id} --pin 482915\npnpm staff reset-password <email> --pin 102030\npnpm staff list`}</code></div>
   <p className="small muted">Sandi awal ditampilkan sekali. Serahkan langsung ke staf, jangan lewat chat atau email.</p></article>
   {error&&<p role="alert" className="error">{error}</p>}</main>
  {notice&&<div className="toast" role="status"><span className="status-dot"/>{notice}</div>}</div>

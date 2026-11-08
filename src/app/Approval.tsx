@@ -4,6 +4,7 @@ import { useApp } from "./context";
 import { Dialog } from "../components/ui/dialog";
 import { Select } from "../components/ui/select";
 import { Button } from "../components/ui/button";
+import { PinPad } from "../components/ui/pinpad";
 import { DEMO_PIN } from "../lib/commands";
 import type { Approval, ApprovalAction } from "../domain/types";
 export interface ApprovalRequest {
@@ -72,18 +73,7 @@ export function ApprovalDialog({
         options={approvers.map((a) => ({ value: a.id, label: a.name }))}
         placeholder="Belum ada manajer"
       />
-      <label>
-        PIN persetujuan
-        <input
-          type="password"
-          inputMode="numeric"
-          autoComplete="off"
-          maxLength={6}
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-          onKeyDown={(e) => e.key === "Enter" && pin.length === 6 && void approve()}
-        />
-      </label>
+      <PinPad label="PIN persetujuan" value={pin} onChange={setPin} onSubmit={() => void approve()} autoFocus={false} />
       {user.demo && <p className="small muted">Demo: PIN {DEMO_PIN}</p>}
       {error && (
         <p className="error" role="alert">
@@ -92,6 +82,7 @@ export function ApprovalDialog({
       )}
       <Button
         className="full"
+        variant={request && ["void", "refund"].includes(request.action) ? "destructive" : "default"}
         loading={busy}
         disabled={busy || !who || pin.length !== 6}
         onClick={() => void approve()}

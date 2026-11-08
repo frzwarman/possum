@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { FileText, Plus, Trash2, Truck, UserRound } from "lucide-react";
 import { useApp } from "../../app/context";
+import { can } from "../../domain/permissions";
 import { DocumentDialog, whatsappNumber } from "../../app/Document";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
@@ -14,7 +15,7 @@ const status = { ordered: "Dipesan", partial: "Sebagian diterima", received: "Se
 type Source = Payment["from"] | "unpaid";
 // Order from a supplier, receive each delivery into stock as it arrives, and pay what is owed.
 export default function Purchases() {
-  const { purchaseOrders, suppliers, stockItems, settings, commands, act, busy, manager, shift, setError } = useApp();
+  const { purchaseOrders, suppliers, stockItems, settings, commands, act, busy, shift, setError, user } = useApp();
   const [tab, setTab] = useState("open");
   const [draft, setDraft] = useState<{ id?: string; supplier: string; note: string; lines: PurchaseLine[] }>();
   const [line, setLine] = useState({ stockId: "", amount: "", unit: "", cost: "" });
@@ -25,7 +26,7 @@ export default function Purchases() {
   const [reason, setReason] = useState("");
   const [supplier, setSupplier] = useState<Supplier>();
   const [printing, setPrinting] = useState<PurchaseOrder>();
-  if (!manager) return <Navigate to="/pos" />;
+  if (!can(user.role, "documents")) return <Navigate to="/pos" />;
   const item = (id: string) => stockItems.find((s) => s.id === id);
   const amount = (stockId: string, qty: number) => `${quantity(qty)} ${item(stockId)?.unit ?? ""}`;
   const owed = (p: PurchaseOrder) => receivedValue(p) - paidValue(p);
@@ -75,7 +76,8 @@ export default function Purchases() {
     if (!receiving) return;
     try {
       const lines = receiving.po.lines.flatMap((l, i) =>
-        Number(receiving.amounts[i] || 0) > 0
+        // Blank or zero = not delivered; anything else is validated by convert() ("2,5" is fine, "25 kg" is not).
+        /[1-9]/.test(receiving.amounts[i] || "")
           ? [{ stockId: l.stockId, qty: convert(receiving.amounts[i], item(l.stockId)!.unit, item(l.stockId)!.unit), cost: Number(receiving.costs[i] || 0) }]
           : [],
       );

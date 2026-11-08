@@ -100,3 +100,49 @@ describe('backoff and rejection',()=>{
   expect(await db.outbox.where('state').equals('pending').count()).toBe(1)
  })
 })
+describe('pull: what other paired devices did', () => {
+  const empty = (now: string) => ({ now, device: { mode: 'pos', enrolled: true, primary: true }, orders: [], shifts: [], cash: [], movements: [], counts: [] })
+  it('merges pulled records, never double counts a movement it already has, and skips a record with a pending local change', async () => {
+    const user = identity()
+    const { db, commands } = await seed(user)
+    const order = await sale(commands)
+    await db.meta.put({ id: 'pullCursor', value: new Date().toISOString() })
+    const { transport } = recorder()
+    await synchronize(db, user, transport, async () => empty(new Date().toISOString()))
+    const mine = await db.movements.where('recordId').equals(order.id).toArray()
+    await commands.closeShift(200000) // pending until the next push: the server's older copy must not win
+    const other = { ...order, id: 'order-from-server', label: 'Pager 99', shiftId: 'shift-elsewhere' }
+    const pulled = { ...empty(new Date().toISOString()), orders: [other, { ...order, label: 'SERVER' }], movements: mine.map((m) => ({ ...m, cost: 0 })) }
+    const since: string[] = []
+    await synchronize(db, user, async () => { throw boom('Failed to fetch', 'Network') }, async (s) => { since.push(s); return pulled })
+    expect(await db.movements.where('recordId').equals(order.id).count()).toBe(mine.length)
+    expect((await db.orders.get('order-from-server'))?.label).toBe('Pager 99')
+    expect((await db.orders.get(order.id))?.label).toBe('SERVER')
+    expect((await db.meta.get('pullCursor'))?.value).toBe(pulled.now)
+    expect(Date.parse(pulled.now) - Date.parse(since[0])).toBeGreaterThanOrEqual(10000) // overlap covers a write that committed after an earlier pull
+    const [closed] = await db.shifts.toArray()
+    await synchronize(db, user, async () => { throw boom('Failed to fetch', 'Network') }, async () => ({ ...empty(new Date().toISOString()), shifts: [{ ...closed, status: 'open', opening: 1 }] }))
+    expect([(await db.shifts.get(closed.id))?.opening, (await db.shifts.get(closed.id))?.status]).toEqual([200000, 'closed'])
+  })
+  it('replaces the catalog from the server unless a local publish is still waiting', async () => {
+    const user = identity()
+    const { db, commands } = await seed(user)
+    await db.meta.put({ id: 'pullCursor', value: new Date().toISOString() })
+    const catalog = { menu: [{ ...(await db.menu.get('es-teh'))!, price: 7000, version: 2 }], stock: await db.stock.toArray() }
+    await synchronize(db, user, recorder().transport, async () => ({ ...empty(new Date().toISOString()), catalog }))
+    expect([await db.menu.count(), (await db.menu.get('es-teh'))?.price]).toEqual([1, 7000])
+    await commands.publish([{ ...(await db.menu.get('es-teh'))!, price: 8000, version: 3 }], await db.stock.toArray())
+    await synchronize(db, user, async () => { throw boom('Failed to fetch', 'Network') }, async () => ({ ...empty(new Date().toISOString()), catalog }))
+    expect((await db.menu.get('es-teh'))?.price).toBe(8000)
+  })
+  it('does not pull before the first bootstrap set a cursor', async () => {
+    const user = identity()
+    const { db, commands } = await seed(user)
+    await commands.openShift(200000)
+    let pulls = 0
+    await synchronize(db, user, recorder().transport, async () => { pulls++; return empty(new Date().toISOString()) })
+    expect(pulls).toBe(0)
+    // an installation upgraded in place gets a cursor now, so it pulls from the next tick on
+    expect((await db.meta.get('pullCursor'))?.value).toBeTruthy()
+  })
+})

@@ -17,11 +17,12 @@ async function approveWith(page: Page, approver: string, pin = '123456') {
   return dialog
 }
 
-test('a cashier sees only the till: no stock, no sales figures, and counts the drawer blind', async ({ page }) => {
+test('a cashier sees the till and stock work: no sales figures, and counts the drawer blind', async ({ page }) => {
   await demoAs(page, 'Kasir')
   const nav = page.locator('.sidebar')
-  await expect(nav.getByRole('link', { name: 'Stok' })).toHaveCount(0)
-  for (const name of ['Laporan', 'Penjualan', 'Katering', 'Pembelian', 'Produksi', 'Transfer']) await expect(nav.getByRole('link', { name })).toHaveCount(0)
+  // Pilot: the cashier keeps stock between orders (waste, batches, counts) but never sees money or documents.
+  for (const name of ['Stok', 'Produksi', 'Hitung stok']) await expect(nav.getByRole('link', { name, exact: true })).toBeVisible()
+  for (const name of ['Laporan', 'Penjualan', 'Katering', 'Pembelian', 'Transfer', 'Hari ini']) await expect(nav.getByRole('link', { name })).toHaveCount(0)
   await openShift(page)
   await addItem(page, 'Es teh manis')
   await sell(page)
@@ -46,14 +47,15 @@ test('a cashier sees only the till: no stock, no sales figures, and counts the d
   await expect(closing).toBeHidden()
   await expect(page.locator('.history-list')).toContainText(/Dihitung Rp\s*204\.000/)
   await expect(page.locator('.history-list')).not.toContainText('Selisih')
+  // Pilot: the cashier's Stock tab is the real inventory page, with waste as the only movement they record.
   await page.goto('/inventory')
-  await expect(page.getByRole('heading', { name: 'Kasir', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Stok', level: 1 })).toBeVisible()
 })
 
 test("a cashier's discount and void wait for a manager's PIN, and the approver is recorded", async ({ page }) => {
   await demoAs(page, 'Kasir')
   await openShift(page)
-  await cart(page).getByLabel(/Meja \/ nama pesanan/).fill('Meja 4')
+  await cart(page).getByLabel(/Nomor pager/).fill('Meja 4')
   await addItem(page, 'Es teh manis')
   await cart(page).getByRole('button', { name: 'Tambah diskon' }).click()
   const discount = page.getByRole('dialog', { name: 'Diskon manajer' })
@@ -66,8 +68,8 @@ test("a cashier's discount and void wait for a manager's PIN, and the approver i
   await approveWith(page, 'Pemilik Demo')
   await expect(approval).toBeHidden()
   await expect(cart(page).locator('.bill-total')).toContainText(/Rp\s*5\.000/)
-  await cart(page).getByRole('button', { name: /Ke dapur/ }).click()
-  await expect(cart(page).getByText(/Dikirim ke dapur/)).toBeVisible()
+  await cart(page).getByRole('button', { name: /Ke stasiun/ }).click()
+  await expect(cart(page).getByText(/Dikirim/)).toBeVisible()
   await go(page, 'Pesanan')
   await page.locator('.order-card').filter({ hasText: 'Meja 4' }).getByRole('button', { name: 'Detail' }).click()
   const detail = page.getByRole('dialog', { name: 'Meja 4' })
@@ -85,7 +87,7 @@ test("a cashier's discount and void wait for a manager's PIN, and the approver i
 test('the owner sees every correction with who asked and who approved it', async ({ page }) => {
   await demoAs(page, 'Pemilik · super admin')
   await openShift(page)
-  await cart(page).getByLabel(/Meja \/ nama pesanan/).fill('Meja 8')
+  await cart(page).getByLabel(/Nomor pager/).fill('Meja 8')
   await addItem(page, 'Es teh manis')
   await cart(page).getByRole('button', { name: 'Tambah diskon' }).click()
   const discount = page.getByRole('dialog', { name: 'Diskon manajer' })
@@ -95,7 +97,12 @@ test('the owner sees every correction with who asked and who approved it', async
   await expect(page.getByRole('dialog', { name: 'Persetujuan manajer' })).toHaveCount(0) // the owner approves their own
   await sell(page)
   await page.keyboard.press('Escape')
-  await go(page, 'Laporan')
+  // The till shows no manager figures while the shift is open; close it, then the back office is back.
+  await go(page, 'Sif & kas')
+  await page.getByRole('button', { name: 'Tutup sif' }).click()
+  await page.getByRole('dialog', { name: 'Tutup sif' }).getByLabel(/Uang tunai yang dihitung/).fill('205000')
+  await page.getByRole('dialog', { name: 'Tutup sif' }).getByRole('button', { name: 'Konfirmasi tutup sif' }).click()
+  await expect(page.getByRole('heading', { name: 'Laporan & kas' })).toBeVisible()
   const audit = page.locator('.panel').filter({ hasText: 'Koreksi & persetujuan' })
   await expect(audit).toContainText('Diskon Rp1.000 · Meja 8')
   await expect(audit).toContainText('Teman pemilik · kasir Pemilik Demo · disetujui Pemilik Demo')

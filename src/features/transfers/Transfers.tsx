@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { ArrowLeftRight, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useApp } from "../../app/context";
+import { can } from "../../domain/permissions";
 import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/select";
 import { Dialog } from "../../components/ui/dialog";
@@ -10,7 +11,7 @@ import type { Transfer } from "../../domain/types";
 const status = { sent: "Dalam perjalanan", received: "Diterima", cancelled: "Dibatalkan" };
 // Stock leaves this outlet when sent and is in transit until the other outlet books it in.
 export default function Transfers() {
-  const { transfers, outlets, stockItems, user, settings, commands, act, busy, manager, setError } = useApp();
+  const { transfers, outlets, stockItems, user, settings, commands, act, busy, setError } = useApp();
   const [tab, setTab] = useState("incoming");
   const [draft, setDraft] = useState<{ to: string; lines: { stockId: string; qty: number }[]; note: string }>();
   const [line, setLine] = useState({ stockId: "", amount: "", unit: "" });
@@ -21,7 +22,7 @@ export default function Transfers() {
   useEffect(() => {
     commands.refreshTransfers().catch(() => undefined);
   }, [commands]);
-  if (!manager) return <Navigate to="/pos" />;
+  if (!can(user.role, "documents")) return <Navigate to="/pos" />;
   const item = (id: string) => stockItems.find((s) => s.id === id);
   const incoming = transfers.filter((t) => t.to === user.restaurantId);
   const shown = tab === "incoming" ? incoming.filter((t) => t.status === "sent") : tab === "outgoing" ? transfers.filter((t) => t.from === user.restaurantId) : transfers;

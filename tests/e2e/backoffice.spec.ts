@@ -148,7 +148,7 @@ test('a batch recipe turns raw stock into a ready item through Produksi', async 
   await expect(run.getByLabel(/Hasil sebenarnya/)).toHaveValue('20')
   await run.getByLabel(/Hasil sebenarnya/).fill('19') // one cracked
   await run.getByRole('button', { name: 'Simpan produksi' }).click()
-  await expect(page.getByText('Produksi tercatat; stok diperbarui')).toBeVisible()
+  await expect(page.getByText('Batch tercatat; stok diperbarui')).toBeVisible()
   await expect(row.locator('.stock-quantity strong')).toHaveText('19')
   await expect(page.locator('.history-list')).toContainText('Produksi Telur balado (porsi)')
   await go(page, 'Stok')
@@ -177,6 +177,11 @@ test('Penjualan breaks paid sales down by receipt, menu item, day and cashier', 
   await cart(page).getByRole('button', { name: 'Tambah Es teh manis' }).click()
   await sell(page)
   await page.keyboard.press('Escape')
+  // Pilot rule: the back office opens on the till only once the shift is closed.
+  await go(page, 'Sif & kas')
+  await page.getByRole('button', { name: 'Tutup sif' }).click()
+  await page.getByRole('dialog', { name: 'Tutup sif' }).getByLabel(/Uang tunai yang dihitung/).fill('212000')
+  await page.getByRole('dialog', { name: 'Tutup sif' }).getByRole('button', { name: 'Konfirmasi tutup sif' }).click()
   await go(page, 'Penjualan')
   await expect(page.locator('.metric.featured')).toContainText('Rp12.000')
   await expect(page.locator('.data-table')).toContainText('Pemilik Demo')

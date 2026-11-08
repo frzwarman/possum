@@ -1,53 +1,149 @@
-# Meja — kasir restoran
+# Takar — setiap gram tercatat
 
-A mobile-first point of sale for **one** Indonesian restaurant, built as a local-first
-Progressive Web App. Everything the app says to its users is in Bahasa Indonesia; this
-documentation is in English, with the on-screen labels quoted so you can match them.
+Takar is a point of sale, kitchen and bar station system, and recipe-level stock tracker for a
+single café or restaurant, built as a local-first Progressive Web App on the Possum (meja.)
+codebase. Everything the app says to its users is in Bahasa Indonesia; this documentation is in
+English, with the on-screen labels quoted so you can match them.
 
-Meja replaces the pen-and-paper loop a small warung already runs:
+The product requirements are in [docs/superpowers/specs/2026-11-06-takar-prd.md](docs/superpowers/specs/2026-11-06-takar-prd.md);
+the decisions that map them onto this codebase are in
+[docs/superpowers/specs/2026-11-06-takar-design-decisions.md](docs/superpowers/specs/2026-11-06-takar-design-decisions.md).
 
 ```
-open shift → take order → kitchen → payment → receipt → review → close shift
- (count      (write the    (send the   (cash, or   (print or    (what sold,  (count the
-  the float)  order down)   ticket)     verified    share the    what is      drawer, note
-                                        QRIS/card)  text)        owed)        the variance)
+open shift → take order → send to stations → mark ready → payment → receipt → close shift
+ (float)     (pager no.,   (ticket splits:    (bar / kitchen  (cash quick   (print or   (count, gap over
+              options)      bar + kitchen,     tablet)          amounts,      share)      the limit needs
+                            stock moves now)                     QRIS)                    a manager PIN)
 ```
 
-Each of those steps already exists on paper. Meja keeps the same order, adds arithmetic
-that cannot slip, and leaves a record the owner can read at closing time.
+Every sale moves stock through a recipe tree: ingredients (bought in packs, stocked in g, ml or pcs),
+prep items made in batches (ayam ungkep, sambal, syrups) and menu items whose options add, swap or
+scale recipe lines. Voids, discounts, refunds, cash gaps, stock adjustments and counts need a manager
+PIN and land in an audit log nobody can edit. The till keeps selling offline.
 
-**Who it is for:** a single outlet with 2-10 staff, one primary cashier device, a phone or
-tablet on the counter, and internet that is usually there but not always.
+## Three device modes, one stock ledger
+
+| Mode | Runs on | Who | What it can do |
+|---|---|---|---|
+| **POS** (`pos`) | the one cashier tablet | cashier, manager, owner | take orders, send to stations, take payment, open and close the shift |
+| **Station** (`station`) | kitchen tablet, bar tablet | kitchen crew, barista | see its own tickets oldest first, mark ready, log waste, make prep batches, count its area |
+| **Back office** (`office`) | laptop, manager's phone | owner, manager, inventory admin, head chef | Today, menu and recipes, ingredients and receiving, counts, reports, audit log, team |
+
+A device is paired once by an owner or manager (*Lainnya → Printer & perangkat*). Only the POS device may
+sell; every paired device sends its own work (ready, waste, batches, counts) and pulls everyone else's
+through the `pull` RPC: station tablets every 5 s, the till every 10 s, laptops every 30 s. An unpaired
+device is a read-only dashboard.
+
+### Pilot mode: no station tablets yet
+
+The Ziggy Lounge pilot (`docs/superpowers/specs/2026-11-08-takar-pilot-prd.md`) runs with the cashier
+tablet and the manager's laptop only. *Lainnya → Restoran → "Tablet dapur & bar menerima tiket"* is off
+(the default for a provisioned restaurant; the demo has it on):
+
+- the cashier tells the bar and kitchen; paying an order sends it and deducts stock in the same tap, so
+  "Ke stasiun" and the Stasiun screens are hidden;
+- the cashier keeps stock between orders: the Stok, Produksi and Hitung stok links are theirs (low and
+  sold-out menu, waste, batches, counts), never money or documents;
+- the till never opens the manager screens while a shift is open, not even for an owner who signed in
+  with their PIN; Sif & kas shows the cashier's blind view, the back office returns once the shift is
+  closed or from the laptop;
+- a count submitted on a tablet (`count.submit`) lands on the laptop as "Perlu ditinjau"; the manager
+  approves it there (or on the same device with a PIN) into one `count.record`.
+
+## Roles
+
+| | Pemilik | Manajer | Admin stok | Kepala dapur | Kasir | Barista | Dapur |
+|---|---|---|---|---|---|---|---|
+| Sell, send to stations, take payment, open and close shift | yes | yes | – | – | yes | – | – |
+| Discount, void, refund, cash out, cash gap over the limit | yes | yes | – | – | manager PIN | – | – |
+| Station: tickets, ready, waste, prep batches | yes | yes | yes | yes | yes | yes | yes |
+| Menu and recipes (publishing an active item without a recipe) | yes | yes | PIN | PIN | – | – | – |
+| Ingredients, receiving, purchasing | yes | yes | yes | – | – | – | – |
+| Stock counts (approving the result) | yes | yes | PIN | PIN | – | PIN | PIN |
+| Today, reports, audit log, settings, devices, team | yes | yes | – | – | – | – | – |
+
+The server (`apply_operation`) re-checks every rule; a hidden button is never the only guard. Each
+owner and manager sets a 6-digit approval PIN in *Lainnya → PIN persetujuan*; three wrong PINs pause
+approvals for five minutes. Staff sign in on a shared device by picking their name and typing their
+own 6-digit PIN (`pnpm staff add … --pin`); POS and station devices lock after two minutes idle.
+
+## Features, by PRD section
+
+- **F1 Take an order.** One forgiving search over names, aliases and tags (`amer` and `amricano` both
+  find the Americanos); four filters (Semua, Makanan, Minuman, Camilan); every new order is dine-in with
+  the next pager number; one sheet for size, milk, sugar and extras with the price updating live and
+  each choice saying what it does to stock; one tap sends the ticket, split by station; cash with
+  quick amounts and a large change figure, QRIS confirmed by the cashier; cards go grey when the
+  ingredients run out and show *Sisa N* when few portions are left.
+- **F2 Stations.** `/station`: kitchen or bar, big type, dark mode, tickets oldest first, red after the
+  station's target minutes, *Siap* per ticket, waste in three taps, the prep list and batches about
+  to expire.
+- **F3 Menu and recipes.** One form: name, type, station, tags, aliases, price, photo, recipe lines in
+  any matching unit with their cost, option groups (add, swap, level, size) expressed as recipe
+  deltas, live cost / margin / food-cost %. Items without a recipe are flagged; a chef or admin needs
+  a manager PIN to publish one as active.
+- **F4 Prep batches.** A prep item is a stock item with a batch recipe, yield, shelf life and station.
+  One step records a batch; the actual yield enters stock and the gap is written into the movement.
+- **F5 Ingredients and receiving.** Base unit, packs ("1 karton = 12.000 ml"), par, storage area,
+  aliases; deliveries typed in packs with an optional delivery-note photo; a delivery over 5× or under
+  ⅕ of the usual size needs a second tap; every movement with who, when and the running balance.
+- **F6 Counts.** Count one storage area on a tablet with the system figure hidden, pause and resume,
+  review expected vs counted in units and rupiah sorted by gap, reasons for gaps over 5%, approval
+  into one `count.record` operation. Weekly for the 20 most-used ingredients, monthly for all.
+- **F7 Today.** Sales, food-cost %, waste and the usage gap for the day; stock under par with days
+  left, voids, count gaps, items without a recipe, overdue counts and expiring batches, each linking
+  to its fix. Menu items go sold out by themselves when they cannot be made.
+- **F8 Controls.** Seven roles, device modes, PIN approvals, PIN sign-in, idle lock, and `/audit`.
+
+Deferred to later phases, as the PRD says: purchase orders from the low-stock list and supplier price
+comparison (the existing purchase-order screen stays), recipe approvals, a one-time approval code on
+the manager's phone, batch invoices, LAN / ESC-POS printing, Talenta and accounting.
+
+## Design system
+
+The look follows the Figma file **TAKAR POS** (Design system page): Plus Jakarta Sans (self-hosted,
+`@fontsource-variable/plus-jakarta-sans`), ink `#1B1D21` and lime `#D3F26A` as the brand, grey canvas,
+1 px borders with no shadows on cards, radii 6/10/14/20, pills for chips and badges, pastel stat cards
+(lavender, sky, mint, teal). Every colour is a CSS variable at the top of `src/styles.css`; the dark set
+applies under `.station.dark`. Lime is reserved for the one primary POS action per view and the active
+nav item. The till uses the 88 px icon rail, the laptop the 248 px sidebar. The mark ("the pour") lives
+in `src/components/logo.tsx` and `public/icon.svg`. Decisions 23–30 in
+`docs/superpowers/specs/2026-11-06-takar-design-decisions.md` list what was matched and what was not
+(icons stay Lucide; the logo is redrawn from the construction grid).
+
+### Demo pictures
+
+The demo catalogue and its ingredients carry photos hotlinked from [Unsplash](https://unsplash.com) (free licence,
+hotlinking allowed, resized by their CDN to 480×360). They are keyed by item id in `src/domain/sample.ts`; the service
+worker caches them so the demo keeps its pictures offline, and an existing demo install gets them filled in on the
+next start. A real restaurant still uploads its own photos (compressed to WebP on the device); a catalog also accepts
+an `images.unsplash.com` URL as a photo.
 
 ## Why local-first
 
-The cashier must keep serving when the internet drops. Every action is written to the
-device's own database first and queued for the server second, so a dead connection is a
-sync delay, not a stopped queue of customers. The server remains the authority on money:
-when the queue drains, Postgres re-validates every operation before accepting it.
+The cashier must keep serving when the internet drops. Every action is written to the device's own
+database first and queued for the server second, so a dead connection is a sync delay, not a stopped
+queue of customers. The server remains the authority on money and stock: when the queue drains,
+Postgres re-validates every operation before accepting it, and every paired device pulls what the
+others did.
 
 ```
-  ┌──────────────────────── primary cashier device (Android / Chrome, PWA) ─────────────┐
-  │                                                                                     │
-  │  React 19 + TanStack Router                                                         │
-  │        │ commands (src/lib/commands.ts)                                             │
-  │        ▼                                                                            │
-  │  ┌──────────── ONE Dexie transaction ────────────┐                                  │
-  │  │  domain record (order / movement / shift)     │   ← what the screen reads        │
-  │  │  + outbox operation (idempotent, has an id)   │   ← what the server will replay  │
-  │  └───────────────────────────────────────────────┘                                  │
-  │        │ synchronize() — in order, one at a time, stops on the first conflict       │
-  └────────┼────────────────────────────────────────────────────────────────────────────┘
-           │  HTTPS, authenticated as the signed-in staff member
+  ┌────────────── paired device (Android / Chrome, PWA): POS, station or back office ──────────────┐
+  │  React 19 + TanStack Router                                                                      │
+  │        │ commands (src/lib/commands.ts)                                                          │
+  │        ▼                                                                                         │
+  │  ┌──────────── ONE Dexie transaction ────────────┐                                               │
+  │  │  domain record (order / movement / count)     │   ← what the screen reads                     │
+  │  │  + outbox operation (idempotent, has an id)   │   ← what the server will replay               │
+  │  └───────────────────────────────────────────────┘                                               │
+  │        │ synchronize() — push in order, stop on the first conflict, then pull(since)             │
+  └────────┼─────────────────────────────────────────────────────────────────────────────────────────┘
            ▼
-  ┌──── Supabase ──────────────────────────────────────────────────────────────────────┐
-  │  Auth (email + password, sign-ups disabled)                                        │
-  │  Postgres:  apply_operation(jsonb)  ← the ONLY write path. SECURITY DEFINER.       │
-  │             re-derives every total, checks device/shift/role, then commits         │
-  │  RLS on every exposed table; clients hold SELECT and nothing else                  │
-  └────────────────────────────────────────────────────────────────────────────────────┘
-
-  Static build (dist/) is served by Cloudflare Pages. It contains no secrets.
+  ┌──── Supabase ─────────────────────────────────────────────────────────────────────────────────┐
+  │  Auth (email + password; staff PINs are their passwords; sign-ups disabled)                   │
+  │  Postgres: apply_operation(jsonb) ← the ONLY write path. pull / bootstrap / audit_log ← reads │
+  │  RLS on every exposed table; clients hold SELECT and nothing else                             │
+  └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Architecture
@@ -55,165 +151,80 @@ when the queue drains, Postgres re-validates every operation before accepting it
 | Layer | Choice | Note |
 |---|---|---|
 | App | Vite 7 + React 19 + TypeScript (strict) | one SPA, no server rendering |
-| Routing | TanStack Router | `/pos` eager, the other four routes lazy |
+| Routing | TanStack Router | `/pos` eager, every other screen lazy |
 | Local database | Dexie (IndexedDB), `src/lib/db.ts` | one database per identity + device |
 | Queue | transactional outbox in the same Dexie database | record and operation commit together or not at all |
-| Sync | `src/lib/sync.ts` | Web Locks, ordered, batched, backs off, halts on rejection |
-| Server | Supabase Postgres + Auth | one RPC, `apply_operation` |
-| Authorization | RLS on all 16 exposed tables + explicit checks inside the RPC | clients have no write grants |
+| Sync | `src/lib/sync.ts` | push (Web Locks, ordered, batched, backs off, halts on rejection) then pull |
+| Server | Supabase Postgres + Auth | `apply_operation`, `bootstrap`, `pull`, `audit_log`, `approve`, `enroll_device`, `manage_staff`, `sales_report` |
 | Hosting | Cloudflare Pages (static) | see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Offline shell | vite-plugin-pwa / Workbox, `registerType: 'prompt'` | never reloads itself mid-checkout |
 
 ## Data model and conventions
 
-- **Money is integer rupiah.** No floats anywhere. `money()` rejects anything that is not a
-  safe non-negative integer up to 1,000,000,000.
-- **Quantities are thousandths of a base unit.** 1 kg = `1_000_000`, 1 l = `1_000_000`,
-  1 pcs = `1_000`. Base units are `g`, `ml`, `pcs` and are immutable once an ingredient exists.
-- **Service then tax**, each rounded half-up: `floor((x * bps + 5000) / 10000)`. Service is
-  charged on subtotal minus discount; tax on subtotal minus discount plus service. Both
-  default to **0 bps** — off.
-- **Stock is derived from immutable movements**, never stored as a balance. The current
-  quantity is the sum of `opening | purchase | waste | count | adjustment | preparation` rows.
-- **Ingredients are consumed exactly once, at `order.prepare`** — when the ticket goes to the
-  kitchen, not at payment. A second prepare on the same line is refused by both the device and
-  the server.
-- **A refund never restores stock.** Cooked food cannot be un-cooked. An *unprepared*
-  cancellation is a different case: it consumed nothing, so there is nothing to restore.
-- **Immutable catalog versions.** Every order line stores its item's catalog version and a copy
-  of the name, price, recipe and modifiers. Re-pricing the menu publishes a new version; a
-  receipt printed last week never re-prices. The database enforces this
-  (`catalog_versions`, and `Catalog version immutable` in the RPC).
-- **Menu photos are optional.** Owners can upload JPG, PNG or WebP files from the menu editor;
-  the browser scales them to a compact WebP (maximum 420 px and roughly 70 KB) before storing
-  the data in the versioned catalog. Photos therefore work in the cached/offline POS without
-  public image URLs. Leaving the field empty uses the built-in warm food illustration; HEIC and
-  animated formats are not accepted by the browser upload control.
-- **Business day** ends at the configured cutoff — default **04:00**, timezone
-  **Asia/Jakarta** — so a sale at 01:30 belongs to the night before.
-- **Operations are idempotent by operation id.** A replay returns the first result. The same
-  id with a changed payload is rejected outright.
+- **Money is integer rupiah.** `money()` rejects anything that is not a safe non-negative integer up to
+  1,000,000,000.
+- **Quantities are thousandths of a base unit.** 1 kg = `1_000_000`, 1 l = `1_000_000`, 1 pcs = `1_000`.
+  Base units are `g`, `ml`, `pcs` and are immutable once an ingredient exists. Packs convert to the base
+  unit (`{name:'karton', qty:12_000_000}`); `convert()` accepts a decimal comma.
+- **Option deltas.** A modifier's recipe may carry negative amounts (oat milk: −195 ml fresh milk,
+  +195 ml oat milk). Consumption nets options against the base recipe per line and never below zero.
+- **Service then tax**, each rounded half-up; both default to 0 bps.
+- **Stock is derived from immutable movements**, never stored as a balance. "Can make" is the lowest
+  whole number of portions any recipe line allows; at `lowAt` or fewer the card says *Sisa N*, below 1
+  the item is sold out by itself (a manager can keep selling it with *Tetap jual*).
+- **Ingredients are consumed exactly once, at `order.prepare`** — when the ticket goes to the stations.
+  A refund never restores stock. Lines carry their station, `preparedAt` and `readyAt`; a station marks
+  its lines ready without touching the order revision, so the till and the tablets never conflict.
+- **Immutable catalog versions.** Every order line stores its item's version and a copy of the name,
+  price, recipe and options. Any immutable version is accepted on a line.
+- **Counts.** `count.record` writes one `count` movement per line that differs (reason "Hitung <area>:
+  <alasan>") plus a `counts` row for the variance report.
+- **Business day** ends at the configured cutoff — default **04:00**, timezone **Asia/Jakarta**.
+- **Operations are idempotent by operation id.** The server serializes writes per restaurant; `pull`
+  asks from ten seconds before its last cursor and upserts, so nothing is lost or double counted.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Vite dev server on `0.0.0.0` so a phone on the same Wi-Fi can open it |
+| `pnpm dev` | Vite dev server on `0.0.0.0` so a tablet on the same Wi-Fi can open it |
 | `pnpm build` | `tsc -b && vite build` → `dist/` |
-| `pnpm preview` | serves the built `dist/` for a last look before deploying |
 | `pnpm test` | Vitest unit and integration tests (jsdom + fake-indexeddb) |
-| `pnpm test:e2e` | Playwright end-to-end run against a real browser |
-| `pnpm test:db` | PGlite: applies the three migrations, runs the RLS/RPC checks, and regenerates `src/lib/database.types.ts` |
-| `pnpm measure` | builds if needed, then gates the initial JS bundle against the budget |
+| `pnpm test:e2e` | Playwright end-to-end run against a real browser (demo mode) |
+| `pnpm test:db` | PGlite: applies every migration, runs the RLS/RPC checks, regenerates `src/lib/database.types.ts` |
+| `pnpm measure` | builds if needed, then gates the initial JS bundle |
 | `pnpm staff` | owner-only staff provisioning; needs `.env.admin` (see [docs/SUPABASE.md](docs/SUPABASE.md)) |
 
-## Test results, as measured on this machine
-
-Run on 2026-09-21, macOS, Node v25.8.0:
-
-| Check | Command | Result |
-|---|---|---|
-| Types | `npx tsc -b --force` | clean |
-| Unit / integration | `pnpm test` | **114 passed** in 8 files |
-| Database | `pnpm test:db` | **24 PostgreSQL integration checks passed** |
-| End-to-end | `pnpm test:e2e` | **10 passed** (Chromium, desktop and 393 px phone), including the optional photo upload flow |
-| Bundle | `pnpm measure` | initial JS **261.1 KiB gzip** over 2 chunks (budget 250-300 KiB), CSS 10.4 KiB, lazy 23.2 KiB, PWA precache 295.8 KiB gzip over 18 files |
-
-The database checks run against PGlite — real PostgreSQL, real migrations, an emulated
-`auth.uid()` — not against a hosted project.
+Test results on this machine on 2026-11-08 (macOS, Node v25): `pnpm test` 180 passed in 9 files,
+`pnpm test:db` 52 PostgreSQL checks passed, `pnpm test:e2e` 37 passed, `npx tsc -b` clean, `pnpm build` clean.
 
 ### What is NOT verified here
 
-- **Physical receipt printing.** No printer is attached. See [docs/PRINTING.md](docs/PRINTING.md)
-  and fill in [docs/HARDWARE.md](docs/HARDWARE.md).
-- **Real Android hardware**, install-to-home-screen and day-long battery behaviour.
-- **A hosted Supabase project**: live Auth, live RLS under real JWTs, live latency and
-  free-tier limits.
-- **Cloudflare Pages deployment**, its headers and redirects as actually served.
+- Physical receipt and ticket printing (browser print only; no LAN / ESC-POS printer).
+- Real Android tablets, install-to-home-screen and day-long battery behaviour.
+- A hosted Supabase project: migration `202611060009_takar.sql` has been applied only to PGlite.
+  Run `supabase db push` and `pnpm test:db` before the pilot, and use the Pro plan as the PRD says.
+- Cloudflare Pages deployment as actually served.
 
-## Roles
+## Limitations (deliberate)
 
-| | Owner | Manager | Cashier |
-|---|---|---|---|
-| Take orders, send to kitchen, take payment | yes | yes | yes |
-| Apply a discount | yes | yes | no |
-| Void an order (with a reason) | yes | yes | no |
-| Refund (full, online only) | yes | yes | no |
-| Record stock (opening, purchase, waste, count, adjustment) | yes | yes | no |
-| Publish menu / change settings | yes | yes | no |
-| Server sales report | yes | yes | no |
-| Enroll the primary device (first claim) | yes | yes | no |
-| Move the primary device to another device, any time | yes | no | no |
-| Move the till device from the app (*Penyimpanan perangkat*) | yes | no | no |
-
-**Public registration is disabled.** The app has no sign-up screen. A fresh project is
-bootstrapped once with `pnpm staff init <email> <nama>`, which creates the restaurant row and
-its first owner; after that the owner creates each account from their own terminal with
-`scripts/provision-staff.mjs` (`pnpm staff add …`),
-which uses a service-role key kept in `.env.admin` — gitignored, never bundled, never
-prefixed `VITE_`. Passwords are shown once.
-
-**The owner area has its own door.** `/admin` is chosen from the URL before the cashier
-router is mounted, so it never appears inside the staff app and never loads the cashier
-shell, shift or device state: it has its own sign-in form, accepts only an active `owner`,
-signs anyone else straight back out, and signs out separately. There the owner changes a
-staff role or revokes access through the owner-only `manage_staff` RPC — an owner cannot
-change their own row, so the restaurant keeps a way back in. Creating an account, resetting
-a password and reading staff emails still need the terminal.
-
-There is also a **local demo** on the login screen. It never contacts a server, seeds 12
-sample menu items and 6 ingredients, and lives only in that browser.
-
-## Cost and free-tier assumptions
-
-Meja is designed to run on **Supabase Free + Cloudflare Pages Free**, which for one outlet
-means an expected bill of **Rp 0** beyond the domain, if you choose to buy one.
-
-- The frontend is static: a few hundred KiB per install, then cached. Pages Free allows 500
-  builds/month and unmetered requests.
-- The database load is one small RPC per operation — roughly one per order, preparation,
-  payment, stock record and shift event. A busy day is thousands of rows, not millions.
-- **Check usage monthly:** Supabase dashboard → *Reports* / *Usage* (database size, egress,
-  monthly active users); Cloudflare dashboard → *Workers & Pages* → your project → builds.
-- Supabase Free **pauses** a project after a week of inactivity, and free-tier storage,
-  egress and backup retention are capped.
-
-Plainly: free hosting is not an unlimited production guarantee. Exceeding those limits, or
-needing stronger availability, point-in-time recovery or retained backups, means a paid plan
-or a different deployment plan. Decide that before the restaurant depends on it, not after.
-
-## Limitations
-
-These are deliberate boundaries of this version, not bugs:
-
-- **One outlet.** One restaurant row, one menu, one set of settings. No multi-branch.
-- **2-10 staff.** `pnpm staff add` warns past 10 accounts and needs `--force`.
-- **ONE primary cashier device** may record transactions. Any other signed-in device is a
-  read-only dashboard. Moving the primary device is a deliberate, online, owner-only,
-  reconciled handover — never automatic.
-- **Offline is bounded to an already-authorized shift, 12 hours maximum.** No fresh login, no
-  role change, no shift opening, no settings or menu change while offline.
-- **No offline card or QRIS.** Those are recorded only online, and only after the operator
-  confirms the payment in the merchant app; the server re-checks freshness within 2 minutes.
-- **Full-bill payment only.** No split bills, no partial or multiple tenders per order.
-- **Full refunds only, online, manager or owner, within the original shift while it is still
-  open.** There is no partial refund.
-- **Recipe-based stock is an estimate** until a physical count reconciles it. Yield, spillage
-  and staff meals are not guessed; record a `count` and the difference becomes an explicit
-  movement.
-- **Browser printing cannot confirm that paper came out.** The app records "print requested"
-  and a separate operator confirmation, and says so on screen.
-- **Browser storage can be lost.** Persistent storage can be requested but never guaranteed;
-  clearing site data or using private browsing on the cashier device destroys unsynced work.
+- **One outlet per restaurant row; one POS device.** Linked outlets can transfer stock.
+- **Offline is bounded to an authorized shift, 12 hours maximum.** No fresh sign-in of a new person
+  while offline; the lock screen still works. Void, cash payment and close still work after the 12 hours;
+  new work does not.
+- **No offline card or QRIS.** Recorded only online, after the cashier confirms the merchant app.
+- **Full-bill payment only; full refunds only, online, by a manager, within the original open shift.**
+- **Recipe stock is an estimate until a count.** Counts are the correction, and they are logged.
+- **Browser storage can be lost.** Persistent storage can be requested but never guaranteed; clearing
+  site data on a device destroys its unsynced work. Export from *Lainnya* regularly.
+- **Pull covers orders, shifts, cash, stock, counts, catalog and settings.** Purchase orders, catering
+  orders and suppliers refresh at sign-in and when the same device writes them.
 
 ## Documentation
 
 | Document | For | Contents |
 |---|---|---|
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | restaurant owner | installing on Android, the daily routine, outages, the paper fallback, reading the closing report |
-| [docs/PRINTING.md](docs/PRINTING.md) | owner + developer | the printer abstraction, 58/80 mm layouts, the hardware acceptance checklist, what printing does not prove |
-| [docs/HARDWARE.md](docs/HARDWARE.md) | tester | the fill-in sheet the app's test-print dialog points at |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | developer | Cloudflare Pages Free, build settings, headers, redirects, PWA checks |
-| [docs/SUPABASE.md](docs/SUPABASE.md) | developer / administrator | project setup, the three migrations, Auth settings, device enrollment, verifying RLS, password recovery |
-| [docs/BACKUP.md](docs/BACKUP.md) | administrator | the three different "backups", `pg_dump` and restore, identity recovery, validating a restore safely |
-| [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | reviewer | the four slices, the documented defaults, verified vs. externally unverified |
+| [docs/SUPABASE.md](docs/SUPABASE.md) | developer / administrator | project setup, the migrations, Auth settings, roles and PINs, device pairing |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | developer | Cloudflare Pages, build settings, headers, PWA checks |
+| [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | reviewer | the slices, the documented defaults, verified vs. externally unverified |
+| [docs/superpowers/plans/2026-11-06-takar-phase1.md](docs/superpowers/plans/2026-11-06-takar-phase1.md) | developer | the task plan this phase was built from |

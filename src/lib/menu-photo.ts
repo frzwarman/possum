@@ -4,9 +4,10 @@ const MAX_DATA_URL_LENGTH = 70_000;
 
 export function validateMenuPhotoData(value: string | undefined): boolean {
   if (value === undefined || value === "") return true;
+  // A compressed WebP taken on the device, or a hotlinked Unsplash photo (demo catalogue, stock pictures).
   return (
     value.length <= MAX_DATA_URL_LENGTH &&
-    /^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(value)
+    (/^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(value) || /^https:\/\/images\.unsplash\.com\/[\w\-./?=&%]+$/.test(value))
   );
 }
 

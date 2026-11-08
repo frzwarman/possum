@@ -1,5 +1,5 @@
 import { describe,expect,it,vi } from 'vitest'
-import { draft,identity,line,seed,tea,tick } from './offline-harness'
+import { draft,identity,line,sale,seed,tea,tick } from './offline-harness'
 import { Commands,DEMO_PIN } from '../../src/lib/commands'
 import { uid } from '../../src/lib/db'
 import { MAX_MONEY } from '../../src/domain/calculate'
@@ -21,15 +21,17 @@ describe('nothing the server would reject reaches the outbox',()=>{
   await expect(commands.openShift(200000)).rejects.toThrow('Tindakan ini perlu koneksi server')
   expect(await db.shifts.count()).toBe(0);expect(await db.outbox.count()).toBe(0)
  })
- it('voids or marks ready only inside the operator’s own, unexpired shift',async()=>{
+ it('after the 12 hours a shift can be finished but not given new work',async()=>{
   const {db,commands}=await seed(identity())
   const shift=await commands.openShift(200000);await tick()
   const order=await commands.save(draft([line()]));await tick()
   await commands.prepare(order.id);await tick()
   await db.shifts.update(shift.id,{expiresAt:new Date(Date.now()-60000).toISOString()})
-  await expect(commands.ready(order.id)).rejects.toThrow('Otorisasi sif berakhir')
-  await expect(commands.voidOrder(order.id,'Pelanggan batal')).rejects.toThrow('Otorisasi sif berakhir')
-  expect((await db.outbox.orderBy('occurredAt').toArray()).map(o=>o.kind)).toEqual(['shift.open','order.save','order.prepare'])
+  // Takar: finishing work (ready, void, cash payment, close) still goes through after the 12 hours; new work does not.
+  await expect(commands.save(draft([line()]))).rejects.toThrow('Otorisasi sif berakhir')
+  await commands.ready(order.id);await tick()
+  await commands.voidOrder(order.id,'Pelanggan batal')
+  expect((await db.outbox.orderBy('occurredAt').toArray()).map(o=>o.kind)).toEqual(['shift.open','order.save','order.prepare','order.ready','order.void'])
  })
  it('publishes only a catalog the server accepts',async()=>{
   const {db,commands}=await seed(identity({role:'owner'}))
@@ -61,7 +63,8 @@ describe('one transaction per command',()=>{
  it('persists an optional menu photo without requiring one on other items',async()=>{
   const {db,commands}=await seed(identity({role:'owner'}))
   const photo='data:image/webp;base64,UklGRg=='
-  await commands.publish([{...sampleMenu[0],photo},...sampleMenu.slice(1)],sampleStock)
+  // The demo catalogue ships Unsplash pictures; drop the second item's to prove a photo is never required.
+  await commands.publish([{...sampleMenu[0],photo},{...sampleMenu[1],photo:undefined},...sampleMenu.slice(2)],sampleStock)
   expect((await db.menu.get(sampleMenu[0].id))?.photo).toBe(photo)
   expect((await db.menu.get(sampleMenu[1].id))?.photo).toBeUndefined()
   expect((await db.outbox.filter((op) => op.kind === 'catalog.publish').count())).toBe(1)
@@ -153,7 +156,7 @@ describe('device, shift and role authorization',()=>{
   const {db,commands}=await seed(identity())
   const shift=await commands.openShift(200000);await tick()
   await db.shifts.update(shift.id,{expiresAt:new Date(Date.now()-60000).toISOString()})
-  await expect(commands.save(draft([line()]))).rejects.toThrow('Otorisasi sif berakhir. Hubungkan internet dan tutup sif.')
+  await expect(commands.save(draft([line()]))).rejects.toThrow('Otorisasi sif berakhir. Batalkan pesanan terbuka, tutup sif, lalu buka sif baru.')
   expect(await db.orders.count()).toBe(0)
  })
  it('denies manager-only actions to a cashier',async()=>{
@@ -165,7 +168,7 @@ describe('device, shift and role authorization',()=>{
   await expect(commands.save(draft([line()],{orderId:order.id,revision:order.revision,discount:5000,discountReason:'Langganan'}))).rejects.toThrow('Perlu persetujuan manajer')
   await expect(commands.voidOrder(order.id,'salah pesan')).rejects.toThrow('Perlu persetujuan manajer')
   await expect(commands.refund(order.id,'salah pesan')).rejects.toThrow('Perlu persetujuan manajer')
-  await expect(commands.stockRecord('rice','waste',1000,'tumpah')).rejects.toThrow('Perlu akun manajer')
+  await expect(commands.stockRecord('rice','purchase',1000,'beli')).rejects.toThrow('Perlu akun manajer') // waste is the cashier's; deliveries are not
   await expect(commands.publish(sampleMenu,sampleStock)).rejects.toThrow('Perlu akun manajer')
   expect((await db.orders.get(order.id))!.discount).toBe(0)
   expect((await db.outbox.orderBy('occurredAt').toArray()).map(o=>o.kind)).toEqual(['shift.open','order.save'])
@@ -286,7 +289,7 @@ describe('back office: purchase orders and production',()=>{
   expect(await commands.produce('sambal',10_000,[{stockId:'egg',qty:2000}],'')).toBe(4000)
   await expect(commands.produce('sambal',1000,[{stockId:'sambal',qty:1000}],'')).rejects.toThrow('Periksa bahan produksi')
   const {commands:cashier}=await seed(identity({role:'cashier'}))
-  await expect(cashier.produce('egg',1000,[{stockId:'rice',qty:1000}],'')).rejects.toThrow('Perlu akun manajer')
+  await cashier.produce('egg',1000,[{stockId:'rice',qty:1000}],'') // the cashier makes batches between orders
   await expect(cashier.savePurchase({supplier:'Pasar',note:'',lines:[{stockId:'rice',qty:1000,cost:1}]})).rejects.toThrow('Perlu akun manajer')
  })
 })
@@ -324,5 +327,153 @@ describe('catering orders and transfers between outlets',()=>{
   await commands.receiveTransfer('in-1',[{stockId:'beras-cabang',target:'rice',qty:900_000}])
   expect(await stockOf(db,'rice')-rice).toBe(900_000)
   expect((await db.movements.toArray()).find(m=>m.kind==='transfer'&&m.qty===900_000)?.cost).toBe(13500)
+ })
+})
+
+// Takar: tickets per station, counts, cash-gap PINs, recipe-less menus, paired devices.
+describe('stations mark their own lines ready without touching the revision',()=>{
+ const bar=()=>tea().station?tea():{...tea(),station:'bar' as const}
+ it('ready(station) stamps only that station, keeps the revision, and the order is ready once every station is',async()=>{
+  const {db,commands}=await seed(identity())
+  await commands.openShift(200000);await tick()
+  const order=await commands.save(draft([line({station:'kitchen'}),bar()]));await tick()
+  const sent=await commands.prepare(order.id);await tick()
+  expect(sent.lines.every(l=>l.prepared&&l.preparedAt&&l.station)).toBe(true)
+  await commands.ready(order.id,'kitchen');await tick()
+  let o=(await db.orders.get(order.id))!
+  expect([o.revision,o.prep,o.lines.map(l=>Boolean(l.readyAt))]).toEqual([sent.revision,'preparing',[true,false]])
+  await commands.ready(order.id,'bar')
+  o=(await db.orders.get(order.id))!
+  expect([o.revision,o.prep]).toEqual([sent.revision,'ready'])
+  expect((await db.outbox.orderBy('occurredAt').toArray()).filter(op=>op.kind==='order.ready').map(op=>op.payload.station)).toEqual(['kitchen','bar'])
+ })
+ it('a save from the till after a station marked ready keeps the readyAt it did not know about',async()=>{
+  const {db,commands}=await seed(identity())
+  await commands.openShift(200000);await tick()
+  const order=await commands.save(draft([line({station:'kitchen'})]));await tick()
+  const sent=await commands.prepare(order.id);await tick()
+  await commands.ready(order.id,'kitchen');await tick()
+  const stale=sent.lines.map(({readyAt:_,...l})=>l)
+  const saved=await commands.save(draft([...stale,bar()],{orderId:order.id,revision:sent.revision,label:'Pager 12'}))
+  expect([saved.label,Boolean(saved.lines[0].readyAt),saved.prep]).toEqual(['Pager 12',true,'preparing'])
+ })
+ it('a paired station tablet marks ready and logs waste, but never sells; an unpaired device does nothing',async()=>{
+  const user=identity()
+  const {db,commands}=await seed(user)
+  await commands.openShift(200000);await tick()
+  const order=await commands.save(draft([line({station:'kitchen'})]));await tick()
+  await commands.prepare(order.id);await tick()
+  const station=new Commands(db,{...user,id:'dapur-1',name:'Dapur',role:'kitchen',primary:false,mode:'station'})
+  await station.ready(order.id,'kitchen');await tick()
+  expect((await db.orders.get(order.id))!.prep).toBe('ready')
+  await station.stockRecord('rice','waste',1000,'jatuh')
+  await expect(station.stockRecord('rice','purchase',1000,'beli')).rejects.toThrow('Perlu akun manajer')
+  await expect(station.save(draft([line()]))).rejects.toThrow('Perlu akun manajer') // the role is checked first, as on the server
+  const dashboard=new Commands(db,{...user,id:'hp-1',role:'manager',primary:false,mode:null})
+  await expect(dashboard.ready(order.id)).rejects.toThrow('Perangkat belum dipasangkan')
+ })
+})
+describe('counts, cash gaps and recipe-less menus need a manager',()=>{
+ it('an approved count leaves one movement per line that differs and keeps the session',async()=>{
+  const {db,commands}=await seed(identity())
+  const rice=(await db.movements.where('stockId').equals('rice').toArray()).reduce((n,m)=>n+m.qty,0)
+  const id=uid()
+  await commands.recordCount({id,area:'Dry store',lines:[{stockId:'rice',counted:rice-500_000,reason:'tumpah'},{stockId:'egg',counted:50_000}]})
+  const moves=(await db.movements.where('recordId').equals(id).toArray()).sort((a,b)=>a.stockId.localeCompare(b.stockId))
+  // one row per line, also at zero, so the server's row replaces this one exactly when pulled
+  expect(moves.map(m=>[m.stockId,m.qty,m.kind,m.reason])).toEqual([['egg',0,'count','Hitung Dry store'],['rice',-500_000,'count','Hitung Dry store: tumpah']])
+  expect((await db.counts.get(id))?.status).toBe('approved')
+  expect((await db.outbox.toArray()).find(o=>o.kind==='count.record')?.payload).toMatchObject({id,area:'Dry store'})
+ })
+ it('an admin counts only with a PIN approval for that count',async()=>{
+  const {db,commands}=await seed(identity({role:'admin',demo:true,mode:'office',primary:false}))
+  const id=uid(),session={id,area:'Kulkas bar',lines:[{stockId:'egg',counted:49_000}]}
+  await expect(commands.recordCount(session)).rejects.toThrow('Perlu persetujuan manajer')
+  await commands.recordCount(session,await commands.approve('demo-owner',DEMO_PIN,'count',{orderId:id}))
+  expect((await db.counts.get(id))?.approvedBy).toBe('Pemilik Demo')
+ })
+ it('a cashier closing with a gap over the limit needs a PIN for exactly that gap',async()=>{
+  const {db,commands}=await seed(identity({role:'cashier',demo:true}))
+  await commands.openShift(100000);await tick()
+  await expect(commands.closeShift(200000)).rejects.toThrow('Perlu persetujuan manajer')
+  expect(await db.shifts.where('status').equals('open').count()).toBe(1)
+  const closed=await commands.closeShift(200000,await commands.approve('demo-owner',DEMO_PIN,'variance',{amount:100000}))
+  expect([closed.variance,closed.varianceApprovedBy]).toEqual([100000,'Pemilik Demo'])
+  await commands.openShift(100000);await tick()
+  expect((await commands.closeShift(110000)).variance).toBe(10000)
+ })
+ it('a chef publishes an active item without a recipe only with a PIN',async()=>{
+  const {commands}=await seed(identity({role:'chef',demo:true,mode:'office',primary:false}))
+  const tracked=sampleMenu.filter(m=>m.recipe.length),bare={...tracked[0],id:'bare',name:'Bare',recipe:[],modifiers:[]}
+  await expect(commands.publish([...tracked,bare],sampleStock)).rejects.toThrow('Perlu persetujuan manajer')
+  await commands.publish([...tracked,{...bare,active:false}],sampleStock)
+  await commands.publish([...tracked,{...bare,version:2}],sampleStock,await commands.approve('demo-owner',DEMO_PIN,'publish'))
+ })
+})
+// Review fixes: pulled orders come back with Postgres key order; stations serve paid orders; roles for stock kinds.
+describe('after the review',()=>{
+ const reorder=<T,>(v:T):T=>JSON.parse(JSON.stringify(v,(_k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.fromEntries(Object.entries(x).reverse()):x))
+ it('a save after the server copy came back with reordered keys still accepts the sent lines',async()=>{
+  const {db,commands}=await seed(identity())
+  await commands.openShift(200000);await tick()
+  const order=await commands.save(draft([line({station:'kitchen'})]));await tick()
+  const sent=await commands.prepare(order.id);await tick()
+  await db.orders.put(reorder(sent)) // what pull() writes after the prepare op synced
+  const saved=await commands.save(draft([...sent.lines,tea()],{orderId:order.id,revision:sent.revision}))
+  expect(saved.lines).toHaveLength(2)
+ })
+ it('a station marks a paid order ready, and refuses a void one without queueing anything',async()=>{
+  const {db,commands}=await seed(identity())
+  const order=await sale(commands)
+  const ready=await commands.ready(order.id) // both stations of a paid order
+  expect([ready.status,ready.prep]).toEqual(['paid','ready'])
+  const other=await commands.save(draft([line()]));await tick()
+  await commands.prepare(other.id);await tick()
+  await commands.voidOrder(other.id,'Salah');await tick()
+  await expect(commands.ready(other.id,'kitchen')).rejects.toThrow('Pesanan sudah dibatalkan')
+  expect((await db.outbox.toArray()).filter(o=>o.kind==='order.ready')).toHaveLength(1)
+ })
+ it('only owners and managers record counts, adjustments and opening balances directly',async()=>{
+  const user=identity({role:'admin',mode:'office',primary:false})
+  const {commands}=await seed(user)
+  await commands.stockRecord('rice','purchase',1000,'beli')
+  await expect(commands.stockRecord('rice','adjustment',1000,'ubah')).rejects.toThrow('Perlu akun manajer')
+  await expect(commands.stockRecord('rice','count',1000,'hitung')).rejects.toThrow('Perlu akun manajer')
+  await expect(new Commands((await seed(identity({role:'chef',mode:'office',primary:false}))).db,identity({role:'chef',mode:'office',primary:false})).stockRecord('rice','purchase',1000,'beli')).rejects.toThrow('Perlu akun manajer')
+  await expect(new Commands((await seed(identity({role:'barista',mode:'station',primary:false}))).db,identity({role:'barista',mode:'station',primary:false})).openShift(1000)).rejects.toThrow('Perlu akun manajer')
+ })
+ it('a chef needs a PIN only for a new version of an active item without a recipe, not for re-sending old ones',async()=>{
+  const {commands}=await seed(identity({role:'chef',demo:true,mode:'office',primary:false}))
+  // sampleMenu already holds active items without recipes at their published version: saving an ingredient re-sends them.
+  await commands.publish(sampleMenu,[...sampleStock,{id:'oil',name:'Minyak',unit:'ml',threshold:0}])
+  const bare={...sampleMenu[0],id:'bare2',name:'Bare',recipe:[],modifiers:[]}
+  await expect(commands.publish([...sampleMenu,bare],sampleStock)).rejects.toThrow('Perlu persetujuan manajer')
+ })
+ it('refuses a catalog the server would refuse: empty group names, unknown groups, long tags, bad packs',async()=>{
+  const {commands}=await seed(identity({role:'owner'}))
+  const [first]=sampleMenu
+  const bad:[string,MenuItem[],StockItem[]][]=[
+   ['a group without a name',[{...first,groups:[{id:'g',name:'',kind:'add'}]}],sampleStock],
+   ['a modifier pointing at a missing group',[{...first,modifiers:[{id:'m',name:'X',price:0,recipe:[],group:'nope'}]}],sampleStock],
+   ['a tag over 50 characters',[{...first,tags:['t'.repeat(51)]}],sampleStock],
+   ['a pack with no size',sampleMenu,[...sampleStock,{id:'oil',name:'Minyak',unit:'ml',threshold:0,packs:[{name:'jerigen',qty:0}]}]],
+   ['a storage area over 50 characters',sampleMenu,[...sampleStock,{id:'oil',name:'Minyak',unit:'ml',threshold:0,area:'a'.repeat(51)}]],
+  ]
+  for(const [why,menu,stock] of bad)await expect(commands.publish(menu,stock),why).rejects.toThrow()
+ })
+})
+// Pilot PRD (2026-11-08): the cashier has a Stock tab; a count travels to the manager's laptop for approval.
+describe('the cashier keeps stock between orders',()=>{
+ it('records waste and a batch, submits a count for the manager, but cannot approve it alone',async()=>{
+  const {db,commands}=await seed(identity({role:'cashier',demo:true}))
+  await commands.stockRecord('egg','waste',1000,'Jatuh')
+  await commands.produce('chicken',20_000,[{stockId:'raw-chicken',qty:2_000_000}],'')
+  const id=uid(),session={id,area:'Kulkas bar',lines:[{stockId:'egg',counted:48_000}]}
+  const submitted=await commands.submitCount(session)
+  expect([submitted.status,(await db.counts.get(id))?.status]).toEqual(['submitted','submitted'])
+  expect((await db.outbox.toArray()).find(o=>o.kind==='count.submit')?.payload).toMatchObject({id,area:'Kulkas bar',lines:[{stockId:'egg',counted:48_000}]})
+  await expect(commands.recordCount(session)).rejects.toThrow('Perlu persetujuan manajer')
+  await commands.recordCount(session,await commands.approve('demo-owner',DEMO_PIN,'count',{orderId:id}))
+  expect((await db.counts.get(id))?.status).toBe('approved')
  })
 })

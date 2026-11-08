@@ -13,7 +13,7 @@ export async function openShift(page:Page,opening='200000'){
  await page.getByRole('button',{name:/Buka sif untuk melayani/}).click()
  await page.getByLabel(/Modal kas awal/).fill(opening)
  await page.getByRole('button',{name:'Buka sif sekarang'}).click()
- await expect(page.getByText('Sif terbuka')).toBeVisible()
+ await expect(page.getByText('Sif terbuka',{exact:true})).toBeVisible()
 }
 export async function addItem(page:Page,name:string,{eggs=false,note=''}={}){
  await page.getByRole('button',{name:new RegExp(name)}).first().click()
@@ -28,8 +28,8 @@ export async function addItem(page:Page,name:string,{eggs=false,note=''}={}){
 export const cart=(page:Page)=>page.locator('.desktop-cart')
 // Full cash sale on an already-open shift; leaves the receipt dialog on screen.
 export async function sell(page:Page,{tendered}:{tendered?:string}={}){
- await cart(page).getByRole('button',{name:/Ke dapur/}).click()
- await expect(cart(page).getByText(/Dikirim ke dapur/)).toBeVisible()
+ await cart(page).getByRole('button',{name:/Ke stasiun/}).click()
+ await expect(cart(page).getByText(/Dikirim/)).toBeVisible()
  await cart(page).getByRole('button',{name:/Lanjut pembayaran/}).click()
  const pay=page.getByRole('dialog',{name:'Terima pembayaran'})
  if(tendered)await pay.getByLabel(/Uang diterima/).fill(tendered)
@@ -37,7 +37,8 @@ export async function sell(page:Page,{tendered}:{tendered?:string}={}){
  await expect(page.getByRole('dialog',{name:'Pembayaran tercatat'})).toBeVisible()
 }
 // Sidebar navigation; only rendered above 700px, so mobile specs must not use it.
-export const go=(page:Page,label:string)=>page.locator('.sidebar').getByRole('link',{name:label}).click()
+// 'Stok' also matches 'Hitung stok' and 'Kasir' carries a shortcut badge: take the first link whose text starts with the label.
+export const go=(page:Page,label:string)=>page.locator('.sidebar').getByRole('link',{name:new RegExp('^'+label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))}).first().click()
 export const drawer=(page:Page)=>page.locator('.panel').filter({hasText:'Laci kas'}).locator('.bill-total')
 export const sales=(page:Page)=>page.locator('.metric').filter({hasText:'Penjualan tercatat'}).locator('strong')
 export const balance=(page:Page,name:string)=>page.locator('.stock-row').filter({hasText:name}).locator('.stock-quantity strong')

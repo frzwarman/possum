@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { CalendarClock, FileText, Plus, Trash2 } from "lucide-react";
 import { useApp } from "../../app/context";
+import { can } from "../../domain/permissions";
 import { DocumentDialog } from "../../app/Document";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
@@ -20,7 +21,7 @@ const localInput = (iso: string) => {
 // Catering and B2B orders: a customer, a delivery time, a down payment now and the rest later.
 // Delivery takes the menu recipes out of stock; until the balance is paid the order stays owed.
 export default function Catering() {
-  const { salesOrders, menu, settings, commands, act, busy, manager, shift } = useApp();
+  const { salesOrders, menu, settings, commands, act, busy, shift, user } = useApp();
   const [tab, setTab] = useState("upcoming");
   const [draft, setDraft] = useState<Draft>();
   const [pick, setPick] = useState({ itemId: "", qty: "", price: "" });
@@ -29,7 +30,7 @@ export default function Catering() {
   const [delivering, setDelivering] = useState<SalesOrder>();
   const [cancelling, setCancelling] = useState<{ so: SalesOrder; reason: string; refund: string }>();
   const [printing, setPrinting] = useState<SalesOrder>();
-  if (!manager) return <Navigate to="/pos" />;
+  if (!can(user.role, "documents")) return <Navigate to="/pos" />;
   const balance = (so: SalesOrder) => (so.status === "cancelled" ? 0 : so.totals.total - paidValue(so));
   const shown = salesOrders.filter((so) =>
     tab === "upcoming" ? so.status === "confirmed" : tab === "owed" ? so.status === "delivered" && balance(so) > 0 : true,
@@ -79,6 +80,10 @@ export default function Catering() {
     if (!draft) return;
     const dp = Number(draft.dp || 0);
     void act(async () => {
+      // A DP beyond the total, or a drawer DP outside the operator's own shift, fails before the order is saved,
+      // otherwise a second tap would create a duplicate order.
+      if (dp > preview.total) throw new Error("DP melebihi total pesanan");
+      if (dp > 0 && source === "drawer") await commands.shift();
       const so = await commands.saveSalesOrder({
         id: draft.id,
         customer: { name: draft.name, phone: draft.phone, address: draft.address },
@@ -182,7 +187,7 @@ export default function Catering() {
                 <Button
                   variant="secondary"
                   onClick={() =>
-                    setDraft({ id: so.id, ...so.customer, deliverAt: localInput(so.deliverAt), lines: so.lines, discount: String(so.discount || ""), note: so.note, dp: "" })
+                    setDraft({ id: so.id, ...so.customer, deliverAt: localInput(so.deliverAt), lines: so.lines.map((l) => { const m = menu.find((x) => x.id === l.itemId); return m ? { ...l, name: m.name, catalogVersion: m.version } : l; }), discount: String(so.discount || ""), note: so.note, dp: "" })
                   }
                 >
                   Ubah

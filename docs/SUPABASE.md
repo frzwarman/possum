@@ -42,33 +42,34 @@ The script prints generated passwords once. Hand them directly to each person
 and ask them to change them after the first login. Use `pnpm staff reset-password`
 for owner-assisted recovery.
 
-## 3. Roles and manager approval
+## 3. Roles, PINs and paired devices
 
-| | Pemilik (super admin) | Manajer (admin) | Kasir |
-|---|---|---|---|
-| Sell, kitchen, payment, reprint (marked SALINAN) | yes | yes | yes |
-| Discount, void, refund, cash out | yes | yes | manager PIN |
-| Expected cash and variance at shift close | yes | yes | no (blind count) |
-| Sales reports, history outside own shift, audit | yes | yes | no |
-| Menu, stock, purchasing, production, catering, outlet transfers, settings | yes | yes | no |
-| Staff accounts, primary till device | yes | no | no |
+| | Pemilik | Manajer | Admin stok | Kepala dapur | Kasir | Barista | Dapur |
+|---|---|---|---|---|---|---|---|
+| Sell, send to stations, payment, open and close shift | yes | yes | no | no | yes | no | no |
+| Discount, void, refund, cash out, cash gap over the limit | yes | yes | no | no | manager PIN | no | no |
+| Station: tickets, ready, waste, prep batches | yes | yes | yes | yes | yes | yes | yes |
+| Menu and recipes (an active item without a recipe) | yes | yes | PIN | PIN | no | no | no |
+| Ingredients, receiving, purchase orders, catering, transfers | yes | yes | yes | no | no | no | no |
+| Stock counts (approving the result) | yes | yes | PIN | PIN | no | PIN | PIN |
+| Today, reports, audit log, settings, devices, team | yes | yes | no | no | no | no | no |
 
-Back office is manager work (`202611020007_backoffice.sql`,
-`202611020008_operations.sql`): suppliers; purchase orders received over
-several deliveries and paid in parts (from the drawer, outside it, or owed);
-production runs costed at each input's latest price; catering/B2B sales orders
-with a down payment, delivery from stock, and settlement; and stock transfers
-between outlets. The server enforces all of this in
-`apply_operation`, `bootstrap`, and RLS (`202611020006_approvals.sql`): a cashier cannot read sales tables through the
-API, and `bootstrap` returns no expected cash or variance to a cashier.
+`202611060009_takar.sql` adds the roles, device modes (`devices.mode`: `pos`, `station`, `office`), the
+`pull` and `audit_log` RPCs, `count.record`, the `counts` table, option deltas, stations on order lines and
+the relaxed shift rules. Apply it with `supabase db push`; `pnpm test:db` runs every migration in PGlite.
 
-Each manager and owner signs in once and sets a 6-digit PIN in Lainnya →
-PIN persetujuan. At the till the cashier stays signed in; the manager picks
-their name and types the PIN. The server checks it (bcrypt via `pgcrypto`)
-and issues an approval that works once, for that cashier, action, order, and
-amount, within an hour. Five wrong PINs in 15 minutes pause approvals for the
-restaurant. Approvals need a connection; the approver's name is stored in the
-order and shown in Laporan → Koreksi & persetujuan.
+Each owner and manager signs in once and sets a 6-digit approval PIN in *Lainnya → PIN persetujuan*.
+At the till the cashier stays signed in; the manager picks their name and types the PIN. The server
+checks it (bcrypt via `pgcrypto`) and issues an approval that works once, for that person, action,
+order or count, and amount, within an hour. Three wrong PINs in five minutes pause approvals.
+
+Staff accounts use a 6-digit PIN as their password: `pnpm staff add kasir@ziggy.local cashier "Budi"
+--restaurant <uuid> --pin 482915`. The email is stored in `memberships.login`, so after an owner or
+manager has signed in on a device, that device offers "name + PIN" sign-in to everyone on the team.
+
+Pair each device from *Lainnya → Printer & perangkat*: the one POS device (owner moves it), station
+tablets and back-office laptops (owner or manager). `apply_operation` accepts selling operations from
+the POS device only and station / back-office operations from any paired device.
 
 ### More than one outlet
 

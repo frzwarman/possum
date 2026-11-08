@@ -52,7 +52,7 @@ describe('parseCSV() against what spreadsheets actually emit',()=>{
 describe('menuImportSchema',()=>{
  it('coerces the price column to an integer rupiah value',()=>{
   const parsed=menuImportSchema.parse(menuRow())
-  expect(parsed).toEqual({name:'Nasi kuning',category:'Makanan',price:18_000})
+  expect(parsed).toEqual({name:'Nasi kuning',category:'Makanan',type:'food',price:18_000})
   expect(Number.isInteger(parsed.price)).toBe(true)
  })
  it('rejects a negative price',()=>{
@@ -71,11 +71,11 @@ describe('menuImportSchema',()=>{
   expect(menuImportSchema.safeParse(menuRow({price:'1000000001'})).success).toBe(false)
   expect(menuImportSchema.safeParse(menuRow({price:'1000000000'})).success).toBe(true)
  })
- it('rejects a missing required column and an empty name or category',()=>{
+ it('rejects a missing required column and an empty name; an empty category imports as food',()=>{
   const {price:_,...noPrice}=menuRow();void _
   expect(menuImportSchema.safeParse(noPrice).success).toBe(false)
   expect(menuImportSchema.safeParse(menuRow({name:''})).success).toBe(false)
-  expect(menuImportSchema.safeParse(menuRow({category:''})).success).toBe(false)
+  expect(menuImportSchema.parse(menuRow({category:''}))).toMatchObject({type:'food'})
  })
  it('rejects names and categories past the column limits',()=>{
   expect(menuImportSchema.safeParse(menuRow({name:'a'.repeat(101)})).success).toBe(false)
@@ -86,7 +86,7 @@ describe('menuImportSchema',()=>{
 describe('stockImportSchema',()=>{
  it('keeps quantities as decimal strings that convert() scales to thousandths',()=>{
   const parsed=stockImportSchema.parse(stockRow())
-  expect(parsed).toEqual({name:'Beras',unit:'g',quantity:'10.5',threshold:'2'})
+  expect(parsed).toEqual({name:'Beras',unit:'g',quantity:'10.5',threshold:'2',area:''})
   expect(convert(parsed.quantity,parsed.unit,parsed.unit)).toBe(10_500) // 1 g = 1_000
  })
  it('rejects a unit outside the base units — kg must be entered as g',()=>{
@@ -94,7 +94,8 @@ describe('stockImportSchema',()=>{
   for(const unit of ['g','ml','pcs'])expect(stockImportSchema.safeParse(stockRow({unit})).success).toBe(true)
  })
  it('rejects negative, non-numeric and over-precise quantities',()=>{
-  for(const quantity of ['-1','','1.2345','1e3','10,5'])expect(stockImportSchema.safeParse(stockRow({quantity})).success).toBe(false)
+  for(const quantity of ['-1','','1.2345','1e3','10,5,0'])expect(stockImportSchema.safeParse(stockRow({quantity})).success).toBe(false)
+  expect(stockImportSchema.safeParse(stockRow({quantity:'10,5'})).success).toBe(true) // the Indonesian decimal comma, like convert()
   expect(stockImportSchema.safeParse(stockRow({quantity:'0'})).success).toBe(true) // an opening balance of zero is legitimate
  })
  it('applies the same rule to the threshold column',()=>{
@@ -126,5 +127,21 @@ describe('csv()',()=>{
  })
  it('round-trips through parseCSV — an export must be re-importable',()=>{
   expect(parseCSV(csv([['name','category','price'],['Nasi, goreng','Makanan',18000]]))).toEqual([{name:'Nasi, goreng',category:'Makanan',price:'18000'}])
+ })
+})
+
+// Takar: menu rows carry a type (or the old category), stock rows a storage area and one pack.
+describe('Takar columns',()=>{
+ it('reads a menu type, and maps an old category to one',()=>{
+  expect(menuImportSchema.parse({name:'Latte',type:'beverage',price:'30000'})).toMatchObject({type:'beverage'})
+  expect(menuImportSchema.parse(menuRow({category:'Minuman'}))).toMatchObject({type:'beverage'})
+  expect(menuImportSchema.parse(menuRow({category:'Camilan'}))).toMatchObject({type:'snack'})
+  expect(menuImportSchema.parse(menuRow())).toMatchObject({type:'food'})
+  expect(menuImportSchema.safeParse({name:'X',type:'drink',price:'1'}).success).toBe(false)
+ })
+ it('reads an area and a pack, both optional',()=>{
+  expect(stockImportSchema.parse(stockRow({area:'Kulkas bar',pack_name:'karton',pack_qty:'12000'}))).toMatchObject({area:'Kulkas bar',pack_name:'karton',pack_qty:'12000'})
+  expect(stockImportSchema.parse(stockRow())).toMatchObject({area:''})
+  expect(stockImportSchema.safeParse(stockRow({pack_name:'karton'})).success).toBe(false) // a pack needs its size
  })
 })
