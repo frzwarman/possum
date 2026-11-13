@@ -5,6 +5,8 @@ single café or restaurant, built as a local-first Progressive Web App on the Po
 codebase. Everything the app says to its users is in Bahasa Indonesia; this documentation is in
 English, with the on-screen labels quoted so you can match them.
 
+For a one-page map of the whole project (purpose, users, PRD coverage, architecture, design, how to run and ship, open items) read [docs/PROJECT.md](docs/PROJECT.md).
+
 The product requirements are in [docs/superpowers/specs/2026-11-06-takar-prd.md](docs/superpowers/specs/2026-11-06-takar-prd.md);
 the decisions that map them onto this codebase are in
 [docs/superpowers/specs/2026-11-06-takar-design-decisions.md](docs/superpowers/specs/2026-11-06-takar-design-decisions.md).

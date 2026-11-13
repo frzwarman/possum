@@ -929,6 +929,68 @@ await test("A manager manages staff below the owner; the owner stays out of reac
   await db.query("select public.manage_staff($1,$2,$3)", [cashier, "cashier", true]);
   await login(owner);
 });
+// Cashless pilot PRD (2026-11-13): EDC payments, compliments, one made line voided, the close matched per EDC.
+await test("Cashless: card or QRIS on a named EDC, compliments priced by rule, a made line voided with a PIN, the close matched per EDC", async () => {
+  await login(owner);
+  const current = (await read("select settings from public.restaurants where id=$1", [rid])).rows[0].settings;
+  await assert.rejects(send(op("settings.update", { settings: { ...current, edcs: [""] } })), /Invalid restaurant settings/);
+  const cfg = { ...current, cashless: true, edcs: ["BCA", "BRI"], complimentBudget: 3000000, taxBps: 1000 };
+  await send(op("settings.update", { settings: cfg }));
+  await login(cashier);
+  const sC = randomUUID();
+  await send(op("shift.open", { id: sC, opening: 0 }));
+  const ln = (item, version, price) => ({ id: randomUUID(), itemId: item.id, name: item.name, price, qty: 1, modifiers: [], note: "", recipe: item.recipe, catalogVersion: version, prepared: false, cancelled: false });
+  const build = (lines, totals, extra = {}) => { const o = op("order.save", {}); o.payload = { order: { id: randomUUID(), restaurantId: rid, shiftId: sC, actor, cashier: "Kasir", revision: 1, receiptId: "MJ-" + o.id.toUpperCase(), label: "Pager 9", mode: "dinein", status: "open", prep: "new", discount: 0, discountReason: "", settings: cfg, createdAt: o.occurredAt, updatedAt: o.occurredAt, lines, totals, ...extra }, expectedRevision: 0 }; return o; };
+  const made = async (o) => { await send(o); const id = o.payload.order.id; const s = await snap(id); await send(op("order.prepare", { id, expectedRevision: s.revision, lineIds: s.snapshot.lines.filter((l) => !l.prepared).map((l) => l.id) })); return id; };
+  // An ordinary sale: no cash, card needs an EDC, the approval code is kept.
+  const a = await made(build([ln(nasiV2, 2, 35000), ln(latte, 2, 31000)], { subtotal: 66000, discount: 0, service: 0, tax: 6600, total: 72600 }));
+  await assert.rejects(send(op("payment.record", { id: a, expectedRevision: 2, method: "cash", tendered: 100000, verified: true })), /Cashless outlet/);
+  await assert.rejects(send(op("payment.record", { id: a, expectedRevision: 2, method: "card", tendered: 0, verified: true })), /EDC required/);
+  await send(op("payment.record", { id: a, expectedRevision: 2, method: "card", tendered: 0, verified: true, edc: "BCA", approvalCode: "412093" }));
+  assert.deepEqual((await read("select method,edc,approval_code from public.payments where order_id=$1", [a])).rows, [{ method: "card", edc: "BCA", approval_code: "412093" }]);
+  assert.deepEqual((await snap(a)).snapshot.payment.edc, "BCA");
+  // Voiding one made line on the paid order: PIN, reason on the line, new total; the last line cannot go this way.
+  const latteLine = (await snap(a)).snapshot.lines.find((l) => l.itemId === "latte").id;
+  await assert.rejects(send(op("order.voidline", { id: a, lineId: latteLine, reason: "Salah menu", expectedRevision: 3 })), /Manager approval required/);
+  await send(op("order.voidline", { id: a, lineId: latteLine, reason: "Salah menu", expectedRevision: 3, approval: (await approve(owner, "482915", "void", a)).id }));
+  let o = await snap(a);
+  assert.deepEqual([o.revision, o.snapshot.totals.total, o.snapshot.lines.find((l) => l.id === latteLine).voidApprovedBy, o.snapshot.lines.find((l) => l.id === latteLine).cancelled], [4, 38500, "Owner", true]);
+  await assert.rejects(send(op("order.voidline", { id: a, lineId: o.snapshot.lines[0].id, reason: "x", expectedRevision: 4, approval: (await approve(owner, "482915", "void", a)).id })), /Invalid line void/);
+  // Staff meal: drink free, food half price, no tax, no PIN; the rule is the server's, not the till's.
+  const staff = (discount, total) => build([ln(nasiV2, 2, 35000), ln(latte, 2, 31000)], { subtotal: 66000, discount, service: 0, tax: 0, total }, { mode: "compliment", compliment: { kind: "staff", who: "Raka" }, discount, discountReason: "Staff meal · Raka" });
+  await assert.rejects(send(staff(0, 66000)), /Invalid compliment/);
+  await assert.rejects(send(build([ln(nasiV2, 2, 35000)], { subtotal: 35000, discount: 0, service: 0, tax: 3500, total: 38500 }, { compliment: { kind: "staff", who: "Raka" } })), /Invalid compliment/);
+  const b = await made(staff(48500, 17500));
+  await send(op("payment.record", { id: b, expectedRevision: 2, method: "qris", tendered: 0, verified: true, edc: "BRI" }));
+  // Owner's family: free, no payment.
+  const c = await made(build([ln(nasiV2, 2, 35000)], { subtotal: 35000, discount: 35000, service: 0, tax: 0, total: 0 }, { mode: "compliment", compliment: { kind: "family", who: "Rino" }, discount: 35000, discountReason: "Keluarga pemilik · Rino" }));
+  await assert.rejects(send(op("payment.record", { id: c, expectedRevision: 2, method: "card", tendered: 0, verified: true, edc: "BCA" })), /Invalid payment method/);
+  await send(op("payment.record", { id: c, expectedRevision: 2, method: "none", tendered: 0, verified: true }));
+  // An open order with a voided line still takes more lines; the voided one rides along unchanged.
+  const d = await made(build([ln(nasiV2, 2, 35000), ln(latte, 2, 31000)], { subtotal: 66000, discount: 0, service: 0, tax: 6600, total: 72600 }));
+  const dLatte = (await snap(d)).snapshot.lines.find((l) => l.itemId === "latte").id;
+  await send(op("order.voidline", { id: d, lineId: dLatte, reason: "Tumpah", expectedRevision: 2, approval: (await approve(owner, "482915", "void", d)).id }));
+  o = await snap(d);
+  const lines = [...o.snapshot.lines.map(({ readyAt, ...l }) => l), ln(nasiV2, 2, 35000)];
+  await send(op("order.save", { order: { ...o.snapshot, lines, revision: 4, totals: { subtotal: 70000, discount: 0, service: 0, tax: 7000, total: 77000 } }, expectedRevision: 3 }));
+  o = await snap(d);
+  await send(op("order.prepare", { id: d, expectedRevision: 4, lineIds: [lines[2].id] }));
+  await send(op("payment.record", { id: d, expectedRevision: 5, method: "card", tendered: 0, verified: true, edc: "BCA" }));
+  assert.equal(o.snapshot.lines.find((l) => l.id === dLatte).voidReason, "Tumpah");
+  // Close: BCA expects 38.500 + 77.000, BRI 17.500. Offsetting gaps still count as their sum.
+  const settlements = [{ edc: "BCA", slip: 135500 }, { edc: "BRI", slip: 0 }];
+  await assert.rejects(send(op("shift.close", { id: sC, counted: 1, settlements })), /Settlement total mismatch/);
+  await assert.rejects(send(op("shift.close", { id: sC, counted: 135500, settlements })), /Manager approval required/);
+  await send(op("shift.close", { id: sC, counted: 135500, settlements, approval: (await approve(owner, "482915", "variance", null, 37500)).id }));
+  const closed = (await read("select settlements,variance::int as v from public.shifts where id=$1", [sC])).rows[0];
+  assert.deepEqual([closed.v, closed.settlements], [2500, [{ edc: "BCA", expected: 115500, slip: 135500 }, { edc: "BRI", expected: 17500, slip: 0 }]]);
+  await login(owner);
+  const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10), tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const report = (await db.query("select public.sales_report($1,$2) as r", [today, tomorrow])).rows[0].r;
+  assert.deepEqual([report.compliments, report.edcs.BRI, report.methods.none], [83500, 17500, 0]);
+  assert.ok((await db.query("select public.audit_log($1,$2) as a", [today, tomorrow])).rows[0].a.some((r) => r.kind === "order.voidline" && r.approvedBy === "Owner"));
+  await send(op("settings.update", { settings: current }));
+});
 // Independent database restoration, never a live environment.
 await db.exec("reset role");
 const paymentsBefore = (await db.query("select count(*)::int n from public.payments")).rows[0].n;

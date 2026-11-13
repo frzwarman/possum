@@ -1,4 +1,4 @@
-import type { CashMovement, CountSession, Ingredient, Line, MenuItem, MenuType, Order, Pack, Settings, Shift, Station, StockItem, Totals } from './types'
+import type { CashMovement, Compliment, CountSession, Ingredient, Line, MenuItem, MenuType, Order, Pack, Settings, Settlement, Shift, Station, StockItem, Totals } from './types'
 export const MAX_MONEY = 1_000_000_000
 export function money(value:number):number { if(!Number.isSafeInteger(value)||value<0||value>MAX_MONEY) throw new Error('Nilai rupiah tidak valid'); return value }
 export function totals(lines:Pick<Line,'price'|'qty'|'cancelled'|'modifiers'>[], discount:number, settings:Pick<Settings,'taxBps'|'serviceBps'>):Totals {
@@ -9,6 +9,26 @@ export function totals(lines:Pick<Line,'price'|'qty'|'cancelled'|'modifiers'>[],
  const tax=Math.floor(((subtotal-discount+service)*settings.taxBps+5000)/10000)
  return {subtotal,discount,service,tax,total:money(subtotal-discount+service+tax)}
 }
+// Compliment: the owner's family pays nothing; a staff meal gets drinks free and food at half price, and the
+// staff member pays the rest. No tax or service on it, since nothing was sold. The server prices it the same way.
+type Priced=Pick<Line,'price'|'qty'|'cancelled'|'modifiers'>
+export function complimentDiscount<L extends Priced>(lines:L[],kind:Compliment['kind'],drink:(l:L)=>boolean){
+ let free=0,food=0
+ for(const l of lines.filter(l=>!l.cancelled)){const v=(l.price+l.modifiers.reduce((n,m)=>n+m.price,0))*l.qty;if(kind==='family'||drink(l))free+=v;else food+=v}
+ return free+Math.floor(food/2)
+}
+export const orderTotals=(o:{lines:Priced[];discount:number;mode:string},settings:Pick<Settings,'taxBps'|'serviceBps'>)=>totals(o.lines,o.discount,o.mode==='compliment'?{taxBps:0,serviceBps:0}:settings)
+// Compliments are not sales: they show in the compliment budget instead.
+export const isSale=(o:Pick<Order,'mode'>)=>o.mode!=='compliment'
+// Cashless close: per EDC, what Takar recorded (paid orders on that machine) against the total on its settlement slip.
+export function settlements(shiftId:string,orders:Order[],slips:Record<string,number>,edcs:string[]=[]):Settlement[]{
+ const expected=new Map<string,number>(edcs.map(e=>[e,0]))
+ for(const o of orders)if(o.shiftId===shiftId&&o.status==='paid'&&o.payment?.edc)expected.set(o.payment.edc,(expected.get(o.payment.edc)||0)+o.totals.total)
+ for(const e of Object.keys(slips))if(!expected.has(e))expected.set(e,0)
+ return [...expected].map(([edc,n])=>({edc,expected:n,slip:slips[edc]??0}))
+}
+// Gaps on two machines must not cancel out: the approval threshold looks at their sum, each counted as a size.
+export const settlementGap=(s:Settlement[])=>s.reduce((n,x)=>n+Math.abs(x.slip-x.expected),0)
 export function change(total:number,tendered:number) {money(total);money(tendered);if(tendered<total)throw new Error('Uang diterima kurang');return tendered-total}
 // qty is what was typed ("2,5" on an Indonesian keypad is 2.5); unit is the base unit, kg/l, or
 // the name of one of the ingredient's packs ("karton"), whose size is in thousandths of the base.
@@ -99,6 +119,13 @@ export function sanity(qty:number,history:number[]):'ok'|'high'|'low' {
  return qty>median*5?'high':qty<median/5?'low':'ok'
 }
 // CNT-2: gap = counted − expected, valued at the current unit cost (rupiah per thousandth); flagged over 5%.
+// Count review: a shortfall read as menu items (−50 g espresso beans ≈ 3 espresso). Uses the active item that
+// needs the most of the ingredient per portion, so the estimate errs low.
+export function itemsLost(gap:number,stockId:string,menu:Pick<MenuItem,'name'|'active'|'recipe'>[]){
+ if(gap>=0)return undefined
+ const per=menu.filter(m=>m.active).map(m=>({name:m.name,qty:m.recipe.find(r=>r.stockId===stockId)?.qty??0})).filter(x=>x.qty>0).sort((a,b)=>b.qty-a.qty)[0]
+ return per&&{n:Math.round(-gap/per.qty),name:per.name}
+}
 export function countGap(expected:number,counted:number,unitCost=0) {
  const gap=counted-expected
  return {gap,value:Math.round(gap*unitCost),flagged:expected<=0?gap!==0:Math.abs(gap)>expected*0.05}

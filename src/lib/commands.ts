@@ -1,4 +1,4 @@
-import { MAX_MONEY, change, consumption, expectedCash, itemStation, money, paidValue, prepState, receivedQty, receivedValue, rupiah, totals, unitCosts } from '../domain/calculate'
+import { MAX_MONEY, change, complimentDiscount, consumption, expectedCash, itemStation, menuType, money, orderTotals, settlementGap, settlements, paidValue, prepState, receivedQty, receivedValue, rupiah, totals, unitCosts } from '../domain/calculate'
 import { can, type Action } from '../domain/permissions'
 import type { Approval, ApprovalAction, CountSession, Draft, Identity, Ingredient, Line, MenuItem, Operation, OpKind, Order, Outlet, Payment, PurchaseLine, PurchaseOrder, SalesLine, SalesOrder, Settings, Shift, Station, StockItem, Supplier, Transfer } from '../domain/types'
 import { MejaDB, uid } from './db'
@@ -9,7 +9,7 @@ export const DEMO_PIN='123456'
 export const demoApprovers=[{id:'demo-owner',name:'Pemilik Demo'},{id:'demo-manager',name:'Manajer Demo'}]
 const refusal:Record<string,string>={'wrong-pin':'PIN salah','no-pin':'Manajer ini belum membuat PIN persetujuan (Lainnya → PIN persetujuan)',locked:'Terlalu banyak PIN salah. Coba lagi setelah 5 menit.'}
 // Selling happens on the one till; everything else may come from any paired device (station tablet, laptop).
-const SELLING:OpKind[]=['shift.open','shift.close','shift.cash','order.save','order.prepare','order.void','payment.record','refund.record']
+const SELLING:OpKind[]=['shift.open','shift.close','shift.cash','order.save','order.prepare','order.void','order.voidline','payment.record','refund.record']
 // Postgres reorders jsonb keys, so a line pulled back from the server is compared on sorted keys.
 const canon=(v:unknown):string=>JSON.stringify(v,(_k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.fromEntries(Object.entries(x as Record<string,unknown>).sort()):x)
 const strip=({readyAt:_,...l}:Line)=>canon(l)
@@ -84,14 +84,18 @@ export class Commands {
   const old=draft.orderId?await this.db.orders.get(draft.orderId):undefined
   if(draft.orderId&&!old)throw new Error('Pesanan tidak ditemukan')
   if(old&&(old.status!=='open'||old.revision!==draft.revision))throw new Error('Pesanan sudah berubah. Buka ulang dari Pesanan.')
-  const discounted=draft.discount!==(old?.discount||0);if(discounted&&draft.discount&&!draft.discountReason.trim())throw new Error('Isi alasan diskon')
-  const approved=discounted?this.approver('discount',draft.discountApproval,{amount:draft.discount}):{by:old?.discountApprovedBy,payload:{}}
+  // A compliment prices itself by its rule, so it needs no manager's PIN; a manager's discount does.
+  const comp=draft.mode==='compliment'?draft.compliment:undefined;if(draft.mode==='compliment'&&(!comp||!['staff','family'].includes(comp.kind)||!comp.who.trim()||comp.who.length>60))throw new Error('Pilih untuk siapa compliment ini')
+  const menu=comp?await this.db.menu.toArray():[],drink=(l:Line)=>{const m=menu.find(x=>x.id===l.itemId);return m?menuType(m)==='beverage':l.station==='bar'}
+  const discount=comp?complimentDiscount(draft.lines,comp.kind,drink):draft.discount,discountReason=comp?`${comp.kind==='staff'?'Staff meal':'Keluarga pemilik'} · ${comp.who.trim()}`:draft.discountReason
+  const discounted=!comp&&discount!==(old?.mode==='compliment'?0:old?.discount||0);if(discounted&&discount&&!discountReason.trim())throw new Error('Isi alasan diskon')
+  const approved=comp?{by:undefined,payload:{}}:discounted?this.approver('discount',draft.discountApproval,{amount:discount}):{by:old?.mode==='compliment'?undefined:old?.discountApprovedBy,payload:{}}
   const settings=old?.settings||await this.db.settings.get('settings');if(!settings)throw new Error('Selesaikan pengaturan restoran')
   if(old)for(const line of old.lines.filter(l=>l.prepared)){const next=draft.lines.find(l=>l.id===line.id);if(!next||strip(next)!==strip(line))throw new Error('Menu yang sudah disiapkan tidak dapat diubah. Batalkan seluruh pesanan dengan alasan.')}
   // A station may have marked a sent line ready meanwhile: that flag is the server's, not the till's.
   const lines=draft.lines.map(l=>{const was=old?.lines.find(x=>x.id===l.id);return was?.readyAt?{...l,readyAt:was.readyAt}:l})
   for(const l of draft.lines){if(!Number.isInteger(l.qty)||l.qty<1||l.qty>999)throw new Error('Jumlah menu 1–999');money(l.price)}
-  const order:Order={id:old?.id||uid(),restaurantId:this.user.restaurantId,shiftId:shift.id,actor:this.user.id,cashier:this.user.name,revision:(old?.revision||0)+1,receiptId:old?.receiptId||`MJ-${op.id.toUpperCase()}`,label:draft.label,mode:draft.mode,lines,status:'open',prep:prepState(lines),discount:draft.discount,discountReason:draft.discountReason,...(approved.by&&{discountApprovedBy:approved.by}),settings,totals:totals(lines,draft.discount,settings),createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
+  const order:Order={id:old?.id||uid(),restaurantId:this.user.restaurantId,shiftId:shift.id,actor:this.user.id,cashier:this.user.name,revision:(old?.revision||0)+1,receiptId:old?.receiptId||`MJ-${op.id.toUpperCase()}`,label:draft.label,mode:draft.mode,...(comp&&{compliment:{kind:comp.kind,who:comp.who.trim()}}),lines,status:'open',prep:prepState(lines),discount,discountReason,...(approved.by&&{discountApprovedBy:approved.by}),settings,totals:orderTotals({lines,discount,mode:draft.mode},settings),createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
   op.payload={order,expectedRevision:old?.revision||0,...approved.payload};await this.db.orders.put(order);await this.db.drafts.delete('current');return order
  })}
  async prepare(id:string){return this.run('order.prepare',{id},async op=>{await this.shift();const o=await this.openOrder(id);const lines=o.lines.filter(l=>!l.prepared&&!l.cancelled);if(!lines.length)throw new Error('Tidak ada tambahan baru untuk disiapkan');op.payload={id,expectedRevision:o.revision,lineIds:lines.map(l=>l.id)}
@@ -103,7 +107,26 @@ export class Commands {
  // Ziggy pays at the counter before the drink is made: a paid order still has tickets to serve.
  async ready(id:string,station?:Station){return this.run('order.ready',{id,...(station&&{station})},async op=>{const o=await this.db.orders.get(id);if(!o)throw new Error('Pesanan tidak ditemukan');if(o.status==='void'||o.status==='refunded')throw new Error('Pesanan sudah dibatalkan');if(!station&&o.lines.some(l=>!l.prepared&&!l.cancelled))throw new Error('Kirim seluruh menu ke dapur dahulu')
   o.lines=o.lines.map(l=>l.prepared&&!l.cancelled&&!l.readyAt&&(!station||(l.station??'kitchen')===station)?{...l,readyAt:op.occurredAt}:l);o.prep=prepState(o.lines);await this.db.orders.put(o);return o})}
- async pay(id:string,method:'cash'|'qris'|'card',tendered:number,verified:boolean){return this.run('payment.record',{id,method,tendered,verified},async op=>{await this.shift({late:method==='cash'});const o=await this.openOrder(id);if(o.lines.some(l=>!l.prepared&&!l.cancelled))throw new Error('Kirim ke dapur sebelum pembayaran');if(method!=='cash'&&(!verified||!navigator.onLine))throw new Error('Periksa pembayaran pada aplikasi merchant saat online');const t=method==='cash'?money(tendered):o.totals.total;const c=change(o.totals.total,t);op.payload={...op.payload,expectedRevision:o.revision};o.payment={method,tendered:t,change:c,verified:method==='cash'||verified,at:op.occurredAt};o.status='paid';o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o);return o})}
+ // Cashless: the cashier types the amount on the EDC, taps Confirm once it prints Approved or Paid, and may
+ // copy the approval code from the slip to find a payment the EDC left pending. A free compliment pays 'none'.
+ async pay(id:string,method:'cash'|'qris'|'card'|'none',tendered:number,verified:boolean,{edc,approvalCode}:{edc?:string;approvalCode?:string}={}){edc=edc?.trim()||undefined;approvalCode=approvalCode?.trim()||undefined
+  if((edc&&edc.length>30)||(approvalCode&&approvalCode.length>30))throw new Error('Nama EDC dan kode approval maksimal 30 karakter')
+  return this.run('payment.record',{id,method,tendered,verified,...(edc&&{edc}),...(approvalCode&&{approvalCode})},async op=>{await this.shift({late:method==='cash'});const o=await this.openOrder(id);if(o.lines.some(l=>!l.prepared&&!l.cancelled))throw new Error('Kirim ke dapur sebelum pembayaran')
+  const cashless=Boolean((await this.db.settings.get('settings'))?.cashless)
+  if(method==='none'?o.totals.total!==0:o.totals.total===0&&o.mode==='compliment')throw new Error(method==='none'?'Tanpa pembayaran hanya untuk total Rp0':'Compliment Rp0 disimpan tanpa pembayaran')
+  if(method==='cash'&&cashless)throw new Error('Outlet ini tidak menerima tunai')
+  if((method==='card'||method==='qris')&&cashless&&!edc)throw new Error('Pilih mesin EDC')
+  if((method==='card'||method==='qris')&&(!verified||(!edc&&!navigator.onLine)))throw new Error(edc?'Konfirmasi setelah EDC mencetak Approved atau Paid':'Periksa pembayaran pada aplikasi merchant saat online')
+  const t=method==='cash'?money(tendered):o.totals.total;const c=change(o.totals.total,t);op.payload={...op.payload,expectedRevision:o.revision};o.payment={method,tendered:t,change:c,verified:true,at:op.occurredAt,...(edc&&{edc}),...(approvalCode&&{approvalCode})};o.status='paid';o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o);return o})}
+ // A made line taken off an open or paid order: manager's PIN, reason kept on the line, totals recomputed.
+ // On a paid order the cashier also voids or refunds the difference on the EDC; the settlement expects the new total.
+ async voidLine(id:string,lineId:string,reason:string,approval?:Approval){if(!reason.trim()||reason.length>300)throw new Error('Alasan wajib, maksimal 300 karakter');const ok=this.approver('void',approval,{orderId:id});return this.run('order.voidline',{id,lineId,reason,...ok.payload},async op=>{const s=await this.shift({late:true,others:true});const o=await this.db.orders.get(id)
+  if(!o||o.shiftId!==s.id||!['open','paid'].includes(o.status))throw new Error('Hanya pesanan sif ini yang belum dibatalkan')
+  const line=o.lines.find(l=>l.id===lineId&&!l.cancelled);if(!line||!line.prepared)throw new Error('Menu yang belum dikirim cukup dihapus dari keranjang')
+  if(o.lines.filter(l=>!l.cancelled).length<2)throw new Error(o.status==='paid'?'Satu-satunya menu: kembalikan seluruh pembayaran':'Satu-satunya menu: batalkan seluruh pesanan')
+  const lines=o.lines.map(l=>l.id===lineId?{...l,cancelled:true,voidReason:reason.trim(),...(ok.by&&{voidApprovedBy:ok.by})}:l)
+  const menu=o.compliment?await this.db.menu.toArray():[],discount=o.compliment?complimentDiscount(lines,o.compliment.kind,l=>{const m=menu.find(x=>x.id===l.itemId);return m?menuType(m)==='beverage':l.station==='bar'}):o.discount
+  op.payload={...op.payload,expectedRevision:o.revision};Object.assign(o,{lines,discount,totals:orderTotals({lines,discount,mode:o.mode},o.settings),revision:o.revision+1,updatedAt:op.occurredAt});await this.db.orders.put(o);return o})}
  async voidOrder(id:string,reason:string,approval?:Approval){if(!reason.trim())throw new Error('Alasan wajib');const ok=this.approver('void',approval,{orderId:id});return this.run('order.void',{id,reason,...ok.payload},async op=>{await this.shift({late:true,others:true});const o=await this.openOrder(id);op.payload={...op.payload,expectedRevision:o.revision};o.status='void';o.voidReason=reason;o.voidApprovedBy=ok.by;o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o)})}
  async refund(id:string,reason:string,approval?:Approval){this.online();if(!reason.trim())throw new Error('Alasan wajib');const ok=this.approver('refund',approval,{orderId:id});return this.run('refund.record',{id,reason,...ok.payload},async op=>{const o=await this.db.orders.get(id);if(!o||o.status!=='paid')throw new Error('Hanya transaksi lunas yang dapat dikembalikan');const s=await this.shift();if(s.id!==o.shiftId)throw new Error('MVP: pengembalian hanya dalam sif asal yang masih terbuka');op.payload={...op.payload,expectedRevision:o.revision};o.status='refunded';o.refund={reason,at:op.occurredAt,actor:this.user.id,approvedBy:ok.by};o.revision++;await this.db.orders.put(o)})}
  async stockRecord(stockId:string,kind:'opening'|'purchase'|'waste'|'count'|'adjustment',qty:number,reason:string,cost=0,fromDrawer=false,photo?:string){this.need(kind==='waste'?'waste':kind==='purchase'?'inventory':'approve');if(!reason.trim()||!Number.isSafeInteger(qty)||Math.abs(qty)>1e12)throw new Error('Jumlah/alasan tidak valid');money(cost);if(photo&&!validateMenuPhotoData(photo))throw new Error('Foto nota tidak valid');return this.run('stock.record',{stockId,kind,qty,reason,cost,fromDrawer,...(photo&&{photo})},async op=>{
@@ -113,9 +136,15 @@ export class Commands {
  await this.db.movements.add({id:op.id,stockId,kind,qty:delta,reason,actor:this.user.id,at:op.occurredAt,recordId:op.id,cost,...(photo&&{photo})});if(fromDrawer){const s=await this.shift();await this.db.cash.add({id:op.id,shiftId:s.id,amount:-cost,reason:`Pembelian: ${reason}`,at:op.occurredAt,actor:this.user.id,recordId:op.id});op.payload.shiftId=s.id}return delta})}
  async cashMove(amount:number,reason:string,approval?:Approval){if(!Number.isSafeInteger(amount)||!amount||Math.abs(amount)>1e9||!reason.trim())throw new Error('Jumlah/alasan tidak valid');const ok=amount<0?this.approver('cashout',approval,{amount:-amount}):{payload:{}};return this.run('shift.cash',{amount,reason,...ok.payload},async op=>{const s=await this.shift();op.payload.shiftId=s.id;await this.db.cash.add({id:op.id,shiftId:s.id,amount,reason,actor:this.user.id,at:op.occurredAt,...('by' in ok&&{approvedBy:ok.by})})})}
  // POS-8: a gap over the limit needs a manager's PIN for exactly that gap; managers answer for their own.
- async closeShift(counted:number,approval?:Approval){money(counted);return this.run('shift.close',{counted},async op=>{const s=await this.shift({late:true,others:true});const orders=await this.db.orders.where('shiftId').equals(s.id).toArray();if(orders.some(o=>o.status==='open'))throw new Error('Selesaikan atau batalkan pesanan belum dibayar');const expected=expectedCash(s,orders,await this.db.cash.toArray()),variance=counted-expected
-  const limit=(await this.db.settings.get('settings'))?.varianceLimit??10000,ok=Math.abs(variance)>limit?this.approver('variance',approval,{amount:Math.abs(variance)}):{by:undefined,payload:{}}
-  Object.assign(s,{status:'closed',counted,expected,variance,closedAt:op.occurredAt,...(ok.by&&!can(this.user.role,'approve')&&{varianceApprovedBy:ok.by})});op.payload={counted,id:s.id,...ok.payload};await this.db.shifts.put(s);return s})}
+ // Cash: the counted drawer against the expected cash. Cashless (slips given): each EDC's settlement slip against
+ // what Takar recorded on that machine; the gap that needs a PIN is the sum of each machine's gap.
+ async closeShift(counted:number,approval?:Approval,slips?:Record<string,number>){money(counted);for(const v of Object.values(slips??{}))money(v);if(slips&&Object.keys(slips).some(e=>!e.trim()||e.length>30))throw new Error('Nama EDC 1–30 karakter')
+  return this.run('shift.close',{counted},async op=>{const s=await this.shift({late:true,others:true});const orders=await this.db.orders.where('shiftId').equals(s.id).toArray();if(orders.some(o=>o.status==='open'))throw new Error('Selesaikan atau batalkan pesanan belum dibayar')
+  const settings=await this.db.settings.get('settings'),list=slips&&settlements(s.id,orders,slips,settings?.edcs)
+  if(list)counted=list.reduce((n,x)=>n+x.slip,0)
+  const expected=list?list.reduce((n,x)=>n+x.expected,0):expectedCash(s,orders,await this.db.cash.toArray()),variance=counted-expected,gap=list?settlementGap(list):Math.abs(variance)
+  const limit=settings?.varianceLimit??10000,ok=gap>limit?this.approver('variance',approval,{amount:gap}):{by:undefined,payload:{}}
+  Object.assign(s,{status:'closed',counted,expected,variance,closedAt:op.occurredAt,...(list&&{settlements:list}),...(ok.by&&!can(this.user.role,'approve')&&{varianceApprovedBy:ok.by})});op.payload={counted,id:s.id,...(list&&{settlements:list.map(({edc,slip})=>({edc,slip}))}),...ok.payload};await this.db.shifts.put(s);return s})}
  async publish(menu:MenuItem[],stock:StockItem[],approval?:Approval){this.need('catalog',true)
   // "Tambah pilihan" starts a blank row, and older builds saved untouched ones; one of those anywhere
   // in the menu then blocked every later save. Nameless, free and untracked is not an add-on: drop it.

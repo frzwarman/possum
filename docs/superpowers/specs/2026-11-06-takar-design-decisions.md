@@ -160,6 +160,41 @@ now follows it. Decisions:
 30. **Icons stay Lucide.** The file uses Hugeicons; Lucide has the same 1.5 px stroke language and is
     already everywhere in the code, so no icon dependency was swapped.
 
+### Cashless pilot revision (13 Nov 2026)
+
+Source: `2026-11-13-takar-pilot-prd-cashless.md` and Figma "Ziggy pilot: Product" (C0–C12, M1–M8) with its 19 comments.
+Server contract: `supabase/migrations/202611130010_cashless.sql`.
+
+31. **Cashless is a switch, not a rewrite.** `settings.cashless` (with `settings.edcs`, default BCA, BRI, Mandiri) hides
+    cash, the opening float and the drawer; the cash path stays for other outlets. The server refuses cash when it is on.
+32. **EDC payment.** Card or QRIS plus the machine; the approval code from the slip is optional (≤30 chars) and is
+    searchable on Orders and the close. Stored on the order's `payment` and on `payments.edc` / `approval_code`.
+33. **The receipt always prints** in cashless mode: the receipt dialog requests the print as it opens. No switch.
+34. **Compliment is a third order mode** (`mode:'compliment'`, `compliment:{kind:'staff'|'family',who}`), per the PRD
+    rule (the Figma comment "rules staff sama owner sama" was overruled by the user): staff meal = drinks free, food
+    half price (the discount rounds down); owner's family = everything free, paid with method `none`. The discount is
+    the rule's, recomputed by the server (`compliment_discount`, drink = catalog type or a drink-like category, the same
+    rule as `menuType()`), so it needs no PIN. No tax or service on a compliment (`order_total`). Compliments still move
+    stock, are excluded from sales everywhere (`isSale`, `sales_report`) and sum against `settings.complimentBudget`
+    on Today.
+35. **Void an item** (`order.voidline`): a made line on an open or paid order of the current shift, manager's PIN,
+    reason and approver kept on the line, totals (and a compliment's discount) recomputed. The last line is voided
+    with the whole order (or refunded) instead. Stock stays deducted as preparation; it is not reclassified as waste.
+    On a paid order the cashier voids the difference on the EDC too, and the settlement expects the new total.
+36. **The cashless close** replaces the drawer count: each EDC's slip against the sum of that machine's paid orders.
+    The PIN threshold is the sum of each machine's absolute gap, so a short and an over machine never cancel out.
+    `shifts.settlements` keeps `[{edc,expected,slip}]`. The cashier sees Takar's expected amount per EDC (a slip is
+    machine-printed, so a blind count adds nothing).
+37. **Count before close** is enforced on the till only: the close button stays off until a count was sent since the
+    shift opened. The server does not check it.
+38. **Items lost** on count review: a shortfall divided by the per-portion use of the active menu item that needs the
+    most of that ingredient, so the estimate errs low (−50 g espresso beans ≈ 3 espresso).
+39. **Orders keeps its cards** (the Playwright specs select `.order-card`) and gains the Figma's functions: search by
+    number, name, item or approval code; Paid / Unpaid / Voided / Compliment filters with counts; sort; payment and
+    approval code on each card; void an item in the detail. The Figma table-and-side-panel layout is not copied yet.
+    Left out: "Pending EDC" as its own status (an unpaid order is the pending one), and all WhatsApp screens
+    (C6b, C11b, C11c, C12, P1, P2), which the PRD prices as an add-on after the pilot.
+
 ## Left to the builder
 
 Exact copy, icons and layout; CSS for the new screens (reuse the existing panel, stock-row, metric and

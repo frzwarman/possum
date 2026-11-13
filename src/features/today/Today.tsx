@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate } from '@tanstack/react-router'
-import { Bell, TrendingUp, Percent, Trash2, Scale, AlertTriangle, Ban, ClipboardList, ChefHat, Clock } from 'lucide-react'
+import { Bell, TrendingUp, Percent, Trash2, Scale, AlertTriangle, Ban, ClipboardList, ChefHat, Clock, Gift } from 'lucide-react'
 import { useApp } from '../../app/context'
 import { Button } from '../../components/ui/button'
-import { businessDay, countsDue, daysLeft, expiring, quantity, rupiah, usagePerDay, when } from '../../domain/calculate'
+import { businessDay, countsDue, daysLeft, expiring, isSale, quantity, rupiah, usagePerDay, when } from '../../domain/calculate'
 import { can } from '../../domain/permissions'
 // F7: one screen that says what needs the manager, each line linking to its fix.
 export default function Today(){
@@ -12,7 +12,7 @@ export default function Today(){
  const notified=useRef(new Set<string>())
  if(!can(user.role,'backoffice'))return <Navigate to="/pos"/>
  const day=(iso:string)=>businessDay(iso,settings?.timezone,settings?.cutoff),today=day(new Date().toISOString())
- const paid=orders.filter(o=>o.payment&&day(o.payment.at)===today&&o.status!=='refunded'),sales=paid.reduce((n,o)=>n+o.totals.total,0)
+ const paid=orders.filter(o=>o.payment&&day(o.payment.at)===today&&o.status!=='refunded'&&isSale(o)),sales=paid.reduce((n,o)=>n+o.totals.total,0)
  const value=(kind:string)=>movements.filter(m=>m.kind===kind&&day(m.at)===today).reduce((n,m)=>n+m.qty*(costs.get(m.stockId)??0),0)
  const cogs=-value('preparation'),waste=-value('waste'),gap=value('count')
  const low=stockItems.filter(s=>balance(s.id)<=s.threshold).map(s=>({item:s,days:daysLeft(balance(s.id),usagePerDay(movements,s.id))})).sort((a,b)=>a.days-b.days)
@@ -21,6 +21,9 @@ export default function Today(){
  const noRecipe=menu.filter(m=>m.active&&!m.recipe.length)
  const due=countsDue(stockItems,movements,counts),soon=expiring(stockItems,movements,2)
  const item=(id:string)=>stockItems.find(s=>s.id===id)
+ // Compliment budget: what staff meals and the owner's family took this calendar month, against the manager's budget.
+ const month=today.slice(0,7),given=orders.filter(o=>o.mode==='compliment'&&o.status==='paid'&&day(o.payment!.at).startsWith(month)),budget=settings?.complimentBudget??0
+ const by=(k:string)=>given.filter(o=>o.compliment?.kind===k),worth=(list:typeof given)=>list.reduce((n,o)=>n+o.discount,0),used=worth(given)
  // TDY-2: a browser notification for each ingredient that reaches par while this screen is open.
  useEffect(()=>{if(permission!=='granted')return;for(const l of low)if(!notified.current.has(l.item.id)){notified.current.add(l.item.id);try{new Notification(`${l.item.name} mencapai par`,{body:l.days===Infinity?`Sisa ${quantity(balance(l.item.id))} ${l.item.unit}`:`Sisa ${quantity(balance(l.item.id))} ${l.item.unit} · ±${l.days} hari lagi`})}catch{/* not supported here */}}},[low,permission,balance])
  const waiting=low.length+voids.length+gaps.length+noRecipe.length+due.weekly.length+soon.length
@@ -37,6 +40,13 @@ export default function Today(){
   <div className="report-columns">
    <article className="panel"><div className="panel-heading"><h2><AlertTriangle size={17}/> Stok di bawah par</h2><Link to="/inventory" className="text-button">Ke Stok</Link></div>
     {low.length?low.map(l=><div className="bill-row" key={l.item.id}><span>{l.item.name} · sisa {quantity(balance(l.item.id))} {l.item.unit}</span><strong>{l.days===Infinity?'belum terpakai':`±${l.days} hari`}</strong></div>):<p className="muted">Semua bahan di atas par.</p>}
+   </article>
+   <article className="panel"><div className="panel-heading"><h2><Gift size={17}/> Anggaran compliment</h2><span className="badge">{when(Date.now(),settings?.timezone,{month:'long'})}</span></div>
+    <div className="bill-total"><span>{rupiah(used)}</span><small className="muted">{budget?`dari anggaran ${rupiah(budget)}`:'Belum ada anggaran (Lainnya → Restoran)'}</small></div>
+    {budget>0&&<div className="budget-track" role="meter" aria-label="Anggaran compliment terpakai" aria-valuenow={used} aria-valuemin={0} aria-valuemax={budget}><i style={{width:`${Math.min(100,Math.round(used/budget*100))}%`}}/></div>}
+    <div className="bill-row"><span>Staff meal · {by('staff').length} pesanan</span><strong>{rupiah(worth(by('staff')))}</strong></div>
+    <div className="bill-row"><span>Keluarga pemilik · {by('family').length} pesanan</span><strong>{rupiah(worth(by('family')))}</strong></div>
+    {budget>0&&<p className="small muted">{used>budget?`Melewati anggaran ${rupiah(used-budget)}.`:`Sisa ${rupiah(budget-used)} (${Math.round((budget-used)/budget*100)}%) bulan ini.`}</p>}
    </article>
    <article className="panel"><div className="panel-heading"><h2><Ban size={17}/> Pembatalan hari ini</h2><Link to="/audit" className="text-button">Log audit</Link></div>
     {voids.length?voids.map(o=><div className="bill-row" key={o.id}><span>{o.label||o.receiptId} · {o.cashier} · {o.voidReason}</span><strong>{rupiah(o.totals.total)}</strong></div>):<p className="muted">Tidak ada pembatalan.</p>}

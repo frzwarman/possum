@@ -6,7 +6,7 @@ import { Button } from "../../components/ui/button";
 import { businessDay, rupiah, when } from "../../domain/calculate";
 import type { Order } from "../../domain/types";
 import { Receipt } from "../orders/Receipt";
-const method = { cash: "Tunai", qris: "QRIS", card: "Kartu" };
+const method = { cash: "Tunai", qris: "QRIS", card: "Kartu", none: "Compliment" };
 // Sales by receipt, menu item, day and cashier, counted at payment like Laporan. Totals per menu
 // are before the order-level discount; refunded receipts are listed but not counted.
 export default function Sales() {
@@ -120,7 +120,7 @@ export default function Sales() {
                       <small className="muted">{o.receiptId.slice(0, 11)}</small>
                     </td>
                     <td>{o.cashier}</td>
-                    <td>{method[o.payment!.method]}</td>
+                    <td>{method[o.payment!.method]}{o.payment!.edc && ` · EDC ${o.payment!.edc}`}</td>
                     <td>
                       {rupiah(o.totals.total)}
                       {o.status === "refunded" && <small className="muted"> · direfund</small>}

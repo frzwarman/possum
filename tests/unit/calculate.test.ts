@@ -305,3 +305,39 @@ describe('expiring() allocates the balance to the newest batches first',()=>{
   expect(expiring([item],[...batches,{id:'u',stockId:'sambal',qty:-40_000,kind:'preparation',at:h(0.1)}],2)).toEqual([])
  })
 })
+import { complimentDiscount, isSale, itemsLost, orderTotals, settlementGap, settlements } from '../../src/domain/calculate'
+describe('compliments',()=>{
+ const rice=line({id:'r',price:50_000,modifiers:[mod({price:5_000})]}),matcha=line({id:'m',name:'Ice Matcha',price:55_000,station:'bar'})
+ const drink=(l:Line)=>l.station==='bar'
+ it('a staff meal: drinks free, food at half price, no tax on what the staff member pays',()=>{
+  const discount=complimentDiscount([rice,matcha],'staff',drink)
+  expect(discount).toBe(82_500)
+  expect(orderTotals({lines:[rice,matcha],discount,mode:'compliment'},rate(500,1000))).toEqual({subtotal:110_000,discount:82_500,service:0,tax:0,total:27_500})
+ })
+ it("the owner's family pays nothing, and a voided line is not priced",()=>{
+  expect(complimentDiscount([rice,matcha,line({id:'x',price:9_000,cancelled:true})],'family',drink)).toBe(110_000)
+ })
+ it('a half rupiah stays with the outlet: the discount rounds down',()=>{
+  expect(complimentDiscount([line({price:25_001})],'staff',drink)).toBe(12_500)
+ })
+ it('an ordinary order keeps tax and service, and is a sale',()=>{
+  expect(orderTotals({lines:[rice],discount:0,mode:'dinein'},rate(0,1000)).total).toBe(60_500)
+  expect([isSale({mode:'dinein'}),isSale({mode:'compliment'})]).toEqual([true,false])
+ })
+})
+describe('settlements()',()=>{
+ const edc=(id:string,total:number,machine:string,p:Partial<Order>={})=>sale(id,total,'card',{payment:{method:'card',tendered:total,change:0,verified:true,at,edc:machine},...p})
+ const orders=[edc('a',100_000,'BCA'),edc('b',50_000,'BCA'),edc('c',40_000,'BRI'),edc('d',30_000,'BRI',{status:'refunded'}),edc('e',70_000,'BCA',{shiftId:'s2'}),sale('f',20_000,'cash')]
+ it("adds each EDC's paid orders for this shift, lists machines with no sales, and keeps unknown slips",()=>{
+  expect(settlements('s1',orders,{BCA:150_000,BRI:15_000,Other:5_000},['BCA','BRI','Mandiri'])).toEqual([
+   {edc:'BCA',expected:150_000,slip:150_000},{edc:'BRI',expected:40_000,slip:15_000},{edc:'Mandiri',expected:0,slip:0},{edc:'Other',expected:0,slip:5_000}])
+ })
+ it('a short machine and an over machine do not cancel out',()=>{
+  expect(settlementGap([{edc:'BCA',expected:100,slip:125},{edc:'BRI',expected:100,slip:75}])).toBe(50)
+ })
+})
+describe('itemsLost()',()=>{
+ const menu=[{name:'Espresso',active:true,recipe:[{stockId:'beans',qty:18_000}]},{name:'Latte',active:true,recipe:[{stockId:'beans',qty:9_000}]},{name:'Old',active:false,recipe:[{stockId:'beans',qty:50_000}]}]
+ it('reads a shortfall as portions of the active item that needs the most',()=>{expect(itemsLost(-50_000,'beans',menu)).toEqual({n:3,name:'Espresso'})})
+ it('says nothing for a surplus or an ingredient no menu uses',()=>{expect([itemsLost(10_000,'beans',menu),itemsLost(-1_000,'salt',menu)]).toEqual([undefined,undefined])})
+})

@@ -27,6 +27,10 @@ export interface Settings {
  stations?: { kitchen: number; bar: number }; varianceLimit?: number; lowAt?: number
  // Pilot: no bar or kitchen tablets yet, the cashier tells them and stock moves at payment. Switch on for a bigger outlet.
  stationTablets?: boolean
+ // Ziggy is cashless: card or QRIS on one of these EDC machines, no float, the close matches each EDC's settlement slip.
+ cashless?: boolean; edcs?: string[]
+ // Staff meals and the owner's family: what they may take free each month, in rupiah. 0 or unset = no budget.
+ complimentBudget?: number
 }
 // A pack is how an ingredient is bought: "karton = 12 × 1 L" is {name:'karton', qty:12_000_000} in thousandths of ml.
 export interface Pack { name: string; qty: number }
@@ -63,18 +67,28 @@ export interface Transfer {
 export interface Line {
  id: string; itemId: string; name: string; price: number; qty: number; modifiers: Modifier[]; note: string; recipe: Ingredient[]; catalogVersion: number
  prepared: boolean; cancelled: boolean
+ // A made line taken off the bill later needs a manager's PIN; it stays on the order, cancelled, with why and who approved.
+ voidReason?: string; voidApprovedBy?: string
  // Where the ticket goes, when it was sent, and when that station marked it ready.
  station?: Station; preparedAt?: string; readyAt?: string
 }
 export interface Totals { subtotal: number; discount: number; service: number; tax: number; total: number }
+// Compliment: a staff meal (drinks free, food half price, the staff member pays the food part) or the owner's family
+// (everything free). It still takes stock, is not a sale, and counts against the monthly compliment budget.
+export type OrderMode = 'dinein' | 'takeaway' | 'compliment'
+export interface Compliment { kind: 'staff' | 'family'; who: string }
+export interface OrderPayment { method: 'cash' | 'qris' | 'card' | 'none'; tendered: number; change: number; verified: boolean; at: string; edc?: string; approvalCode?: string }
 export interface Order {
- id: string; restaurantId: string; shiftId: string; actor: string; cashier: string; revision: number; receiptId: string; label: string; mode: 'dinein' | 'takeaway'
+ id: string; restaurantId: string; shiftId: string; actor: string; cashier: string; revision: number; receiptId: string; label: string; mode: OrderMode; compliment?: Compliment
  lines: Line[]; status: 'open' | 'paid' | 'void' | 'refunded'; prep: 'new' | 'preparing' | 'ready'; discount: number; discountReason: string; settings: Settings; totals: Totals
  createdAt: string; updatedAt: string
- payment?: { method: 'cash' | 'qris' | 'card'; tendered: number; change: number; verified: boolean; at: string }
+ payment?: OrderPayment
  refund?: { reason: string; at: string; actor: string; approvedBy?: string }; voidReason?: string; voidApprovedBy?: string; discountApprovedBy?: string
 }
-export interface Shift { id: string; actor: string; cashier: string; openedAt: string; expiresAt: string; opening: number; status: 'open' | 'closed'; closedAt?: string; counted?: number; expected?: number; variance?: number; varianceApprovedBy?: string }
+export interface Shift { id: string; actor: string; cashier: string; openedAt: string; expiresAt: string; opening: number; status: 'open' | 'closed'; closedAt?: string; counted?: number; expected?: number; variance?: number; varianceApprovedBy?: string
+ // Cashless close: what Takar recorded on each EDC against the total on that EDC's settlement slip.
+ settlements?: Settlement[] }
+export interface Settlement { edc: string; expected: number; slip: number }
 export interface Movement {
  id: string; stockId: string; qty: number; kind: 'opening' | 'purchase' | 'waste' | 'count' | 'adjustment' | 'preparation' | 'production' | 'transfer'
  reason: string; actor: string; at: string; recordId: string; cost: number; photo?: string
@@ -87,9 +101,9 @@ export interface CountSession {
  startedBy: string; startedAt: string; submittedAt?: string; approvedAt?: string; approvedBy?: string
 }
 export type OpKind =
- | 'shift.open' | 'shift.close' | 'shift.cash' | 'order.save' | 'order.prepare' | 'order.ready' | 'order.void' | 'payment.record' | 'refund.record'
+ | 'shift.open' | 'shift.close' | 'shift.cash' | 'order.save' | 'order.prepare' | 'order.ready' | 'order.void' | 'order.voidline' | 'payment.record' | 'refund.record'
  | 'stock.record' | 'catalog.publish' | 'settings.update' | 'purchase.save' | 'purchase.receive' | 'purchase.cancel' | 'purchase.pay' | 'production.record' | 'supplier.save'
  | 'salesorder.save' | 'salesorder.pay' | 'salesorder.deliver' | 'salesorder.cancel' | 'transfer.send' | 'transfer.receive' | 'transfer.cancel' | 'count.record' | 'count.submit'
 export interface Operation { id: string; kind: OpKind; actor: string; restaurantId: string; deviceId: string; occurredAt: string; payload: Record<string, unknown>; state: 'pending' | 'synced' | 'rejected'; attempts: number; nextAttempt: number; error?: string; receivedAt?: string }
 export interface PrintAttempt { id: string; orderId: string; kind: 'receipt' | 'kitchen' | 'test'; at: string; status: 'requested' | 'confirmed'; reprint: boolean; lineIds: string[] }
-export interface Draft { id: string; orderId?: string; revision: number; label: string; mode: 'dinein' | 'takeaway'; lines: Line[]; discount: number; discountReason: string; discountApproval?: Approval }
+export interface Draft { id: string; orderId?: string; revision: number; label: string; mode: OrderMode; compliment?: Compliment; lines: Line[]; discount: number; discountReason: string; discountApproval?: Approval }

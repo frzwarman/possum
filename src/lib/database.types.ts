@@ -129,6 +129,8 @@ export interface Database { public: { Tables: {
     occurred_at: string
     received_at: string
     actor: string
+    edc: string | null
+    approval_code: string | null
   }; Insert: never; Update: never; Relationships: [] }
   preparations: { Row: {
     restaurant_id: string
@@ -202,6 +204,7 @@ export interface Database { public: { Tables: {
     catalog: Json
     received_at: string
     variance_approved_by: string | null
+    settlements: Json | null
   }; Insert: never; Update: never; Relationships: [] }
   stock_balances: { Row: {
     restaurant_id: string | null

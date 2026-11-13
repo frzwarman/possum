@@ -477,3 +477,48 @@ describe('the cashier keeps stock between orders',()=>{
   expect((await db.counts.get(id))?.status).toBe('approved')
  })
 })
+// Cashless pilot PRD (2026-11-13): EDC payments, compliments, voiding one made line, EDC settlement at close.
+describe('cashless: EDC, compliments, line voids and the settlement',()=>{
+ async function cashless(role:'manager'|'cashier'='manager'){const s=await seed(identity({role,demo:true}));await s.db.settings.put({...(await s.db.settings.get('settings'))!,cashless:true,edcs:['BCA','BRI','Mandiri'],taxBps:1000});await s.commands.openShift(0);await tick();return s}
+ async function made(commands:Commands,lines=[line(),tea()],over={}){const o=await commands.save(draft(lines,over));await tick();await commands.prepare(o.id);await tick();return o}
+ it('takes card or QRIS on a named EDC with an optional approval code, and refuses cash',async()=>{
+  const {db,commands}=await cashless()
+  const o=await made(commands)
+  await expect(commands.pay(o.id,'cash',100000,true)).rejects.toThrow('tidak menerima tunai')
+  await expect(commands.pay(o.id,'card',0,true)).rejects.toThrow('Pilih mesin EDC')
+  const paid=await commands.pay(o.id,'card',0,true,{edc:'BCA',approvalCode:' 412093 '})
+  expect(paid.payment).toMatchObject({method:'card',edc:'BCA',approvalCode:'412093',tendered:paid.totals.total,change:0})
+  expect((await db.outbox.toArray()).find(op=>op.kind==='payment.record')?.payload).toMatchObject({method:'card',edc:'BCA',approvalCode:'412093'})
+ })
+ it("prices a staff meal and the owner's family by rule, with no PIN and no tax",async()=>{
+  const {commands}=await cashless('cashier')
+  const staff=await made(commands,[line(),tea()],{mode:'compliment',compliment:{kind:'staff',who:'Raka'}})
+  expect([staff.discount,staff.totals.tax,staff.totals.total,staff.discountReason]).toEqual([6000+12500,0,12500,'Staff meal · Raka'])
+  const family=await made(commands,[line()],{mode:'compliment',compliment:{kind:'family',who:'Rino'}})
+  expect(family.totals.total).toBe(0)
+  await expect(commands.pay(family.id,'card',0,true,{edc:'BCA'})).rejects.toThrow('tanpa pembayaran')
+  expect((await commands.pay(family.id,'none',0,true)).payment?.method).toBe('none')
+  await expect(commands.save(draft([line()],{mode:'compliment'}))).rejects.toThrow('untuk siapa')
+ })
+ it('voids one made line with a PIN, keeps it on the order, and recomputes the total',async()=>{
+  const {db,commands}=await cashless('cashier')
+  const o=await made(commands)
+  const teaLine=o.lines.find(l=>l.itemId==='es-teh')!
+  await expect(commands.voidLine(o.id,teaLine.id,'Salah menu')).rejects.toThrow('Perlu persetujuan manajer')
+  const after=await commands.voidLine(o.id,teaLine.id,'Salah menu',await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:o.id}))
+  expect(after.lines.find(l=>l.id===teaLine.id)).toMatchObject({cancelled:true,voidReason:'Salah menu',voidApprovedBy:'Pemilik Demo'})
+  expect(after.totals).toMatchObject({subtotal:25000,tax:2500,total:27500})
+  await expect(commands.voidLine(o.id,o.lines[0].id,'x',await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:o.id}))).rejects.toThrow('Satu-satunya menu')
+  expect((await db.outbox.toArray()).find(op=>op.kind==='order.voidline')?.payload).toMatchObject({id:o.id,lineId:teaLine.id,expectedRevision:2})
+ })
+ it("closes against each EDC's slip; offsetting gaps still need a PIN for their sum",async()=>{
+  const {db,commands}=await cashless('cashier')
+  const a=await made(commands);const paidA=await commands.pay(a.id,'card',0,true,{edc:'BCA'});await tick()
+  const b=await made(commands,[tea()]);const paidB=await commands.pay(b.id,'qris',0,true,{edc:'BRI'});await tick()
+  const slips={BCA:paidA.totals.total+20000,BRI:paidB.totals.total-3000}
+  await expect(commands.closeShift(0,undefined,slips)).rejects.toThrow('Perlu persetujuan manajer')
+  const closed=await commands.closeShift(0,await commands.approve('demo-owner',DEMO_PIN,'variance',{amount:23000}),slips)
+  expect([closed.variance,closed.settlements]).toEqual([17000,[{edc:'BCA',expected:paidA.totals.total,slip:slips.BCA},{edc:'BRI',expected:paidB.totals.total,slip:slips.BRI},{edc:'Mandiri',expected:0,slip:0}]])
+  expect((await db.outbox.toArray()).find(op=>op.kind==='shift.close')?.payload).toMatchObject({settlements:[{edc:'BCA',slip:slips.BCA},{edc:'BRI',slip:slips.BRI},{edc:'Mandiri',slip:0}]})
+ })
+})

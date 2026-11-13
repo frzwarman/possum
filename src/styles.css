@@ -376,3 +376,19 @@ input[type=checkbox]{accent-color:var(--ink)}
 .receipt-id{border:0;padding:0;margin-top:8px;font-size:9px;color:var(--text-disabled)}
 .receipt-paper,.receipt-paper:has(.receipt){border:1px solid var(--border);border-radius:12px;box-shadow:none;padding:24px 22px;background:#fff}.receipt-paper:has(.receipt)::after{display:none}
 @media print{.receipt,.receipt-head p,.receipt-meta dt,.receipt-meta dd,.receipt-row,.receipt-row>span:last-child,.receipt-name small,.receipt-pager small,.receipt-thanks,.receipt-brand,.receipt-id,.receipt-flag{color:#000}.receipt-pager,.receipt-items,.receipt-sums,.receipt-foot{border-color:#000}.receipt-paper{border:0;border-radius:0;padding:2mm}}
+/* Cashless pilot: compliment choice on the cart, filter chips on Orders and the close, EDC settlement rows. */
+.compliment-panel{display:grid;gap:8px;margin-top:4px}
+.choice-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.choice-cards button{display:grid;gap:2px;text-align:left;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-md,10px);background:var(--surface);color:var(--text);cursor:pointer}
+.choice-cards button small{color:var(--text-secondary);font-size:12px}
+.choice-cards button.active{border-color:var(--ink);background:var(--lime-subtle);box-shadow:inset 0 0 0 1px var(--ink)}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px}
+button.chip{border:1px solid var(--border);cursor:pointer;border-radius:999px}
+button.chip.active{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.chip-row .count{margin-left:4px;opacity:.6}
+.settle-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 12px;padding:10px 12px;border-radius:var(--radius-md,10px);background:var(--bg-subtle)}
+.settle-row.short{background:var(--critical-bg)}
+.settle-row input{width:150px;text-align:right}
+.settle-row .match{font-weight:600;color:var(--good-fg)}.settle-row.short .match{color:var(--critical-fg)}
+.budget-track{height:8px;border-radius:999px;background:var(--level-track);overflow:hidden}.budget-track i{display:block;height:100%;background:var(--lime)}
+.line-voided{text-decoration:line-through;color:var(--text-disabled)}

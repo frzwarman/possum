@@ -6,14 +6,14 @@ import { ApprovalDialog,type ApprovalRequest } from '../../app/Approval'
 import { Button } from '../../components/ui/button'
 import { Select } from '../../components/ui/select'
 import { Dialog } from '../../components/ui/dialog'
-import { convert,countGap,countsDue,quantity,rupiah,when } from '../../domain/calculate'
+import { convert,countGap,countsDue,itemsLost,quantity,rupiah,when } from '../../domain/calculate'
 import { can } from '../../domain/permissions'
 import { uid } from '../../lib/db'
 import type { Approval,CountSession,StockItem } from '../../domain/types'
 // F6: count by storage area with the expected amount hidden, pause and resume, then a variance review
 // that a manager approves (PIN for everyone else) into one count.record operation.
 export default function Counts(){
- const {stockItems,movements,counts,settings,commands,act,busy,user,manager,balance,costs,db,setError}=useApp()
+ const {stockItems,movements,counts,settings,commands,act,busy,user,manager,balance,costs,db,setError,menu}=useApp()
  const [area,setArea]=useState('')
  const [session,setSession]=useState<CountSession>()
  const [typed,setTyped]=useState<Record<string,{amount:string;unit:string}>>({})
@@ -73,8 +73,8 @@ export default function Counts(){
   </Dialog>
   <Dialog open={Boolean(reviewing)} onOpenChange={()=>setReviewing(undefined)} title={`Tinjau ${reviewing?.area??''}`} description={reviewing?.status==='approved'?`Disetujui ${reviewing.approvedBy}`:'Selisih diurutkan dari nilai rupiah terbesar. Di atas 5% perlu alasan.'} wide>
    {reviewing&&<>
-    <div className="table-scroll"><table className="data-table"><thead><tr><th>Bahan</th><th>Sistem</th><th>Dihitung</th><th>Selisih</th><th>Nilai</th></tr></thead><tbody>
-     {review(reviewing).map(r=><tr key={r.stockId} className={r.flagged?'negative':undefined}><td>{item(r.stockId)?.name}{reviewing.status!=='approved'&&r.flagged&&<input placeholder="Alasan selisih" value={reasons[r.stockId]??r.reason??''} onChange={e=>setReasons({...reasons,[r.stockId]:e.target.value})}/>}{reviewing.status==='approved'&&r.reason&&<small className="muted"> · {r.reason}</small>}</td><td>{quantity(r.expected)} {item(r.stockId)?.unit}</td><td>{quantity(r.counted!)}</td><td>{r.gap>0?'+':''}{quantity(r.gap)}</td><td>{rupiah(r.value)}</td></tr>)}
+    <div className="table-scroll"><table className="data-table"><thead><tr><th>Bahan</th><th>Sistem</th><th>Dihitung</th><th>Selisih</th><th>Nilai</th><th>Item hilang</th></tr></thead><tbody>
+     {review(reviewing).map(r=><tr key={r.stockId} className={r.flagged?'negative':undefined}><td>{item(r.stockId)?.name}{reviewing.status!=='approved'&&r.flagged&&<input placeholder="Alasan selisih" value={reasons[r.stockId]??r.reason??''} onChange={e=>setReasons({...reasons,[r.stockId]:e.target.value})}/>}{reviewing.status==='approved'&&r.reason&&<small className="muted"> · {r.reason}</small>}</td><td>{quantity(r.expected)} {item(r.stockId)?.unit}</td><td>{quantity(r.counted!)}</td><td>{r.gap>0?'+':''}{quantity(r.gap)}</td><td>{rupiah(r.value)}</td><td>{(l=>l?`≈ ${l.n} ${l.name}`:'—')(itemsLost(r.gap,r.stockId,menu))}</td></tr>)}
     </tbody></table></div>
     {reviewing.status!=='approved'&&<Button className="full mt" loading={busy} disabled={busy} onClick={()=>void approve(reviewing)}><ShieldCheck size={17}/> {manager?'Setujui hitungan':'Minta persetujuan manajer'}</Button>}
    </>}
