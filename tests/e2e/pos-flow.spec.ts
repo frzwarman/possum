@@ -1,4 +1,4 @@
-import { test,expect,demo,openShift,addItem,cart } from './meja'
+import { test,expect,demo,openShift,addItem,cart,go } from './meja'
 test('happy path: open shift, sell an item with a modifier, take cash, close the shift', async({page})=>{
  await demo(page)
  await openShift(page,'200000')
@@ -20,7 +20,7 @@ test('happy path: open shift, sell an item with a modifier, take cash, close the
  await expect(receipt.locator('.receipt-sums')).toContainText(/Rp\s*20\.000/)
  await receipt.getByRole('button',{name:'Tutup'}).click()
  // Pilot rule: while the shift is open the till shows the cashier's blind view, even to the owner.
- await page.locator('.sidebar').getByRole('link',{name:'Sif & kas'}).click()
+ await go(page,'Sif')
  await expect(page.getByRole('heading',{name:'Sif & kas'})).toBeVisible()
  await expect(page.locator('.sidebar').getByRole('link',{name:'Laporan'})).toHaveCount(0)
  await page.getByRole('button',{name:'Tutup sif'}).click()

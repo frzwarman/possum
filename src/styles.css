@@ -418,3 +418,146 @@ input[type=radio],input[type=checkbox]{width:20px;height:20px;min-height:20px;pa
 .order-who{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:10px}
 .order-who .table-label{margin:14px 0 6px}
 .line-options{font-size:12px;line-height:1.5;color:var(--text-secondary);margin-top:2px}
+/* ==== Till per Figma C2 ("Shell/POS rail", POS/Menu, Order) and the responsive layout, 16 Nov 2026 ====
+   Laptop/landscape tablet ≥1000: rail 88 + menu + 380px cart. Portrait tablet 701–999: rail + menu, the cart
+   opens from a floating bar. Phone ≤700: bottom bar. Later rules here win over the older layered ones above. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+@media(min-width:701px){.sidebar.rail{width:88px;padding:20px 4px 16px}
+ .workspace.rail{margin-left:88px;width:calc(100% - 88px)}
+ .sidebar.rail .nav-link{width:72px}
+ .sidebar.rail .nav-link>span{display:block}
+ .sidebar.rail .nav-link>.nav-shortcut{display:none}}
+.sidebar.rail .sidebar-bottom{display:flex;flex-direction:column;align-items:center;gap:6px}
+.sidebar.rail .profile{flex-direction:column;gap:4px;padding:0;border:0}
+.sidebar.rail .avatar{width:36px;height:36px;background:var(--lime-subtle);border-color:var(--surface);font-size:12px}
+.rail-name{display:none}
+.sidebar.rail .rail-name{display:block;font-size:11px;color:var(--text-secondary);max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rail-lock,.rail-sync{display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:10px;background:transparent;color:var(--text-secondary);position:relative}
+.rail-lock:hover,.rail-sync:hover{background:var(--bg-subtle);color:var(--ink)}
+.rail-sync b{position:absolute;top:2px;right:0;font-size:10px;line-height:16px;min-width:16px;background:var(--warning-bg);color:var(--warning-fg);border-radius:999px;padding:0 4px}
+@media(min-width:701px){.app-shell.till .topbar,.app-shell.till .app-footer{display:none}
+ /* main is the scroll box under any banner: the POS fills it exactly, the menu and the cart lines scroll inside. */
+ .app-shell.till .pos-layout{height:100%;min-height:0}
+ .app-shell.till .desktop-cart{height:100%;max-height:none;top:0}}
+/* POS/Menu: 24px padding, 16px gaps, 56px search, 40px pill chips with counts, 179px cards. */
+.menu-area{padding:24px}
+.menu-area .search-box{height:56px;border-radius:14px}
+.menu-area .category-tabs{margin:16px 0}
+.menu-area .category-tabs>button{min-height:40px;padding:8px 14px;font-size:14px}
+.menu-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px}
+/* Order: 380px, padding 24/16/16, 16px gaps. */
+.pos-layout{grid-template-columns:minmax(0,1fr) 380px}
+.desktop-cart .cart-heading{padding:24px 16px 0;border:0}
+.desktop-cart .cart-body{padding:16px 16px 0}
+.desktop-cart .cart-footer{padding:16px}
+.cart-more>.cart-glyph{background:transparent}
+.order-who .table-label{margin:12px 0 4px}
+/* Portrait tablet: menu takes the width, the cart is a floating bar that opens the full cart. */
+@media(min-width:701px) and (max-width:999px){
+ .pos-layout{display:block}
+ .desktop-cart{display:none}
+ .menu-area{padding:24px 24px 112px}
+ .mobile-cart-summary{display:flex;align-items:center;gap:13px;position:fixed;right:24px;bottom:24px;width:min(440px,calc(100% - 136px));background:var(--ink);color:var(--on-ink);border:0;border-radius:14px;padding:14px 18px;z-index:40;text-align:left;box-shadow:0 8px 24px color-mix(in srgb,var(--ink) 18%,transparent)}
+ .mobile-cart-count{border:1px solid color-mix(in srgb,var(--surface) 25%,transparent);border-radius:8px;display:grid;place-items:center;min-width:34px;height:34px;font-weight:600}
+ .mobile-cart-summary>span:nth-child(2){display:flex;justify-content:space-between;flex:1;font-size:14px;gap:14px}
+ .report-columns,.settings-columns{grid-template-columns:1fr}
+ .app-shell.till .toast{bottom:104px}}
+/* Summary cards fit the width instead of a fixed column count (the close screen overflowed on narrow screens). */
+.metrics{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.metric>strong{font-size:clamp(20px,2.2vw,25px)}
+/* Filter rows inside panels wrap instead of being cut off. */
+.panel .category-tabs{flex-wrap:wrap;overflow:visible}
+.panel .category-tabs>select{min-height:40px}
+/* Search + sort rows (Orders) shrink instead of pushing the page sideways. */
+.report-filter>.search-box{min-width:0}
+@media(min-width:1000px) and (max-width:1199px){.pos-layout{grid-template-columns:minmax(0,1fr) 340px}}
+@media(max-width:1099px){.report-columns,.settings-columns{grid-template-columns:1fr}}
+@media(max-width:700px){
+ .report-filter{flex-direction:column;align-items:stretch}
+ .report-filter>select{width:100%!important}
+ .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .metric{padding:16px 14px;gap:10px}
+ .metric>span{align-items:flex-start}
+ .settle-row{grid-template-columns:1fr}
+ .settle-row .money-field,.settle-row input{width:100%}
+ .menu-area{padding:16px 16px 185px}
+ .menu-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}
+/* main is a flex column: with margin:auto a page sized itself to its content (wider than a phone). Fill the width. */
+.workspace>main>.page-content{width:100%;min-width:0}
+/* Sign-in per Figma C0a/C0b: full page on the canvas, 32/40 padding; pick your name, then the PIN card. */
+.signin{min-height:100dvh;display:flex;flex-direction:column;padding:32px 40px;background:var(--canvas)}
+.signin-top{display:flex;justify-content:space-between;align-items:center;gap:16px;font-size:13px;color:var(--text-secondary)}
+.signin-top .login-brand{margin:0;font-size:30px}
+.signin-pick,.signin-card{margin:auto;width:100%}
+.signin-pick{text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+.signin-pick h1{font-size:24px;letter-spacing:-.5px}
+.signin-pick>.muted{font-size:15px;margin-bottom:28px}
+.signin-people{display:flex;flex-wrap:wrap;justify-content:center;gap:20px;margin-bottom:28px}
+.signin-person{width:230px;min-height:226px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:24px 16px;background:var(--surface);border:2px solid transparent;border-radius:20px;color:var(--ink)}
+.signin-person:hover,.signin-person:focus-visible{border-color:var(--teal)}
+.signin-person .avatar{width:80px;height:80px;font-size:26px;font-weight:600;background:var(--lime-subtle);border:0;margin-bottom:10px}
+.signin-person strong{font-size:17px}.signin-person small{font-size:13px;color:var(--text-secondary)}
+.signin-chip{margin-top:8px;font-size:12px;padding:5px 10px;border-radius:999px;background:var(--bg-subtle);color:var(--text-secondary)}
+.signin-links{display:flex;gap:20px;justify-content:center;margin-top:6px}
+.signin-links .text-button{display:inline-flex;align-items:center;gap:6px;color:var(--text-secondary)}
+.signin-demo{width:min(420px,100%);text-align:left;margin-top:8px}
+.signin-card{max-width:730px;display:grid;grid-template-columns:1fr 280px;gap:48px;align-items:center;padding:48px;background:var(--surface);border-radius:24px}
+.signin-who{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.signin-who .avatar{width:96px;height:96px;font-size:30px;font-weight:600;background:var(--lime-subtle);border:0;margin-bottom:8px}
+.signin-who h2{font-size:26px;letter-spacing:-.6px}
+.signin-who .muted{font-size:14px;margin-bottom:16px}
+.signin-pin{display:flex;flex-direction:column;align-items:center;gap:6px}
+.signin-pin>strong{font-size:16px}
+.signin-foot{display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;color:var(--text-secondary)}
+@media(max-width:700px){.signin{padding:20px 16px}.signin-top>span{display:none}.signin-person{width:calc(50% - 10px);min-height:0;padding:18px 10px}.signin-person .avatar{width:64px;height:64px;font-size:22px}
+ .signin-card{grid-template-columns:1fr;gap:24px;padding:24px}.signin-who{align-items:center;text-align:center}}
+/* Filter dropdowns (sort, EDC) use the app's own Select: compact, chevron close to the label, menu in the app's style. */
+.filter-select{flex:0 0 auto;min-width:176px}
+.filter-select .field{margin:0}
+.filter-select .select-trigger{min-height:40px;padding:8px 14px;border-radius:999px;border-color:var(--border);font-size:14px;font-weight:600;color:var(--ink);justify-content:flex-start;gap:8px}
+.filter-select .select-trigger>span{flex:0 1 auto}
+.filter-select .select-menu{min-width:200px}
+.report-filter .filter-select .select-trigger{min-height:47px;border-radius:12px}
+@media(max-width:700px){.report-filter .filter-select{width:100%}}
+/* Page headings: action buttons stay on one line; on narrow screens they drop under the title. */
+.page-heading{flex-wrap:wrap}
+.page-heading>div:first-child{flex:1 1 280px;min-width:0}
+.page-heading>.button-row{flex:0 0 auto;flex-wrap:nowrap}
+@media(max-width:520px){.page-heading>.button-row{flex-wrap:wrap}}
+/* main takes focus after navigation (skip link, route change); it is not a control, so no ring around the page. */
+main:focus{outline:none}
+/* Collapsed sidebar (≤950) and the phone bar: one-line labels, no keyboard badge. */
+@media(max-width:950px){.nav-shortcut{display:none}}
+.bottom-nav>a span,.bottom-nav>button span{white-space:nowrap}
+.bottom-nav>button{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:5px;font-size:11px;color:var(--text-secondary);min-height:48px;border:0;border-radius:10px;background:transparent}
+.bottom-nav>button.active{color:var(--ink);background:var(--bg-muted);font-weight:600}
+.nav-sheet{position:fixed;inset:0;z-index:45;background:color-mix(in srgb,var(--ink) 30%,transparent);display:none}
+.nav-sheet-panel{position:absolute;left:12px;right:12px;bottom:calc(80px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:10px;background:var(--surface);border-radius:16px;box-shadow:0 12px 32px color-mix(in srgb,var(--ink) 18%,transparent)}
+.nav-sheet-panel>a{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 6px;border-radius:12px;font-size:12px;color:var(--text-secondary);text-align:center}
+.nav-sheet-panel>a.active{background:var(--bg-muted);color:var(--ink);font-weight:600}
+@media(max-width:700px){.nav-sheet{display:block}}
+/* Tailwind's reset makes every svg a block, which threw icons onto their own line above their text
+   ("Masuk dengan nama dan PIN", "Demo tersimpan…"). App icons are inline glyphs; flex parents are unaffected. */
+svg.lucide{display:inline-block;vertical-align:-.18em}
+.text-button:has(svg){display:inline-flex;align-items:center;gap:6px}
+p.small:has(>svg:first-child){display:flex;align-items:flex-start;gap:8px}
+p.small>svg:first-child{margin-top:.15em}
+/* Dialogs: no focus ring around the whole box (focus moves to its first control); actions sit right, apart from the text. */
+.dialog-content:focus,.dialog-content:focus-visible{outline:none}
+.dialog-content>p+.btn{margin-top:20px}
+.dialog-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:24px}
+@media(max-width:520px){.dialog-actions{flex-direction:column-reverse}.dialog-actions>.btn{width:100%}}
+/* Settings: three short number fields share one row with inputs aligned; the save button stands apart. */
+.form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr));align-items:end}
+@media(max-width:700px){.form-grid.three{grid-template-columns:1fr}}
+.form-submit{margin-top:12px}
+/* Sign-in: the footer note keeps its distance from the cards and the demo box. */
+.signin-foot{margin-top:32px}
+.signin-demo .btn{margin-top:4px}
+/* Summary cards: 200px minimum gives balanced rows (Today 4, Stok 3, Laporan 4 + 4); five cards share one row on wide screens. */
+.metrics{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+@media(min-width:1100px){.metrics:has(>:nth-child(5):last-child){grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media(max-width:700px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* The demo controls span the email card's full width, like the fields above them. */
+.login-card .signin-demo{width:100%}
+.signin-demo>p.small{margin-top:10px}

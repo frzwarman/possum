@@ -2,7 +2,7 @@ import { useEffect,useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { ArrowRight,ShieldCheck,KeyRound,Mail } from 'lucide-react'
+import { ArrowRight,ArrowLeft,ShieldCheck,KeyRound,Mail,Lock } from 'lucide-react'
 import { Mark } from '../../components/logo'
 import { PinPad } from '../../components/ui/pinpad'
 import { useRegisterSW } from 'virtual:pwa-register/react'
@@ -24,7 +24,7 @@ export async function bootstrap(id:string,deviceId:string):Promise<Identity>{
  const {data:boot,error:b}=await supabase!.rpc('bootstrap',{device_id:deviceId});if(b)throw b
  const user:Identity={id,name:boot.name,role:boot.role,restaurantId:boot.restaurantId,primary:boot.primary,deviceId,demo:false,mode:boot.device?.mode??null};const db=databaseFor(user)
  // The device keeps the team list so staff can pick their name and type their PIN next time.
- try{if(boot.team)localStorage.setItem('takar-team',JSON.stringify(boot.team))}catch{/* private mode */}
+ try{if(boot.team)localStorage.setItem('takar-team',JSON.stringify(boot.team));if(boot.settings?.name)localStorage.setItem('takar-store',boot.settings.name)}catch{/* private mode */}
  const pending=await db.outbox.where('state').anyOf('pending','rejected').count();if(!pending){await db.transaction('rw',db.tables,async()=>{await db.settings.put(boot.settings);await db.menu.clear();await db.menu.bulkPut(boot.menu);await db.stock.clear();await db.stock.bulkPut(boot.stock);await db.orders.bulkPut(boot.orders);await db.shifts.bulkPut(boot.shifts);await db.cash.bulkPut(boot.cash);await db.movements.clear();await db.movements.bulkPut(boot.movements);await db.counts.bulkPut(boot.counts??[]);await db.purchaseOrders.bulkPut(boot.purchaseOrders??[]);await db.suppliers.bulkPut(boot.suppliers??[]);await db.salesOrders.bulkPut(boot.salesOrders??[]);await db.transfers.bulkPut(boot.outletData?.transfers??[]);await db.meta.put({id:'outlets',value:JSON.stringify(boot.outletData?.outlets??[])});await db.meta.put({id:'costs',value:JSON.stringify(boot.costs??{})});await db.meta.put({id:'pullCursor',value:boot.now??new Date().toISOString()});await db.meta.put({id:'device',value:JSON.stringify(boot.device??{})});await db.meta.put({id:'initialized',value:'yes'})})}
  return user
 }
@@ -34,7 +34,7 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
  const {needRefresh:[needRefresh],updateServiceWorker}=useRegisterSW();useEffect(()=>{if(needRefresh)void updateServiceWorker(true)},[needRefresh])
  const [error,setError]=useState('');const [loading,setLoading]=useState(false);const [demoRole,setDemoRole]=useState<Role>('owner')
  const members=team().filter(m=>m.login)
- const [byEmail,setByEmail]=useState(members.length===0);const [who,setWho]=useState(members[0]?.id??'');const [pin,setPin]=useState('')
+ const [byEmail,setByEmail]=useState(members.length===0);const [who,setWho]=useState('');const [pin,setPin]=useState('');const [tryDemo,setTryDemo]=useState(false)
  const form=useForm<z.infer<typeof schema>>({resolver:zodResolver(schema)})
  const deviceId=localStorage.getItem('meja-device')||uid();localStorage.setItem('meja-device',deviceId)
  async function signIn(email:string,password:string,remember?:string){setLoading(true);setError('')
@@ -50,33 +50,45 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
  function demo(){onLogin({id:`demo-${demoRole}`,name:`${roleLabel[demoRole]} Demo`,role:demoRole,restaurantId:'local-demo',deviceId,primary:true,demo:true})}
  const member=members.find(m=>m.id===who);const people=!byEmail&&members.length>0
  const initials=(n:string)=>n.split(/\s+/).slice(0,2).map(w=>w[0]??'').join('').toUpperCase()
+ const store=(()=>{try{return localStorage.getItem('takar-store')||''}catch{return ''}})()
+ const now=new Date().toLocaleString('id-ID',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
+ const demoBox=<div className="signin-demo"><Select label="Coba sebagai" value={demoRole} onChange={v=>setDemoRole(v as Role)} options={roles.map(r=>({value:r,label:roleTitle[r]}))}/><Button variant="secondary" className="full" onClick={demo}>Jelajahi demo lokal <ArrowRight size={18}/></Button><p className="small muted"><ShieldCheck size={15}/> Demo tersimpan di perangkat ini. Tidak terhubung ke data restoran.</p></div>
+ // Figma C0a/C0b: pick your name, then a card with your PIN. Everyone signs in as themselves on the shared tablet.
+ if(people)return <main className="signin">
+  <header className="signin-top"><div className="login-brand"><span className="brand-mark"><Mark size={30}/></span><span>takar</span></div><span>{[store,now].filter(Boolean).join('. ')}</span></header>
+  {!member?<section className="signin-pick">
+   <h1>Siapa yang bertugas hari ini?</h1><p className="muted">Ketuk nama Anda, lalu masukkan PIN.</p>
+   <div className="signin-people" role="list">{members.map(m=><button type="button" role="listitem" key={m.id} className="signin-person" onClick={()=>{setWho(m.id);setPin('');setError('')}}><span className="avatar">{initials(m.name)}</span><strong>{m.name}</strong><small>{roleLabel[m.role]}</small>{['owner','manager'].includes(m.role)&&<span className="signin-chip">Menyetujui dan menutup hari</span>}</button>)}</div>
+   <p className="small muted">Tidak ada di daftar? Pemilik atau manajer menambahkan staf dari laptop.</p>
+   <p className="signin-links"><button type="button" className="text-button" onClick={()=>setByEmail(true)}><Mail size={14}/> Masuk dengan email</button><button type="button" className="text-button" onClick={()=>setTryDemo(!tryDemo)}>Coba demo lokal</button></p>
+   {tryDemo&&demoBox}
+  </section>
+  :<form className="signin-card" onSubmit={e=>{e.preventDefault();if(member.login)void signIn(member.login,pin,pin)}}>
+   <div className="signin-who"><span className="avatar">{initials(member.name)}</span><h2>Hai {member.name}</h2><p className="muted">{roleLabel[member.role]}. PIN Anda 6 angka.</p>
+    <Button type="button" variant="secondary" onClick={()=>{setWho('');setPin('');setError('')}}><ArrowLeft size={17}/> Bukan Anda? Pilih nama</Button>
+    {error&&<p role="alert" className="error">{error}</p>}</div>
+   {/* The sixth digit signs in, as on the Figma; no extra button to find. */}
+   <div className="signin-pin"><strong>{loading?'Memeriksa…':'Masukkan PIN'}</strong><PinPad label="Masukkan PIN" value={pin} onChange={v=>{setPin(v);if(v.length===6&&member.login&&configured&&!loading)void signIn(member.login,v,v)}} hint="3 kali salah mengunci masuk selama 5 menit."/></div>
+  </form>}
+  <p className="signin-foot"><Lock size={14}/> Setiap orang masuk dengan PIN sendiri, jadi setiap penjualan dan pembatalan tercatat atas namanya.</p>
+ </main>
  return <main className="login-page">
   <header className="login-top"><div className="login-brand"><span className="brand-mark"><Mark size={32}/></span><span>takar</span></div><small>{new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long'})}</small></header>
-  <section className={`login-card ${people?'wide':''}`}>
+  <section className="login-card">
    <span className="eyebrow">Setiap gram tercatat</span>
-   {people?<><h1>Siapa yang bertugas hari ini?</h1><p className="muted">Ketuk nama Anda, lalu masukkan PIN.</p></>:<><h1>Siap melayani,<br/>satu pesanan lagi.</h1><p className="muted">Catat pesanan, kirim ke stasiun, dan tutup hari dengan stok yang cocok.</p></>}
-   {!byEmail&&members.length>0?<form onSubmit={e=>{e.preventDefault();if(member?.login)void signIn(member.login,pin,pin)}}>
-    <div className="people" role="radiogroup" aria-label="Nama">{members.map(m=><button type="button" key={m.id} role="radio" aria-checked={who===m.id} className={`person ${who===m.id?'active':''}`} onClick={()=>{setWho(m.id);setPin('')}}><span className="avatar">{initials(m.name)}</span><strong>{m.name}</strong><small>{roleLabel[m.role]}</small></button>)}</div>
-    <div className="pin-panel"><div><h2>Hai {member?.name??'…'}</h2><p className="muted">{member?`${roleLabel[member.role]}. PIN Anda 6 angka.`:'Pilih nama dulu.'}</p>
-     <Button className="full mt" loading={loading} disabled={!configured||!member||pin.length!==6}><KeyRound size={18}/> Masuk</Button></div>
-     <PinPad label="PIN (6 angka)" value={pin} onChange={setPin} onSubmit={()=>{if(member?.login)void signIn(member.login,pin,pin)}} hint="3 kali salah mengunci masuk selama 5 menit."/></div>
-    <p className="small muted"><button type="button" className="text-button" onClick={()=>setByEmail(true)}><Mail size={14}/> Masuk dengan email dan kata sandi</button></p>
-   </form>
-   :<form onSubmit={form.handleSubmit(v=>signIn(v.email,v.password))}>
+   <h1>Siap melayani,<br/>satu pesanan lagi.</h1><p className="muted">Catat pesanan, kirim ke stasiun, dan tutup hari dengan stok yang cocok.</p>
+   <form onSubmit={form.handleSubmit(v=>signIn(v.email,v.password))}>
     <label>Email staf<input autoComplete="username" type="email" {...form.register('email')}/></label>
     {form.formState.errors.email&&<p className="error">{form.formState.errors.email.message}</p>}
     <label>Kata sandi<input autoComplete="current-password" type="password" {...form.register('password')}/></label>
     {form.formState.errors.password&&<p className="error">{form.formState.errors.password.message}</p>}
     <Button className="full" loading={loading} disabled={!configured}>Masuk ke restoran <ArrowRight size={18}/></Button>
     {members.length>0&&<p className="small muted"><button type="button" className="text-button" onClick={()=>setByEmail(false)}><KeyRound size={14}/> Masuk dengan nama dan PIN</button></p>}
-   </form>}
+   </form>
    {error&&<p role="alert" className="error">{error}</p>}
    <div className="separator"><span>Ingin mencoba terlebih dahulu?</span></div>
-   <Select label="Coba sebagai" value={demoRole} onChange={v=>setDemoRole(v as Role)} options={roles.map(r=>({value:r,label:roleTitle[r]}))}/>
-   <Button variant="secondary" className="full" onClick={demo}>Jelajahi demo lokal <ArrowRight size={18}/></Button>
-   <p className="small muted"><ShieldCheck size={15}/> Demo tersimpan di perangkat ini. Tidak terhubung ke data restoran.</p>
+   {demoBox}
    <p className="small muted">Akun dan PIN disediakan pemilik atau manajer. Lupa PIN? Minta diganti.</p>
   </section>
-  <p className="login-foot">Takar · setiap gram tercatat.</p>
  </main>
 }

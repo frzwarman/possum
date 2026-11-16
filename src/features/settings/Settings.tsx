@@ -36,7 +36,7 @@ import { can } from "../../domain/permissions";
 import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { supabase } from "../../lib/supabase";
 import { compressMenuPhoto } from "../../lib/menu-photo";
-import { bootstrap } from "../auth/Login";
+import { bootstrap, pinHash } from "../auth/Login";
 import { roleTitle } from "../../domain/permissions";
 const schema = z.object({
   appName: z.string().min(1).max(30),
@@ -119,6 +119,9 @@ export default function SettingsPage() {
   const [testPrint, setTestPrint] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [pinDialog, setPinDialog] = useState(false);
+  // Two different PINs: "PIN masuk" is this account's sign-in on the shared tablet (the account password);
+  // "PIN persetujuan" is a manager's PIN for approving a cashier's void, discount or gap.
+  const [pinKind, setPinKind] = useState<"login" | "approve">("approve");
   const [bomStock, setBomStock] = useState("");
   const [bomQty, setBomQty] = useState("");
   const [pin, setPin] = useState("");
@@ -422,30 +425,29 @@ export default function SettingsPage() {
                 <input type="number" {...form.register("complimentBudget")} />
               </label>
             </div>
-            <div className="form-grid">
+            <div className="form-grid three">
               <label>
-                Selisih kas / EDC tanpa PIN (Rp)
+                Selisih tanpa PIN (Rp)
                 <input type="number" {...form.register("varianceLimit")} />
               </label>
               <label>
-                "Hampir habis" di bawah (porsi)
+                Hampir habis (porsi)
                 <input type="number" {...form.register("lowAt")} />
               </label>
               <label>
-                Kunci layar setelah (menit)
+                Kunci layar (menit)
                 <input type="number" min={0} max={120} {...form.register("lockMinutes")} />
-                <small className="muted">0 = tidak pernah dikunci</small>
               </label>
             </div>
             <p className="small muted">
-              Tiket berubah merah setelah target stasiun. Kasir menutup sif tanpa PIN selama selisihnya di bawah batas.
+              Tiket berubah merah setelah target stasiun. Kasir menutup sif tanpa PIN selama selisih kas atau EDC di bawah batas. Kunci layar 0 berarti tablet tidak pernah dikunci.
             </p>
             {Object.entries(errors).map(([key, e]) => (
               <p className="error" key={key}>
                 {key}: {e?.message}
               </p>
             ))}
-            <Button loading={busy} disabled={busy}>
+            <Button className="form-submit" loading={busy} disabled={busy}>
               Simpan pengaturan
             </Button>
           </form>
@@ -912,6 +914,20 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="account-actions">
+          {!user.demo && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setPin("");
+                setPinAgain("");
+                setPinKind("login");
+                setPinDialog(true);
+              }}
+            >
+              <KeyRound size={16} /> PIN masuk
+            </Button>
+          )}
           {manager && !user.demo && (
             <Button
               variant="secondary"
@@ -919,6 +935,7 @@ export default function SettingsPage() {
               onClick={() => {
                 setPin("");
                 setPinAgain("");
+                setPinKind("approve");
                 setPinDialog(true);
               }}
             >
@@ -1462,8 +1479,8 @@ export default function SettingsPage() {
       <Dialog
         open={pinDialog}
         onOpenChange={setPinDialog}
-        title="PIN persetujuan"
-        description="Dipakai saat kasir meminta diskon, pembatalan, refund, atau kas keluar."
+        title={pinKind === "login" ? "PIN masuk" : "PIN persetujuan"}
+        description={pinKind === "login" ? "Untuk masuk di tablet: ketuk nama Anda, lalu ketik PIN ini. PIN ini menggantikan kata sandi akun Anda." : "Dipakai saat kasir meminta diskon, pembatalan, refund, atau kas keluar. Bukan PIN untuk masuk."}
       >
         <label>
           PIN baru (6 angka)
@@ -1488,8 +1505,9 @@ export default function SettingsPage() {
           />
         </label>
         <p className="small muted">
-          Jangan beri tahu kasir. Server hanya menyimpan sidik PIN, dan lima
-          PIN salah dalam 15 menit menghentikan persetujuan sementara.
+          {pinKind === "login"
+            ? "Hindari angka kembar dan urutan seperti 123456. Email dan PIN ini juga dipakai untuk masuk di laptop."
+            : "Jangan beri tahu kasir. Server hanya menyimpan sidik PIN, dan lima PIN salah dalam 15 menit menghentikan persetujuan sementara."}
         </p>
         <Button
           className="full"
@@ -1497,9 +1515,16 @@ export default function SettingsPage() {
           disabled={busy || pin.length !== 6 || pin !== pinAgain}
           onClick={() =>
             void act(async () => {
-              await commands.setPin(pin);
+              if (pinKind === "approve") await commands.setPin(pin);
+              else {
+                if (/^(\d)\1{5}$/.test(pin) || ["123456", "654321", "012345", "123123"].includes(pin)) throw new Error("PIN terlalu mudah ditebak: hindari angka kembar dan urutan seperti 123456");
+                const { error } = await supabase!.auth.updateUser({ password: pin });
+                if (error) throw new Error(error.message);
+                // Staff unlock the idle lock offline with this PIN; owners and managers keep no hash on a shared device.
+                try { if (!can(user.role, "approve")) localStorage.setItem("takar-pin-hash", await pinHash(pin, user.id)); } catch { /* private mode */ }
+              }
               setPinDialog(false);
-            }, "PIN persetujuan tersimpan")
+            }, pinKind === "login" ? "PIN masuk tersimpan. Pakai di layar masuk tablet." : "PIN persetujuan tersimpan")
           }
         >
           Simpan PIN
@@ -1511,9 +1536,14 @@ export default function SettingsPage() {
           tetap disimpan dan hanya terlihat saat akun yang sama masuk lagi.
           Ekspor pemulihan terlebih dahulu bila diperlukan.
         </p>
-        <Button variant="destructive" onClick={() => void logout()}>
-          Keluar tanpa menghapus data
-        </Button>
+        <div className="dialog-actions">
+          <Button variant="secondary" onClick={() => setSignout(false)}>
+            Batal
+          </Button>
+          <Button variant="destructive" onClick={() => void logout()}>
+            Keluar tanpa menghapus data
+          </Button>
+        </div>
       </Dialog>
       <Dialog
         open={claim}

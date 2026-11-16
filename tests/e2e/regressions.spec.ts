@@ -111,7 +111,7 @@ test('closed shift history shows the latest three, newest first', async ({ page 
   for (let i = 1; i <= 5; i++) {
     await go(page, 'Kasir')
     await openShift(page, '0')
-    await go(page, 'Sif & kas')
+    await go(page, 'Sif')
     await page.getByRole('button', { name: 'Tutup sif' }).click()
     const closing = page.getByRole('dialog', { name: 'Tutup sif' })
     await closing.getByLabel(/Uang tunai yang dihitung/).fill(`${i}000`)

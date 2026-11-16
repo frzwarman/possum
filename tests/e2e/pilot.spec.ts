@@ -36,7 +36,10 @@ test('the cashier has a Stock tab: low and sold-out menu, waste, batches and cou
   await page.getByRole('option', { name: 'Kasir' }).click()
   await page.getByRole('button', { name: 'Jelajahi demo lokal' }).click()
   const nav = page.locator('.sidebar')
-  for (const name of ['Stok', 'Produksi', 'Hitung stok']) await expect(nav.getByRole('link', { name, exact: true })).toBeVisible()
+  // The till's rail: Sif, Kasir, Pesanan, Stok; prep and counts open from the Stok page.
+  for (const name of ['Sif', 'Kasir', 'Pesanan', 'Stok']) await expect(nav.getByRole('link', { name, exact: true })).toBeVisible()
+  await go(page, 'Stok')
+  for (const name of ['Produksi', 'Hitung stok']) await expect(page.locator('main').getByRole('link', { name })).toBeVisible()
   for (const name of ['Laporan', 'Penjualan', 'Pembelian', 'Hari ini']) await expect(nav.getByRole('link', { name, exact: true })).toHaveCount(0)
   await go(page, 'Stok')
   await page.locator('.stock-row').filter({ hasText: 'Telur' }).first().getByRole('button', { name: 'Catat stok' }).click()

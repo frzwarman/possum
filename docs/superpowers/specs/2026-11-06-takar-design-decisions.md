@@ -206,6 +206,13 @@ Server contract: `supabase/migrations/202611130010_cashless.sql`.
 42. **Idle lock** is `settings.lockMinutes` (default 2, 0 = never, max 120). Staff unlock offline against the PIN hash
     kept at sign-in; owners and managers (no hash on a shared device) unlock with their PIN or password checked by the
     server, no longer by being signed out.
+43. **Till shell per Figma "Shell/POS rail"** (read through Chrome, 16 Nov): a seller's rail is Sif, Kasir, Pesanan,
+    Stok (+ Stasiun with tablets); Produksi and Hitung stok open from buttons on the Stok page; Lainnya from the avatar,
+    with a lock button and the sync state under it. On a tablet the till has no top bar or footer. POS per C2: no
+    visible heading, pill chips with counts, cards with photo, name, price and stock bar, a 380px cart.
+44. **Breakpoints:** ≥1000 rail + menu + side cart (340px under 1200, 380px above); 701–999 rail + menu with the cart in
+    a floating bar; ≤700 bottom bar with five items. Summary cards use auto-fit; filter rows inside panels wrap; pages
+    fill the width of `main` (a flex column), which fixed the sideways overflow on phones.
 
 ## Left to the builder
 

@@ -21,13 +21,17 @@ test('a cashier sees the till and stock work: no sales figures, and counts the d
   await demoAs(page, 'Kasir')
   const nav = page.locator('.sidebar')
   // Pilot: the cashier keeps stock between orders (waste, batches, counts) but never sees money or documents.
-  for (const name of ['Stok', 'Produksi', 'Hitung stok']) await expect(nav.getByRole('link', { name, exact: true })).toBeVisible()
+  // The till's rail: Sif, Kasir, Pesanan, Stok; prep and counts open from the Stok page.
+  for (const name of ['Sif', 'Kasir', 'Pesanan', 'Stok']) await expect(nav.getByRole('link', { name, exact: true })).toBeVisible()
+  await go(page, 'Stok')
+  for (const name of ['Produksi', 'Hitung stok']) await expect(page.locator('main').getByRole('link', { name })).toBeVisible()
   for (const name of ['Laporan', 'Penjualan', 'Katering', 'Pembelian', 'Transfer', 'Hari ini']) await expect(nav.getByRole('link', { name })).toHaveCount(0)
+  await go(page, 'Kasir')
   await openShift(page)
   await addItem(page, 'Es teh manis')
   await sell(page)
   await page.keyboard.press('Escape')
-  await go(page, 'Sif & kas')
+  await go(page, 'Sif')
   await expect(page.getByRole('heading', { name: 'Sif & kas' })).toBeVisible()
   await expect(page.getByText(/Penjualan tercatat|Kas yang seharusnya|Penjualan tunai bersih/)).toHaveCount(0)
   // Cash out of the drawer needs a manager's PIN.
@@ -100,7 +104,7 @@ test('the owner sees every correction with who asked and who approved it', async
   await sell(page)
   await page.keyboard.press('Escape')
   // The till shows no manager figures while the shift is open; close it, then the back office is back.
-  await go(page, 'Sif & kas')
+  await go(page, 'Sif')
   await page.getByRole('button', { name: 'Tutup sif' }).click()
   await page.getByRole('dialog', { name: 'Tutup sif' }).getByLabel(/Uang tunai yang dihitung/).fill('205000')
   await page.getByRole('dialog', { name: 'Tutup sif' }).getByRole('button', { name: 'Konfirmasi tutup sif' }).click()

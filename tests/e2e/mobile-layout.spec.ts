@@ -4,7 +4,9 @@ import { demo } from './meja'
 test.use({viewport:{width:393,height:852}})
 test('date filters stack on a phone and nothing overflows sideways', async({page})=>{
  await demo(page)
- await page.getByRole('link',{name:'Laporan'}).click()
+ // A phone bar holds five items; the owner's other pages sit in the Menu sheet.
+ await page.locator('.bottom-nav').getByRole('button',{name:'Menu'}).click()
+ await page.getByRole('dialog',{name:'Menu'}).getByRole('link',{name:'Laporan'}).click()
  await page.getByRole('heading',{name:/Laporan & kas/}).waitFor()
  const from=(await page.getByLabel(/Dari tanggal/).boundingBox())!
  const to=(await page.getByLabel(/Sampai tanggal/).boundingBox())!

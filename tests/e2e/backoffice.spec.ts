@@ -178,7 +178,7 @@ test('Penjualan breaks paid sales down by receipt, menu item, day and cashier', 
   await sell(page)
   await page.keyboard.press('Escape')
   // Pilot rule: the back office opens on the till only once the shift is closed.
-  await go(page, 'Sif & kas')
+  await go(page, 'Sif')
   await page.getByRole('button', { name: 'Tutup sif' }).click()
   await page.getByRole('dialog', { name: 'Tutup sif' }).getByLabel(/Uang tunai yang dihitung/).fill('212000')
   await page.getByRole('dialog', { name: 'Tutup sif' }).getByRole('button', { name: 'Konfirmasi tutup sif' }).click()

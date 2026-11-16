@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Navigate } from "@tanstack/react-router";
 import { can } from "../../domain/permissions";
-import { Search, Star, Plus, Minus, ShoppingBag, ArrowRight, ChefHat, Save, NotebookPen, Wallet, Ellipsis, Percent, FilePlus, Check, CreditCard, QrCode, Printer } from "lucide-react";
+import { Search, Plus, Minus, ShoppingBag, ArrowRight, ChefHat, Save, Wallet, Ellipsis, Percent, FilePlus, Check, CreditCard, QrCode, Printer } from "lucide-react";
 import { useApp } from "../../app/context";
 import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
 import { Dialog } from "../../components/ui/dialog";
-import { businessDay, complimentDiscount, tills, describeDelta, itemStation, menuType, nextPager, orderTotals, rupiah, search, typeLabel } from "../../domain/calculate";
+import { businessDay, complimentDiscount, tills, describeDelta, itemStation, menuType, nextPager, orderTotals, rupiah, search } from "../../domain/calculate";
 import { team } from "../auth/Login";
 import type { Compliment, Draft, Line, MenuItem, MenuType, Modifier, Order } from "../../domain/types";
 import { uid } from "../../lib/db";
@@ -314,7 +314,8 @@ export default function Pos() {
   return (
     <div className="pos-layout">
       <section className="menu-area">
-        <div className="page-heading">
+        {/* Figma C2 opens on the search: the heading and shift state stay for screen readers only. */}
+        <div className="page-heading sr-only">
           <div>
             <p className="eyebrow">Setiap gram tercatat</p>
             <h1>Kasir</h1>
@@ -330,29 +331,23 @@ export default function Pos() {
         <div className="category-tabs" aria-label="Jenis menu">
           {TYPES.map(([id, label]) => (
             <button key={id} className={type === id ? "active" : ""} onClick={() => setType(id)}>
-              {label}{id === "all" && <span>{active.length}</span>}
+              {label}<span>{id === "all" ? active.length : active.filter((m) => menuType(m) === id).length}</span>
             </button>
           ))}
         </div>
-        <div className="section-label">
-          <h2>{type === "all" ? "Semua menu" : typeLabel[type]}</h2>
-          <span>{filtered.length} menu tersedia</span>
-        </div>
+        
         <div className="menu-grid">
           {hydrating
             ? [0, 1, 2, 3, 4, 5].map((i) => <div className="skeleton skeleton-card" key={i} role="status" aria-label="Memuat menu" />)
-            : filtered.map((item, index) => {
+            : filtered.map((item) => {
                 const a = canMake(item);
                 return (
                   <button key={item.id} className="menu-card" disabled={a.soldOut || !user.primary} onClick={() => add(item)}>
                     <div className="menu-photo">
                       <img src={item.photo || "/menu-placeholder.svg"} alt="" loading="lazy" />
-                      <span className="menu-number">{String(index + 1).padStart(2, "0")}</span>
-                      {item.favorite && <Star size={16} className="favorite-star" />}
                       {a.soldOut && <span className="sold-out-label">{item.soldOut ? "Habis" : "Habis · bahan kurang"}</span>}
                       {!a.soldOut && a.low && <span className="low-label">Sisa {a.left}</span>}
                     </div>
-                    <span className="menu-category">{typeLabel[menuType(item)]}{item.tags?.length ? ` · ${item.tags.join(", ")}` : ""}</span>
                     <h3>{item.name}</h3>
                     <div className="menu-card-bottom">
                       <strong>{rupiah(item.price)}</strong>
@@ -375,7 +370,7 @@ export default function Pos() {
             <p>Coba kata lain, alias, atau tag; atau tambahkan menu di Lainnya.</p>
           </div>
         )}
-        <div className="menu-help"><NotebookPen size={17} /><span>Kartu abu-abu berarti bahannya habis; "Sisa N" berarti hanya N porsi lagi yang bisa dibuat.</span></div>
+        
       </section>
       <aside className="desktop-cart">{cart}</aside>
       <button className="mobile-cart-summary" onClick={() => setCartOpen(true)}>

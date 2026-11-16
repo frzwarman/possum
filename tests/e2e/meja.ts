@@ -38,7 +38,13 @@ export async function sell(page:Page,{tendered}:{tendered?:string}={}){
 }
 // Sidebar navigation; only rendered above 700px, so mobile specs must not use it.
 // 'Stok' also matches 'Hitung stok' and 'Kasir' carries a shortcut badge: take the first link whose text starts with the label.
-export const go=(page:Page,label:string)=>page.locator('.sidebar').getByRole('link',{name:new RegExp('^'+label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))}).first().click()
+// On the till the rail holds only Sif, Kasir, Pesanan and Stok: Produksi and Hitung stok open from the Stok page.
+export async function go(page:Page,label:string){
+ const name=new RegExp('^'+label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),link=page.locator('.sidebar').getByRole('link',{name}).first()
+ if(await link.waitFor({timeout:3000}).then(()=>true,()=>false)){await link.click();return}
+ await page.locator('.sidebar').getByRole('link',{name:/^Stok/}).first().click()
+ await page.locator('main').getByRole('link',{name}).first().click()
+}
 export const drawer=(page:Page)=>page.locator('.panel').filter({hasText:'Laci kas'}).locator('.bill-total')
 export const sales=(page:Page)=>page.locator('.metric').filter({hasText:'Penjualan tercatat'}).locator('strong')
 export const balance=(page:Page,name:string)=>page.locator('.stock-row').filter({hasText:name}).locator('.stock-quantity strong')

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Navigate } from '@tanstack/react-router'
-import { Package,Plus,ArrowDownLeft,History,AlertTriangle,Camera,Trash2 } from 'lucide-react'
+import { Link,Navigate } from '@tanstack/react-router'
+import { Package,Plus,ArrowDownLeft,History,AlertTriangle,Camera,Trash2,CookingPot,ClipboardList } from 'lucide-react'
 import { useApp } from '../../app/context'
 import { Button } from '../../components/ui/button'
 import { Money } from '../../components/ui/money'
@@ -40,7 +40,9 @@ export default function Inventory(){
  async function choosePhoto(file:File){setPhotoBusy(true);try{setPhoto(await compressMenuPhoto(file))}catch(e){setConfirm(undefined);throw e}finally{setPhotoBusy(false)}}
  const running=(id:string)=>{let n=0;return movements.filter(m=>m.stockId===id).sort((a,b)=>a.at.localeCompare(b.at)).map(m=>({...m,after:(n+=m.qty)})).reverse().slice(0,100)}
  return <section className="page-content">
-  <div className="page-heading"><div><p className="eyebrow">Setiap gram tercatat</p><h1>Stok bahan</h1><p className="muted">Terima dalam kemasan, pakai dalam gram, hitung per area.</p></div><Package size={27} className="muted"/></div>
+  <div className="page-heading"><div><p className="eyebrow">Setiap gram tercatat</p><h1>Stok bahan</h1><p className="muted">Terima dalam kemasan, pakai dalam gram, hitung per area.</p></div>
+   {/* Figma C7: prep and the count before closing start here, not from the till's rail. */}
+   <div className="button-row">{can(user.role,'prep')&&<Link to="/production" className="btn btn-secondary"><CookingPot size={17}/> Produksi</Link>}{can(user.role,'counts')&&<Link to="/counts" className="btn btn-secondary"><ClipboardList size={17}/> Hitung stok</Link>}</div></div>
   <div className="stock-summary"><div><span className="muted">Bahan dipantau</span><strong>{stockItems.length}</strong></div><div><span className="muted">Di bawah par</span><strong>{lowItems.length}</strong></div><div><span className="muted">Nilai stok</span><strong>{rupiah(stockItems.reduce((n,s)=>n+Math.max(0,balance(s.id))*(costs.get(s.id)??0),0))}</strong></div></div>
   {(()=>{const a=menu.filter(m=>m.active).map(m=>({m,...canMake(m)})).filter(x=>x.soldOut||x.low);return a.length?<article className="panel"><div className="panel-heading"><h2>Menu habis atau hampir habis</h2><span className="badge badge-warning">{a.length}</span></div>{a.map(x=><div className="bill-row" key={x.m.id}><span>{x.m.name}</span><strong>{x.soldOut?(x.m.soldOut?'Habis (ditandai)':'Habis · bahan kurang'):`Sisa ${x.left} porsi`}</strong></div>)}</article>:null})()}
   <p className="callout"><AlertTriangle size={18}/> Stok resep adalah perkiraan pemakaian; hitung fisik mencocokkannya. Stok negatif tetap ditampilkan agar penjualan tidak hilang.</p>

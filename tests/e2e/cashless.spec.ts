@@ -51,7 +51,7 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   await detail.getByRole('button', { name: 'Konfirmasi pembatalan item' }).click()
   await expect(page.getByText(/Item dibatalkan/)).toBeVisible()
   // Close: count first, then each EDC's slip. BRI took the rice only now.
-  await go(page, 'Sif & kas')
+  await go(page, 'Sif')
   await expect(page.getByRole('heading', { name: 'Tutup sif', level: 1 })).toBeVisible()
   await expect(page.locator('.metric').filter({ hasText: 'Staf Rp' })).toContainText('Rp6.000')
   await page.getByLabel('Slip EDC BCA').fill('0')
@@ -62,7 +62,7 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   const count = page.getByRole('dialog')
   await count.getByLabel('Teh (porsi)').fill('40')
   await count.getByRole('button', { name: 'Kirim untuk ditinjau' }).click()
-  await go(page, 'Sif & kas')
+  await go(page, 'Sif')
   await page.getByLabel('Slip EDC BCA').fill('0')
   await page.getByLabel('Slip EDC BRI').fill('25000')
   await expect(page.locator('.settle-row').filter({ hasText: 'BRI' })).toContainText('Cocok')

@@ -5,6 +5,7 @@ import { useApp } from '../../app/context'
 import { expectedCash,isSale,rupiah,settlementGap,settlements,tills,when } from '../../domain/calculate'
 import { Button } from '../../components/ui/button'
 import { Money } from '../../components/ui/money'
+import { Select } from '../../components/ui/select'
 import { ApprovalDialog,type ApprovalRequest } from '../../app/Approval'
 import type { Approval,Order } from '../../domain/types'
 import { payLabel } from '../orders/Receipt'
@@ -27,7 +28,7 @@ export function CloseShift(){
  async function close(approval?:Approval){if(!manager&&!approval&&gap>limit){setAsk({action:'variance',amount:gap,what:cash?'Selisih kas atau EDC di atas batas; manajer perlu menyetujui penutupan sif':`Selisih EDC ${rupiah(gap)}; manajer perlu menyetujui penutupan sif`});return}
   await act(async()=>{await commands.closeShift(cash?Number(drawer||0):0,approval,amounts);setSlips({});setDrawer('')},'Sif ditutup. Hasil hitung stok menunggu persetujuan manajer.')}
  return <>
-  <div className="metrics" style={{gridTemplateColumns:`repeat(${cash?5:4},minmax(0,1fr))`}}>
+  <div className="metrics">
    <article className="metric featured"><span>Total penjualan sif</span><strong>{rupiah(sum(sales))}</strong><small>{sales.length} pesanan. Compliment bukan penjualan.</small></article>
    {cash&&<article className="metric"><span><Wallet size={18}/> Tunai</span><strong>{rupiah(sum(paid.filter(o=>o.payment?.method==='cash')))}</strong><small>{paid.filter(o=>o.payment?.method==='cash').length} pembayaran</small></article>}
    <article className="metric"><span><CreditCard size={18}/> Kartu di EDC</span><strong>{rupiah(sum(paid.filter(o=>o.payment?.method==='card')))}</strong><small>{paid.filter(o=>o.payment?.method==='card').length} pembayaran</small></article>
@@ -38,7 +39,7 @@ export function CloseShift(){
    <article className="panel"><div className="panel-heading"><h2>Transaksi sif ini</h2><span className="badge">{open?`${open} pesanan terbuka`:'Tidak ada pesanan terbuka'}</span></div>
     <div className="search-box"><Search size={18}/><input aria-label="Cari transaksi" placeholder="Nomor pesanan atau kode approval" value={query} onChange={e=>setQuery(e.target.value)}/></div>
     <div className="category-tabs">{[['all','Semua'],...(cash?[['cash','Tunai']]:[]),['card','Kartu'],['qris','QRIS'],['compliment','Compliment']].map(([id,label])=><button key={id} className={kind===id?'active':''} onClick={()=>setKind(id)}>{label}</button>)}
-     <select aria-label="EDC" value={edc} onChange={e=>setEdc(e.target.value)} style={{width:'auto'}}><option value="">EDC: semua</option>{edcs.map(e=><option key={e} value={e}>EDC {e}</option>)}</select>
+     <div className="filter-select"><Select ariaLabel="EDC" value={edc} onChange={setEdc} options={[{value:'',label:'EDC: semua'},...edcs.map(e=>({value:e,label:`EDC ${e}`}))]}/></div>
      <button onClick={()=>setByAmount(!byAmount)}>{byAmount?'Nominal: terbesar':'Waktu: terbaru'}</button></div>
     <div className="table-scroll"><table className="data-table"><thead><tr><th>Pesanan</th><th>Waktu</th><th>Pembayaran</th><th>Approval</th><th>Total</th></tr></thead><tbody>
      {shown.slice(0,50).map(o=><tr key={o.id}><td>#{o.receiptId.slice(-6).toUpperCase()}<br/><small className="muted">{o.compliment?o.compliment.who:[o.label,o.name].filter(Boolean).join(' · ')}</small></td><td>{when(o.payment!.at,settings?.timezone,{hour:'2-digit',minute:'2-digit'})}</td><td>{payLabel(o)}</td><td>{o.payment?.approvalCode??'—'}</td><td>{rupiah(o.totals.total)}</td></tr>)}
