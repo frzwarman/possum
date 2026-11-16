@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -6,21 +6,26 @@ import {
   Download,
   RefreshCw,
   Printer,
-  ShieldCheck,
   Plus,
-  Settings2,
   LogOut,
   Check,
   Upload,
   Store,
   AlertTriangle,
-  Database,
   UserCog,
   Image as ImageIcon,
   Trash2,
   KeyRound,
+  X,
+  ArrowRight,
+  Laptop,
+  Tablet,
+  MonitorSmartphone,
+  Wallet,
+  ChartColumn,
+  Percent,
 } from "lucide-react";
-import { useApp, logout } from "../../app/context";
+import { useApp, logout, signOutBlockers } from "../../app/context";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
 import { Select } from "../../components/ui/select";
@@ -31,11 +36,12 @@ import {
   menuImportSchema,
   stockImportSchema,
 } from "../../lib/import";
-import type { Ingredient, MenuItem, MenuType, OptionGroup, Pack, Station, StockItem } from "../../domain/types";
+import type { Ingredient, MenuItem, MenuType, OptionGroup, Pack, Role, Station, StockItem } from "../../domain/types";
 import { convert, describeDelta, itemStation, menuType, quantity, rupiah, typeLabel, when } from "../../domain/calculate";
-import { can } from "../../domain/permissions";
+import { can, roleLabel } from "../../domain/permissions";
 import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { supabase } from "../../lib/supabase";
+import { demoApprovers } from "../../lib/commands";
 import { compressLogo, compressMenuPhoto, menuPicture } from "../../lib/menu-photo";
 import { bootstrap, pinHash } from "../auth/Login";
 import { roleTitle } from "../../domain/permissions";
@@ -79,7 +85,28 @@ const schema = z.object({
 const SIGNS = [{ value: "add", label: "tambah" }, { value: "remove", label: "kurangi / ganti" }];
 const KINDS: [OptionGroup["kind"], string][] = [["add", "Tambahan (boleh beberapa)"], ["swap", "Ganti (pilih satu)"], ["level", "Tingkat (pilih satu)"], ["size", "Ukuran (pilih satu)"]];
 const words = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
-export default function SettingsPage() {
+// Figma M7 option rows carry their group's kind as a chip; a loose add-on reads as "Tambah".
+const KIND_CHIP: Record<OptionGroup["kind"], string> = { add: "Tambah", swap: "Ganti", level: "Level", size: "Ukuran" };
+// Figma M8 puts what a person does under their name; here it is what the role may do (the access table).
+const ROLE_NOTE: Record<Role, string> = { owner: "Pemilik, semua akses", manager: "Menyetujui pembatalan, diskon, dan selisih", admin: "Bahan, pembelian, dan hitung stok", chef: "Menu, resep, dan prep", cashier: "Kasir, pembayaran, dan stok harian", barista: "Stasiun bar", kitchen: "Stasiun dapur" };
+const initials = (n: string) => n.split(/\s+/).slice(0, 2).map((w) => w[0] ?? "").join("").toUpperCase();
+// Chips inside one field (Figma M7 tags): Enter or a comma adds what was typed, Backspace on an empty field drops the last.
+function ChipBox({ values, onChange, label, placeholder, list }: { values: string[]; onChange: (v: string[]) => void; label: string; placeholder: string; list?: string }) {
+  const [draft, setDraft] = useState("");
+  const add = (v: string) => { const next = [...new Set([...values, ...words(v)])]; if (next.length !== values.length) onChange(next); setDraft(""); };
+  return (
+    <div className="chip-box">
+      {values.map((t) => <button type="button" key={t} className="dot-chip" aria-label={`Hapus ${t}`} onClick={() => onChange(values.filter((x) => x !== t))}>{t}</button>)}
+      <input aria-label={label} list={list} value={draft} placeholder={values.length ? "" : placeholder}
+        onChange={(e) => (e.target.value.includes(",") ? add(e.target.value) : setDraft(e.target.value))}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(draft); } else if (e.key === "Backspace" && !draft && values.length) onChange(values.slice(0, -1)); }}
+        onBlur={() => { if (draft) add(draft); }} />
+    </div>
+  );
+}
+// Figma M7 and M8 give "Menu & resep" and "Tim & perangkat" their own pages in the back-office nav (/menu, /team):
+// the same tab, without the Lainnya tab bar.
+export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) {
   const {
     settings,
     menu,
@@ -102,7 +129,7 @@ export default function SettingsPage() {
   // Owner and manager tune the restaurant; chef and admin keep menu and ingredients; everyone has sync and device.
   const tillLocked = user.primary && Boolean(shift);
   const settingsRole = can(user.role, "settings") && !tillLocked, catalogRole = can(user.role, "catalog") && !tillLocked;
-  const [tab, setTab] = useState(settingsRole ? "restaurant" : catalogRole ? "menu" : "sync");
+  const [tab, setTab] = useState<string>((only === "menu" ? catalogRole : only) ? only! : settingsRole ? "restaurant" : catalogRole ? "menu" : "sync");
   const [recipeUnit, setRecipeUnit] = useState("");
   const [effectFor, setEffectFor] = useState<number>();
   const [effect, setEffect] = useState({ stockId: "", amount: "", unit: "", sign: "add" });
@@ -121,6 +148,19 @@ export default function SettingsPage() {
   const [recipeStock, setRecipeStock] = useState("");
   const [recipeQty, setRecipeQty] = useState("");
   const [signout, setSignout] = useState(false);
+  // Before signing out: send what can be sent, then list what would be stranded (open shift, new cart, unsent work).
+  const [blockers, setBlockers] = useState<string[] | null>(null);
+  async function openSignout() {
+    setBlockers(null);
+    setSignout(true);
+    await sync().catch(() => undefined);
+    const b = await signOutBlockers(db, user);
+    setBlockers([
+      ...(b.shift ? ["Sif Anda masih terbuka. Tutup sif dulu di Sif. Untuk istirahat, cukup kunci layar."] : []),
+      ...(b.cart ? ["Ada pesanan baru di keranjang. Simpan atau kosongkan dulu di Kasir."] : []),
+      ...(b.unsent ? [`${b.unsent} operasi belum terkirim ke server. Sambungkan internet dan tunggu sampai tersinkron.`] : []),
+    ]);
+  }
   // Menu items with a sale (till or catering) can only be switched off; the rest can be removed for good.
   const [removing, setRemoving] = useState<MenuItem>();
   const sold = new Set([...orders.flatMap((o) => o.lines.map((l) => l.itemId)), ...salesOrders.flatMap((o) => o.lines.map((l) => l.itemId))]);
@@ -135,6 +175,29 @@ export default function SettingsPage() {
   const [bomQty, setBomQty] = useState("");
   const [pin, setPin] = useState("");
   const [pinAgain, setPinAgain] = useState("");
+  // Figma M7 editor page: whether the recipe row form is open, and which option is unfolded for editing.
+  const [adding, setAdding] = useState(false);
+  const [openOpt, setOpenOpt] = useState<string>();
+  // Figma M8: the team as the server lists it (the demo has its own two approvers), and the two "how to add" notes.
+  const [members, setMembers] = useState<{ id: string; name: string; role: Role; active: boolean }[]>();
+  const [help, setHelp] = useState<"person" | "device">();
+  useEffect(() => {
+    if (tab !== "team" || user.demo || !supabase || !can(user.role, "team")) return;
+    let live = true;
+    void supabase.from("memberships").select("user_id,name,role,active").order("name").then(({ data }) => { if (live && data) setMembers(data.map((m) => ({ id: m.user_id, name: m.name, role: m.role as Role, active: m.active }))); });
+    return () => { live = false; };
+  }, [tab, user.demo, user.role]);
+  // Opening or leaving the editor starts its little forms afresh, at the top of the page.
+  function edit(next?: MenuItem) {
+    setItem(next);
+    setAdding(false);
+    setOpenOpt(undefined);
+    setRecipeStock("");
+    setRecipeQty("");
+    setRecipeUnit("");
+    // The shell's <main> is what scrolls, not the window.
+    document.getElementById("main")?.scrollTo({ top: 0 });
+  }
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
     values: settings && { ...settings, tagline: settings.tagline ?? "", stationTablets: Boolean(settings.stationTablets), cash: !settings.cashless, edcs: (settings.edcs ?? []).join(", "), lockMinutes: settings.lockMinutes ?? 2, complimentBudget: settings.complimentBudget ?? 0, kitchenTarget: settings.stations?.kitchen ?? 15, barTarget: settings.stations?.bar ?? 8, varianceLimit: settings.varianceLimit ?? 10000, lowAt: settings.lowAt ?? 5 },
@@ -284,9 +347,12 @@ export default function SettingsPage() {
       };
       setItem({
         ...item,
-        recipe: [...item.recipe.filter((x) => x.stockId !== s.id), r],
+        // A changed amount keeps its row where it was.
+        recipe: item.recipe.some((x) => x.stockId === s.id) ? item.recipe.map((x) => (x.stockId === s.id ? r : x)) : [...item.recipe, r],
       });
+      setRecipeStock("");
       setRecipeQty("");
+      setRecipeUnit("");
     } catch (e) {
       setError(String(e));
     }
@@ -316,24 +382,344 @@ export default function SettingsPage() {
     }
   }
   const pending = outbox.filter((o) => o.state !== "synced");
+  // M7: the published version beside the draft, for the version chips and the cost tile.
+  const live = item && menu.find((m) => m.id === item.id);
+  const cost = item?.recipe.length ? recipeCost(item.recipe) : undefined;
+  const liveCost = live?.recipe.length ? recipeCost(live.recipe) : undefined;
+  // M8: the demo knows only its two approvers; a real restaurant lists its memberships. You come first.
+  const me = { id: user.id, name: user.name, role: user.role, active: true };
+  const people = user.demo
+    ? [me, ...demoApprovers.filter((a) => a.id !== user.id).map((a) => ({ ...a, role: (a.id === "demo-owner" ? "owner" : "manager") as Role, active: true }))]
+    : [me, ...(members ?? []).filter((m) => m.id !== user.id)];
+  const activeMenu = menu.filter((m) => m.active), unrecipied = activeMenu.filter((m) => !m.recipe.length).length;
+  // Lainnya: each tab has its own title and line, like the separate Figma pages it stands in for.
+  const head: Record<string, [string, string]> = {
+    restaurant: ["Restoran", "Nama dan alamat di struk, pajak, cara bayar, dan aturan sif."],
+    menu: ["Menu & resep", `${activeMenu.length} menu aktif${unrecipied ? `, ${unrecipied} belum punya resep` : ", semua dengan resep"}.`],
+    stock: ["Daftar bahan", `${stockItems.length} bahan dalam satuan dasar, ${stockItems.filter((s) => s.production).length} dibuat sendiri.`],
+    import: ["Impor CSV", "Tambah menu atau bahan dari template. Data yang sudah ada tidak berubah."],
+    sync: ["Sinkron & backup", user.demo ? "Demo lokal: semua data hanya ada di perangkat ini." : pending.length ? `${pending.length} operasi menunggu dikirim ke server.` : "Semua operasi sudah terkirim ke server."],
+    team: ["Tim & perangkat", `Di ${settings?.name || "restoran ini"}, ${settings?.stationTablets ? "tablet kasir menerima pesanan, dapur dan bar menerima tiket di tablet stasiun." : "satu tablet kasir menerima pesanan dan menampilkan stok. Bar dan dapur tanpa layar."}`],
+  };
+  const [title, sub] = head[tab] ?? head.sync;
   return (
-    <section className="page-content">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Dibuat sesuai warung Anda</p>
-          <h1>Lainnya</h1>
-          <p className="muted">Pengaturan, sinkronisasi, dan penjagaan data.</p>
-        </div>
-        <Settings2 className="muted" />
-      </div>
-      {/* Only here: the back-office tabs are missing on the cashier device while a shift is open, so say why. */}
-      {tillLocked && (can(user.role, "settings") || can(user.role, "catalog")) && (
-        <p className="callout">
-          <AlertTriangle size={16} />
-          <span>Restoran, menu, dan bahan tertutup selama sif terbuka di kasir ini. Tutup sif dulu, atau buka dari laptop.</span>
-        </p>
-      )}
-      <div className="category-tabs">
+    <section className={`page-content settings-page${only ? ` only-${only}` : ""}`}>
+      {/* Figma M7: one menu item as a page of its own (details and options left, recipe and its cost right). */}
+      {item ? (
+        <section className="menu-edit" aria-label={item.version ? "Edit menu" : "Tambah menu"}>
+          <div className="page-heading">
+            <div>
+              <button type="button" className="crumb" onClick={() => edit()}>Menu & resep</button>
+              <div className="set-title">
+                <h1>{item.name || "Menu baru"}</h1>
+                {live ? (
+                  <>
+                    <span className={`dot-chip ${live.active ? "good" : ""}`}>{live.active ? "Live" : "Nonaktif"} v{live.version}</span>
+                    <span className="dot-chip info">Mengedit v{live.version + 1}</span>
+                  </>
+                ) : (
+                  <span className="dot-chip info">Belum terbit</span>
+                )}
+              </div>
+            </div>
+            <div className="button-row">
+              <button type="button" className="set-discard" onClick={() => edit()}>Buang perubahan</button>
+              <Button className="btn-accent" loading={busy} disabled={busy || !item.name} onClick={() => void saveItem()}>
+                <Check size={20} /> Simpan versi menu
+              </Button>
+            </div>
+          </div>
+          <div className="menu-edit-grid">
+            <div className="menu-edit-col">
+              <article className="panel menu-basics">
+                <div className="menu-photo-box">
+                  <img src={menuPicture(item)} alt="Pratinjau foto menu" />
+                  <div className="menu-photo-actions">
+                    <label className="photo-upload" title="JPG, PNG, atau WebP hingga 10 MB. Takar memperkecil foto untuk penggunaan offline.">
+                      <ImageIcon size={16} />
+                      {photoBusy ? "Memperkecil foto…" : item.photo ? "Ganti foto" : "Unggah foto (opsional)"}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        capture="environment"
+                        disabled={photoBusy}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void choosePhoto(file);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </label>
+                    {item.photo && (
+                      <button type="button" className="photo-upload" onClick={() => setItem({ ...item, photo: undefined })}>
+                        <Trash2 size={15} /> Pakai gambar standar
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <label>
+                  Nama menu
+                  <input value={item.name} onChange={(e) => setItem({ ...item, name: e.target.value })} />
+                </label>
+                <div className="set-field" role="radiogroup" aria-labelledby="menu-type">
+                  <span className="set-label" id="menu-type">Jenis</span>
+                  <div className="opt-pills">
+                    {(Object.keys(typeLabel) as MenuType[]).map((t) => (
+                      <label key={t} className={`opt-pill ${menuType(item) === t ? "on" : ""}`}>
+                        <input type="radio" name="menu-type" checked={menuType(item) === t} onChange={() => setItem({ ...item, type: t, category: typeLabel[t], station: t === "beverage" ? "bar" : "kitchen" })} />
+                        {typeLabel[t]}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="set-field">
+                  <span className="set-label">Tag (dicari di kasir)</span>
+                  <ChipBox label="Tag baru" list="takar-tags" placeholder="Signature, Kopi" values={item.tags ?? []} onChange={(t) => setItem({ ...item, tags: t })} />
+                  <datalist id="takar-tags">{tags.map((t) => <option key={t} value={t} />)}</datalist>
+                </div>
+                <div className="menu-price-row">
+                  <label>
+                    Harga
+                    <Money value={String(item.price)} onChange={(v) => setItem({ ...item, price: Number(v || 0) })} />
+                  </label>
+                  <div className="set-field" role="radiogroup" aria-labelledby="menu-station">
+                    <span className="set-label" id="menu-station">Dibuat di</span>
+                    <div className="opt-pills">
+                      {(["kitchen", "bar"] as Station[]).map((s) => (
+                        <label key={s} className={`opt-pill ${itemStation(item) === s ? "on" : ""}`}>
+                          <input type="radio" name="menu-station" checked={itemStation(item) === s} onChange={() => setItem({ ...item, station: s })} />
+                          {s === "bar" ? "Bar" : "Dapur"}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </article>
+              <article className="panel menu-options">
+                <div className="panel-heading">
+                  <h2>Pilihan</h2>
+                  <button type="button" className="set-add" onClick={() => { const id = uid(); setItem({ ...item, modifiers: [...item.modifiers, { id, name: "", price: 0, recipe: [] }] }); setOpenOpt(id); }}>
+                    <Plus size={16} /> Tambah pilihan
+                  </button>
+                </div>
+                {item.modifiers.map((m, i) => {
+                  const g = item.groups?.find((x) => x.id === m.group), open = openOpt === m.id;
+                  return (
+                    <Fragment key={m.id}>
+                      <button type="button" className={`option-row ${open ? "on" : ""}`} aria-expanded={open} onClick={() => setOpenOpt(open ? undefined : m.id)}>
+                        <span className="dot-chip">{KIND_CHIP[g?.kind ?? "add"]}</span>
+                        <span className="option-name">
+                          {g && g.kind !== "add" && g.name ? `${g.name}: ` : ""}{m.name || "Tanpa nama"}
+                          {m.default && <small> · bawaan</small>}
+                        </span>
+                        <strong>{m.price ? `+${rupiah(m.price)}` : "Gratis"}</strong>
+                      </button>
+                      {open && (
+                        <div className="modifier-editor">
+                          <div className="form-grid">
+                            <label>
+                              Nama tambahan
+                              <input value={m.name} onChange={(e) => setItem({ ...item, modifiers: item.modifiers.map((v, j) => (j === i ? { ...v, name: e.target.value } : v)) })} />
+                            </label>
+                            <label>
+                              Harga tambahan
+                              <Money value={String(m.price)} onChange={(value) => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, price: Number(value || 0) } : mod)) })} />
+                            </label>
+                          </div>
+                          {(item.groups ?? []).length > 0 && (
+                            <Select
+                              label="Grup"
+                              value={m.group ?? ""}
+                              onChange={(value) => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, group: value || undefined } : mod)) })}
+                              options={[{ value: "", label: "Tanpa grup (tambahan lepas)" }, ...(item.groups ?? []).map((gr) => ({ value: gr.id, label: gr.name || "(grup tanpa nama)" }))]}
+                            />
+                          )}
+                          {m.group && g?.kind !== "add" && (
+                            <label className="inline-check">
+                              <input type="checkbox" checked={Boolean(m.default)} onChange={(e) => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, default: e.target.checked } : mod.group === m.group && e.target.checked ? { ...mod, default: false } : mod)) })} />
+                              Pilihan bawaan
+                            </label>
+                          )}
+                          <p className="small muted">Efek ke stok: {describeDelta(m.recipe, stockItems) || "tidak ada"}</p>
+                          {m.recipe.map((r) => (
+                            <div className="bill-row" key={r.stockId}>
+                              <span>{r.qty > 0 ? "+" : "−"}{quantity(Math.abs(r.qty))} {stockItems.find((s) => s.id === r.stockId)?.unit} {stockItems.find((s) => s.id === r.stockId)?.name}</span>
+                              <button className="text-button" onClick={() => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, recipe: mod.recipe.filter((x) => x.stockId !== r.stockId) } : mod)) })}>Hapus</button>
+                            </div>
+                          ))}
+                          {effectFor === i ? (
+                            <div className="form-grid">
+                              <Select label="Bahan" value={effect.stockId} onChange={(v) => setEffect({ ...effect, stockId: v, unit: stockItems.find((s) => s.id === v)?.unit ?? "" })} options={[{ value: "", label: "Pilih bahan" }, ...stockItems.map((s) => ({ value: s.id, label: `${s.name} (${s.unit})` }))]} />
+                              <Select label="Efek" value={effect.sign} onChange={(v) => setEffect({ ...effect, sign: v })} options={SIGNS} />
+                              <label>
+                                Jumlah
+                                <input inputMode="decimal" value={effect.amount} onChange={(e) => setEffect({ ...effect, amount: e.target.value })} />
+                              </label>
+                              <Select label="Satuan" value={effect.unit} onChange={(v) => setEffect({ ...effect, unit: v })} options={unitsFor(stockItems.find((s) => s.id === effect.stockId))} />
+                              <Button
+                                variant="secondary"
+                                disabled={!effect.stockId || !effect.amount}
+                                onClick={() => {
+                                  const s = stockItems.find((x) => x.id === effect.stockId)!;
+                                  try {
+                                    const qty = convert(effect.amount, effect.unit || s.unit, s.unit, s.packs) * (effect.sign === "add" ? 1 : -1);
+                                    setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, recipe: [...mod.recipe.filter((x) => x.stockId !== s.id), { stockId: s.id, qty }] } : mod)) });
+                                    setEffect({ stockId: "", amount: "", unit: "", sign: "add" });
+                                    setEffectFor(undefined);
+                                  } catch (e) {
+                                    setError(e instanceof Error ? e.message : "Jumlah tidak valid");
+                                  }
+                                }}
+                              >
+                                Simpan efek
+                              </Button>
+                            </div>
+                          ) : (
+                            <button className="text-button" onClick={() => { setEffectFor(i); setEffect({ stockId: "", amount: "", unit: "", sign: "add" }); }}>Tambah efek bahan</button>
+                          )}
+                          <button className="text-button" onClick={() => { setItem({ ...item, modifiers: item.modifiers.filter((_, j) => j !== i) }); setOpenOpt(undefined); }}>
+                            Hapus tambahan
+                          </button>
+                        </div>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                <div className="group-head">
+                  <h3>Grup pilihan</h3>
+                  <button type="button" className="set-add" onClick={() => setItem({ ...item, groups: [...(item.groups ?? []), { id: uid(), name: "", kind: "add" }] })}>
+                    <Plus size={16} /> Tambah grup pilihan
+                  </button>
+                </div>
+                <p className="small muted">Ukuran, susu, gula, tambahan. Pilihan "ganti" dan "tingkat" mengurangi bahan dasar, "tambahan" menambah.</p>
+                {(item.groups ?? []).map((g, gi) => (
+                  <div className="group-row" key={g.id}>
+                    <input aria-label="Nama grup" placeholder="Nama grup, mis. Susu" value={g.name} onChange={(e) => setItem({ ...item, groups: item.groups!.map((x, j) => (j === gi ? { ...x, name: e.target.value } : x)) })} />
+                    <Select ariaLabel="Jenis grup" value={g.kind} onChange={(v) => setItem({ ...item, groups: item.groups!.map((x, j) => (j === gi ? { ...x, kind: v as OptionGroup["kind"], required: v !== "add" } : x)) })} options={KINDS.map(([value, label]) => ({ value, label }))} />
+                    <button type="button" className="row-remove" aria-label={`Hapus grup ${g.name}`.trim()} onClick={() => setItem({ ...item, groups: item.groups!.filter((_, j) => j !== gi), modifiers: item.modifiers.map((m) => (m.group === g.id ? { ...m, group: undefined } : m)) })}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+              </article>
+            </div>
+            <div className="menu-edit-col">
+              <article className="panel recipe-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Resep per porsi</h2>
+                    <p className="small muted">{settings?.stationTablets ? "Stok berkurang saat pesanan dikirim ke stasiun" : "Stok berkurang saat pesanan dibayar"}</p>
+                  </div>
+                </div>
+                {item.recipe.length > 0 ? (
+                  <div className="table-scroll">
+                    <table className="data-table plain-table recipe-table">
+                      <thead>
+                        <tr><th>Bahan</th><th>Jumlah</th><th className="num">Biaya</th></tr>
+                      </thead>
+                      <tbody>
+                        {item.recipe.map((r) => {
+                          const s = stockItems.find((x) => x.id === r.stockId);
+                          return (
+                            <tr key={r.stockId} className={adding && recipeStock === r.stockId ? "editing" : ""}>
+                              <td>
+                                <button type="button" className="recipe-name" title="Ubah jumlah" onClick={() => { setAdding(true); setRecipeStock(r.stockId); setRecipeUnit(""); setRecipeQty(String(r.qty / 1000).replace(".", ",")); }}>{s?.name ?? "Bahan dihapus"}</button>
+                                {s?.production && <span className="dot-chip">Prep</span>}
+                              </td>
+                              <td>{quantity(r.qty)} {s?.unit}</td>
+                              <td className="num"><strong>{costs.has(r.stockId) ? rupiah(Math.round(r.qty * costs.get(r.stockId)!)) : "—"}</strong></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="small muted">Kosong = tidak dilacak. Minuman botol: pilih bahan botol, jumlah 1. Batch matang: lacak porsi, bukan asumsi hasil bahan mentah.</p>
+                )}
+                {adding || !item.recipe.length ? (
+                  <div className="recipe-add">
+                    <Select label="Bahan" value={recipeStock} onChange={(v) => { setRecipeStock(v); setRecipeUnit(""); }} options={[{ value: "", label: "Pilih bahan" }, ...stockItems.map((s) => ({ value: s.id, label: `${s.name} (${s.unit})` }))]} />
+                    <label>
+                      Jumlah
+                      <input inputMode="decimal" value={recipeQty} onChange={(e) => setRecipeQty(e.target.value)} />
+                    </label>
+                    <Select label="Satuan" value={recipeUnit || stockItems.find((s) => s.id === recipeStock)?.unit || ""} onChange={setRecipeUnit} options={unitsFor(stockItems.find((s) => s.id === recipeStock))} />
+                    {/* Figma M7 draws the recipe without a delete column: a row is removed from its edit form. */}
+                    <div className="recipe-add-actions">
+                      {item.recipe.some((r) => r.stockId === recipeStock) && (
+                        <button type="button" className="set-remove" onClick={() => { setItem({ ...item, recipe: item.recipe.filter((x) => x.stockId !== recipeStock) }); setRecipeStock(""); setRecipeQty(""); setRecipeUnit(""); }}>
+                          <Trash2 size={16} /> Hapus dari resep
+                        </button>
+                      )}
+                      {item.recipe.length > 0 && (
+                        <Button variant="ghost" onClick={() => { setAdding(false); setRecipeStock(""); setRecipeQty(""); setRecipeUnit(""); }}>
+                          Batal
+                        </Button>
+                      )}
+                      <Button variant="secondary" onClick={addRecipe}>
+                        {item.recipe.some((r) => r.stockId === recipeStock) ? "Simpan jumlah" : "Tambah bahan resep"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="set-add muted-add" onClick={() => setAdding(true)}>
+                    <Plus size={16} /> Tambah bahan atau prep
+                  </button>
+                )}
+              </article>
+              <div className="metrics menu-cost">
+                <article className="metric tone-lavender">
+                  <span><Wallet size={16} /> Biaya per porsi</span>
+                  <strong>{cost === undefined ? "—" : rupiah(cost)}</strong>
+                  <small>{!item.recipe.length ? "belum ada resep" : cost === undefined ? "harga sebagian bahan belum tercatat" : live && liveCost !== undefined && liveCost !== cost ? `${rupiah(liveCost)} di v${live.version}` : "dari harga beli terakhir"}</small>
+                </article>
+                <article className="metric tone-mint">
+                  <span><ChartColumn size={16} /> Margin</span>
+                  <strong>{cost === undefined ? "—" : rupiah(item.price - cost)}</strong>
+                  <small>{cost !== undefined && item.price ? `${Math.round(((item.price - cost) / item.price) * 100)}% dari harga` : "harga jual dikurangi biaya"}</small>
+                </article>
+                <article className="metric tone-sky">
+                  <span><Percent size={16} /> Food cost</span>
+                  <strong>{cost !== undefined && item.price ? `${((cost / item.price) * 100).toFixed(1).replace(".", ",")}%` : "—"}</strong>
+                  <small>biaya bahan dibagi harga</small>
+                </article>
+              </div>
+              {item.active && !item.recipe.length && (
+                <p className="callout">
+                  <AlertTriangle size={18} /> Menu aktif tanpa resep tidak memotong stok. {manager ? "" : "Menerbitkannya perlu PIN manajer."}
+                </p>
+              )}
+              {/* Not on the Figma card, kept from the old editor: how the item behaves on the till. */}
+              <article className="panel menu-till">
+                <div className="panel-heading">
+                  <h2>Di kasir</h2>
+                </div>
+                <div className="opt-pills" role="group" aria-label="Status di kasir">
+                  {([["active", "Aktif"], ["soldOut", "Habis"], ["favorite", "Favorit"], ["ignoreStock", "Tetap jual walau bahan habis"]] as const).map(([key, label]) => (
+                    <label key={key} className={`opt-pill ${item[key] ? "on" : ""}`}>
+                      <input type="checkbox" checked={Boolean(item[key])} onChange={(e) => setItem({ ...item, [key]: e.target.checked })} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <div className="menu-till-grid">
+                  <div className="set-field">
+                    <span className="set-label">Nama lain untuk pencarian</span>
+                    <ChipBox label="Nama lain baru" placeholder="americano panas, kopi hitam" values={item.aliases ?? []} onChange={(a) => setItem({ ...item, aliases: a })} />
+                  </div>
+                  <label>
+                    "Hampir habis" di bawah (porsi)
+                    <input type="number" inputMode="numeric" value={item.lowAt ?? settings?.lowAt ?? 5} onChange={(e) => setItem({ ...item, lowAt: Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
+                  </label>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+      ) : (
+      <>
+      {!only && <div className="category-tabs settings-tabs">
         {[
           ...(settingsRole ? [["restaurant", "Restoran"]] : []),
           ...(catalogRole
@@ -344,17 +730,68 @@ export default function SettingsPage() {
               ]
             : []),
           ["sync", "Sinkron & backup"],
-          ["printer", "Printer & perangkat"],
+          ["team", "Tim & perangkat"],
         ].map(([id, label]) => (
           <button
             key={id}
             className={tab === id ? "active" : ""}
+            aria-current={tab === id ? "page" : undefined}
             onClick={() => setTab(id)}
           >
             {label}
           </button>
         ))}
+      </div>}
+      <div className="page-heading">
+        <div>
+          <h1>{title}</h1>
+          <p className="muted">{sub}</p>
+        </div>
+        {tab === "menu" && catalogRole && (
+          <Button
+            className="btn-accent"
+            onClick={() =>
+              edit({
+                id: uid(),
+                name: "",
+                category: "Makanan",
+                type: "food",
+                station: "kitchen",
+                tags: [],
+                aliases: [],
+                groups: [],
+                lowAt: settings?.lowAt ?? 5,
+                price: 0,
+                active: true,
+                soldOut: false,
+                favorite: false,
+                recipe: [],
+                modifiers: [],
+                version: 0,
+              })
+            }
+          >
+            <Plus size={18} /> Tambah menu
+          </Button>
+        )}
+        {tab === "stock" && catalogRole && (
+          <Button className="btn-accent" onClick={() => setStock({ id: uid(), name: "", unit: "pcs", threshold: 0, aliases: [], area: "", packs: [] })}>
+            <Plus size={18} /> Tambah bahan
+          </Button>
+        )}
+        {tab === "team" && manager && (
+          <Button className="btn-accent" onClick={() => setHelp("person")}>
+            <Plus size={22} /> Tambah orang
+          </Button>
+        )}
       </div>
+      {/* Only here: the back-office tabs are missing on the cashier device while a shift is open, so say why. */}
+      {tillLocked && (can(user.role, "settings") || can(user.role, "catalog")) && (
+        <p className="callout">
+          <AlertTriangle size={16} />
+          <span>Restoran, menu, dan bahan tertutup selama sif terbuka di kasir ini. Tutup sif dulu, atau buka dari laptop.</span>
+        </p>
+      )}
       {settingsRole && tab === "restaurant" && (
         <div className="settings-columns">
           <form className="panel" onSubmit={form.handleSubmit(saveSettings)}>
@@ -562,34 +999,7 @@ export default function SettingsPage() {
         </div>
       )}
       {catalogRole && tab === "menu" && (
-        <article className="panel">
-          <div className="panel-heading">
-            <h2>Menu restoran</h2>
-            <Button
-              onClick={() =>
-                setItem({
-                  id: uid(),
-                  name: "",
-                  category: "Makanan",
-                  type: "food",
-                  station: "kitchen",
-                  tags: [],
-                  aliases: [],
-                  groups: [],
-                  lowAt: settings?.lowAt ?? 5,
-                  price: 0,
-                  active: true,
-                  soldOut: false,
-                  favorite: false,
-                  recipe: [],
-                  modifiers: [],
-                  version: 0,
-                })
-              }
-            >
-              <Plus size={17} /> Tambah menu
-            </Button>
-          </div>
+        <article className="panel set-list">
           {menu.map((m) => (
             <div className="admin-row" key={m.id}>
               <img
@@ -605,19 +1015,21 @@ export default function SettingsPage() {
                   {m.tags?.length ? ` · ${m.tags.join(", ")}` : ""} · v{m.version}
                 </p>
               </div>
-              {!m.recipe.length && m.active && <span className="badge badge-warning">Belum ada resep</span>}
-              <span className="badge">
+              {!m.recipe.length && m.active && <span className="dot-chip warning">Belum ada resep</span>}
+              <span className={`dot-chip ${!m.active ? "" : m.soldOut ? "critical" : "good"}`}>
                 {!m.active ? "Nonaktif" : m.soldOut ? "Habis" : "Aktif"}
               </span>
               <Button
                 variant="secondary"
-                onClick={() => setItem(structuredClone(m))}
+                size="sm"
+                onClick={() => edit(structuredClone(m))}
               >
                 Edit
               </Button>
               {manager && (
                 <Button
                   variant="ghost"
+                  size="sm"
                   aria-label={`Hapus ${m.name}`}
                   title={sold.has(m.id) ? "Sudah terjual: nonaktifkan lewat Edit" : "Hapus menu ini"}
                   disabled={sold.has(m.id)}
@@ -631,28 +1043,19 @@ export default function SettingsPage() {
         </article>
       )}
       {catalogRole && tab === "stock" && (
-        <article className="panel">
-          <div className="panel-heading">
-            <h2>Bahan dan satuan dasar</h2>
-            <Button
-              onClick={() =>
-                setStock({ id: uid(), name: "", unit: "pcs", threshold: 0, aliases: [], area: "", packs: [] })
-              }
-            >
-              <Plus size={17} /> Tambah bahan
-            </Button>
-          </div>
+        <article className="panel set-list">
           {stockItems.map((s) => (
             <div className="admin-row" key={s.id}>
               <div>
                 <strong>{s.name}</strong>
+                {s.production && <span className="dot-chip">Prep</span>}
                 <p className="small muted">
                   {s.unit} · par {quantity(s.threshold)} {s.unit}{s.area ? ` · ${s.area}` : ""}
                   {s.packs?.length ? ` · ${s.packs.map((pk) => `1 ${pk.name} = ${quantity(pk.qty)} ${s.unit}`).join(", ")}` : ""}
                   {s.production ? " · bahan olahan" : ""}
                 </p>
               </div>
-              <Button variant="secondary" onClick={() => setStock({ ...s })}>
+              <Button variant="secondary" size="sm" onClick={() => setStock({ ...s })}>
                 Edit
               </Button>
             </div>
@@ -808,7 +1211,6 @@ export default function SettingsPage() {
               </div>
             </article>
             <article className="panel">
-              <Database size={25} />
               <h2>Ekspor & pemulihan</h2>
               <p className="muted">
                 Ekspor tidak menyertakan token, kata sandi, atau kunci rahasia.
@@ -855,25 +1257,61 @@ export default function SettingsPage() {
           </div>
         </>
       )}
-      {tab === "printer" && (
-        <div className="settings-columns">
-          <article className="panel">
-            <Printer size={25} />
-            <h2>Printer browser / sistem</h2>
-            <p className="muted">
-              Cetak dipicu oleh operator. Dialog browser tidak membuktikan
-              kertas tercetak.
-            </p>
-            <p className="badge badge-warning">
-              Printer fisik belum diverifikasi
-            </p>
+      {/* Figma M8: the team on the left, this device and how to pair another on the right. The app keeps no presence
+          or pairing codes, so a person shows "Aktif sekarang" only for you and devices list only this one. */}
+      {tab === "team" && (
+        <div className="team-grid">
+          <div className="team-col">
+            {can(user.role, "team") && (
+              <article className="panel team-panel">
+                <div className="panel-heading">
+                  <h2>Tim</h2>
+                  <span className="muted">{people.filter((p) => p.active).length} orang</span>
+                </div>
+                <div className="team-list">
+                  {people.map((p) => {
+                    const self = p.id === user.id, owner = user.role === "owner" && !user.demo && !self;
+                    const body = (
+                      <>
+                        <span className="avatar">{initials(p.name)}</span>
+                        <span>
+                          <strong>{p.name}</strong>
+                          <small>{p.active ? ROLE_NOTE[p.role] : "Nonaktif: ditolak server saat masuk"}</small>
+                        </span>
+                        <span className={`dot-chip ${p.role === "owner" || p.role === "manager" ? "info" : ""}`}>{roleLabel[p.role]}</span>
+                        <span className={`team-status ${p.active ? "" : "off"}`}>{self ? "Aktif sekarang" : p.active ? "" : "Nonaktif"}</span>
+                        <span className="team-go" aria-hidden>{owner && <ArrowRight size={16} />}</span>
+                      </>
+                    );
+                    // The owner changes roles and access in the owner area; everyone else only sees the list.
+                    return owner ? (
+                      <a key={p.id} href="/admin" className="person-row team-row" title="Ubah peran di area pemilik">{body}</a>
+                    ) : (
+                      <div key={p.id} className="person-row team-row">{body}</div>
+                    );
+                  })}
+                </div>
+                {!user.demo && !members && <p className="small muted">Daftar lengkap tampil saat perangkat online.</p>}
+              </article>
+            )}
+            <article className="panel">
+              <div className="panel-heading">
+                <h2>Printer struk</h2>
+                <span className="dot-chip warning">Printer fisik belum diverifikasi</span>
+              </div>
+              <p className="muted">
+                Lewat dialog cetak browser atau sistem. Cetak dipicu oleh operator; dialog browser tidak membuktikan
+                kertas tercetak.
+              </p>
             <Button
               className="full mt"
               variant="secondary"
               onClick={() => setTestPrint(true)}
             >
-              Buka tes cetak {settings?.receiptWidth} mm
+              <Printer size={17} /> Buka tes cetak {settings?.receiptWidth} mm
             </Button>
+            <details className="printer-checks">
+              <summary>Daftar uji printer</summary>
             <ul className="checklist">
               <li>Pasangkan printer melalui sistem operasi.</li>
               <li>Periksa nama printer dan ukuran kertas.</li>
@@ -888,34 +1326,23 @@ export default function SettingsPage() {
               Bluetooth ESC/POS, cetak diam-diam, dan pemotong otomatis tidak
               dijamin oleh PWA.
             </p>
-          </article>
-          <article className="panel">
-            <ShieldCheck size={25} />
-            <h2>Penyimpanan perangkat</h2>
-            <p className="muted">{storage}</p>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                void act(async () => {
-                  const granted = await navigator.storage?.persist?.();
-                  const estimate = await navigator.storage?.estimate?.();
-                  setStorage(
-                    `${granted ? "Penyimpanan persisten diberikan" : "Persistensi tidak diberikan; data masih dapat dihapus browser"}. Terpakai ${Math.round((estimate?.usage || 0) / 1024 / 1024)} MB.`,
-                  );
-                })
-              }
-            >
-              Minta penyimpanan persisten
-            </Button>
-            <p className="callout">
-              <AlertTriangle size={18} /> Jangan gunakan mode privat atau hapus
-              data situs pada kasir. Penyimpanan browser tetap dapat hilang.
-              Ekspor secara berkala.
-            </p>
-            <p className="small">
-              Perangkat:{" "}
-              {user.primary ? "Kasir utama" : user.mode === "station" ? "Stasiun (dapur / bar)" : user.mode === "office" ? "Back office" : "Belum dipasangkan (hanya membaca)"}
-            </p>
+            </details>
+            </article>
+          </div>
+          <div className="team-col">
+            <article className="panel device-panel">
+              <div className="panel-heading">
+                <h2>Perangkat</h2>
+                {manager && <button type="button" className="dark-button" onClick={() => setHelp("device")}>Tambah perangkat</button>}
+              </div>
+              <div className="person-row device-row">
+                <span className="device-icon">{user.mode === "office" ? <Laptop size={18} /> : user.primary || user.mode ? <Tablet size={18} /> : <MonitorSmartphone size={18} />}</span>
+                <span>
+                  <strong>{user.primary ? "Kasir utama" : user.mode === "station" ? "Tablet stasiun" : user.mode === "office" ? "Back office" : "Belum dipasangkan"}</strong>
+                  <small>{user.primary ? "Pesanan, bayar, stok" : user.mode === "station" ? "Tiket dapur dan bar" : user.mode === "office" ? "Laporan, menu, stok" : "Hanya membaca"}</small>
+                </span>
+                <span className="dot-chip">Perangkat ini</span>
+              </div>
             {manager && !user.demo && (
               <>
                 <Select
@@ -960,11 +1387,35 @@ export default function SettingsPage() {
                 Perangkat kasir utama ditentukan pemilik restoran.
               </p>
             )}
+            </article>
+          <article className="panel">
+            <h2>Penyimpanan perangkat</h2>
+            <p className="muted">{storage}</p>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                void act(async () => {
+                  const granted = await navigator.storage?.persist?.();
+                  const estimate = await navigator.storage?.estimate?.();
+                  setStorage(
+                    `${granted ? "Penyimpanan persisten diberikan" : "Persistensi tidak diberikan; data masih dapat dihapus browser"}. Terpakai ${Math.round((estimate?.usage || 0) / 1024 / 1024)} MB.`,
+                  );
+                })
+              }
+            >
+              Minta penyimpanan persisten
+            </Button>
+            <p className="callout">
+              <AlertTriangle size={18} /> Jangan gunakan mode privat atau hapus
+              data situs pada kasir. Penyimpanan browser tetap dapat hilang.
+              Ekspor secara berkala.
+            </p>
           </article>
+          </div>
         </div>
       )}
       <div className="account-footer">
-        <span className="avatar">{user.name.slice(0, 1)}</span>
+        <span className="avatar">{initials(user.name)}</span>
         <div className="account-id">
           <strong>{user.name}</strong>
           <p className="muted small">
@@ -1008,324 +1459,13 @@ export default function SettingsPage() {
               </a>
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => setSignout(true)}>
+          <Button variant="ghost" size="sm" onClick={() => void openSignout()}>
             <LogOut size={16} /> Keluar akun
           </Button>
         </div>
       </div>
-      <Dialog
-        open={Boolean(item)}
-        onOpenChange={() => setItem(undefined)}
-        title={item?.version ? "Edit menu" : "Tambah menu"}
-      >
-        {item && (
-          <>
-            <div className="menu-photo-editor">
-              <img
-                src={menuPicture(item)}
-                alt="Pratinjau foto menu"
-              />
-              <div>
-                <label className="photo-upload">
-                  <ImageIcon size={18} />
-                  {photoBusy
-                    ? "Memperkecil foto…"
-                    : item.photo
-                      ? "Ganti foto"
-                      : "Unggah foto (opsional)"}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    capture="environment"
-                    disabled={photoBusy}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) void choosePhoto(file);
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                </label>
-                {item.photo && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setItem({ ...item, photo: undefined })}
-                  >
-                    <Trash2 size={15} /> Pakai gambar standar
-                  </Button>
-                )}
-                <p className="small muted">
-                  JPG, PNG, atau WebP hingga 10 MB. Meja memperkecil foto untuk
-                  penggunaan offline.
-                </p>
-              </div>
-            </div>
-            <label>
-              Nama menu
-              <input
-                value={item.name}
-                onChange={(e) => setItem({ ...item, name: e.target.value })}
-              />
-            </label>
-            <div className="form-grid">
-              <Select
-                label="Jenis"
-                value={menuType(item)}
-                onChange={(v) => setItem({ ...item, type: v as MenuType, category: typeLabel[v as MenuType], station: v === "beverage" ? "bar" : "kitchen" })}
-                options={(Object.keys(typeLabel) as MenuType[]).map((t) => ({ value: t, label: typeLabel[t] }))}
-              />
-              <label>
-                Harga
-                <Money
-                  value={String(item.price)}
-                  onChange={(v) => setItem({ ...item, price: Number(v || 0) })}
-                />
-              </label>
-            </div>
-            <div className="form-grid">
-              <Select
-                label="Stasiun"
-                value={itemStation(item)}
-                onChange={(v) => setItem({ ...item, station: v as Station })}
-                options={[{ value: "kitchen", label: "Dapur" }, { value: "bar", label: "Bar" }]}
-              />
-              <label>
-                "Hampir habis" di bawah (porsi)
-                <input type="number" inputMode="numeric" value={item.lowAt ?? settings?.lowAt ?? 5} onChange={(e) => setItem({ ...item, lowAt: Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
-              </label>
-            </div>
-            <div className="form-grid">
-              <label>
-                Tag (pisahkan dengan koma)
-                <input list="takar-tags" value={(item.tags ?? []).join(", ")} onChange={(e) => setItem({ ...item, tags: words(e.target.value) })} placeholder="Signature, Kopi" />
-                <datalist id="takar-tags">{tags.map((t) => <option key={t} value={t} />)}</datalist>
-              </label>
-              <label>
-                Nama lain untuk pencarian
-                <input value={(item.aliases ?? []).join(", ")} onChange={(e) => setItem({ ...item, aliases: words(e.target.value) })} placeholder="americano panas, kopi hitam" />
-              </label>
-            </div>
-            <div className="button-row">
-              {(["active", "soldOut", "favorite"] as const).map((key) => (
-                <label className="inline-check" key={key}>
-                  <input
-                    type="checkbox"
-                    checked={item[key]}
-                    onChange={(e) =>
-                      setItem({ ...item, [key]: e.target.checked })
-                    }
-                  />
-                  {key === "active"
-                    ? "Aktif"
-                    : key === "soldOut"
-                      ? "Habis"
-                      : "Favorit"}
-                </label>
-              ))}
-              <label className="inline-check">
-                <input type="checkbox" checked={Boolean(item.ignoreStock)} onChange={(e) => setItem({ ...item, ignoreStock: e.target.checked })} />
-                Tetap jual walau bahan habis
-              </label>
-            </div>
-            <h3 className="mt">Resep per porsi</h3>
-            <p className="small muted">
-              Kosong = tidak dilacak. Minuman botol: pilih bahan botol, jumlah
-              1. Batch matang: lacak porsi, bukan asumsi hasil bahan mentah.
-            </p>
-            {item.recipe.map((r) => (
-              <div className="bill-row" key={r.stockId}>
-                <span>
-                  {stockItems.find((s) => s.id === r.stockId)?.name}:{" "}
-                  {quantity(r.qty)}{" "}
-                  {stockItems.find((s) => s.id === r.stockId)?.unit}
-                  {costs.has(r.stockId) && <small className="muted"> · {rupiah(Math.round(r.qty * costs.get(r.stockId)!))}</small>}
-                </span>
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    setItem({
-                      ...item,
-                      recipe: item.recipe.filter(
-                        (x) => x.stockId !== r.stockId,
-                      ),
-                    })
-                  }
-                >
-                  Hapus
-                </button>
-              </div>
-            ))}
-            <div className="form-grid">
-              <Select
-                label="Bahan"
-                value={recipeStock}
-                onChange={setRecipeStock}
-                options={[
-                  { value: "", label: "Pilih bahan" },
-                  ...stockItems.map((s) => ({
-                    value: s.id,
-                    label: `${s.name} (${s.unit})`,
-                  })),
-                ]}
-              />
-              <label>
-                Jumlah
-                <input
-                  inputMode="decimal"
-                  value={recipeQty}
-                  onChange={(e) => setRecipeQty(e.target.value)}
-                />
-              </label>
-            </div>
-            <Select label="Satuan" value={recipeUnit || stockItems.find((s) => s.id === recipeStock)?.unit || ""} onChange={setRecipeUnit} options={unitsFor(stockItems.find((s) => s.id === recipeStock))} />
-            <Button variant="secondary" onClick={addRecipe}>
-              Tambah bahan resep
-            </Button>
-            <p className="callout">
-              {recipeCost(item.recipe) === undefined
-                ? "Biaya bahan belum lengkap: harga sebagian bahan belum pernah tercatat."
-                : `Biaya bahan ${rupiah(recipeCost(item.recipe)!)} · margin ${rupiah(item.price - recipeCost(item.recipe)!)} · food cost ${item.price ? Math.round((recipeCost(item.recipe)! / item.price) * 100) : 0}%`}
-            </p>
-            <h3 className="mt">Grup pilihan</h3>
-            <p className="small muted">Ukuran, susu, gula, tambahan. Pilihan "ganti" dan "tingkat" mengurangi bahan dasar, "tambahan" menambah.</p>
-            {(item.groups ?? []).map((g, gi) => (
-              <div className="form-grid" key={g.id}>
-                <label>
-                  Nama grup
-                  <input value={g.name} onChange={(e) => setItem({ ...item, groups: item.groups!.map((x, j) => (j === gi ? { ...x, name: e.target.value } : x)) })} />
-                </label>
-                <Select label="Jenis grup" value={g.kind} onChange={(v) => setItem({ ...item, groups: item.groups!.map((x, j) => (j === gi ? { ...x, kind: v as OptionGroup["kind"], required: v !== "add" } : x)) })} options={KINDS.map(([value, label]) => ({ value, label }))} />
-                <button className="text-button" onClick={() => setItem({ ...item, groups: item.groups!.filter((_, j) => j !== gi), modifiers: item.modifiers.map((m) => (m.group === g.id ? { ...m, group: undefined } : m)) })}>Hapus grup</button>
-              </div>
-            ))}
-            <Button variant="secondary" onClick={() => setItem({ ...item, groups: [...(item.groups ?? []), { id: uid(), name: "", kind: "add" }] })}>Tambah grup pilihan</Button>
-            <h3 className="mt">Tambahan</h3>
-            {item.modifiers.map((m, i) => (
-              <div className="modifier-editor" key={m.id}>
-                <label>
-                  Nama tambahan
-                  <input
-                    value={m.name}
-                    onChange={(e) =>
-                      setItem({
-                        ...item,
-                        modifiers: item.modifiers.map((v, j) =>
-                          j === i ? { ...v, name: e.target.value } : v,
-                        ),
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Harga tambahan
-                  <Money
-                    value={String(m.price)}
-                    onChange={(value) =>
-                      setItem({
-                        ...item,
-                        modifiers: item.modifiers.map((mod, j) =>
-                          j === i ? { ...mod, price: Number(value || 0) } : mod,
-                        ),
-                      })
-                    }
-                  />
-                </label>
-                {(item.groups ?? []).length > 0 && (
-                  <Select
-                    label="Grup"
-                    value={m.group ?? ""}
-                    onChange={(value) => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, group: value || undefined } : mod)) })}
-                    options={[{ value: "", label: "Tanpa grup (tambahan lepas)" }, ...(item.groups ?? []).map((g) => ({ value: g.id, label: g.name || "(grup tanpa nama)" }))]}
-                  />
-                )}
-                {m.group && item.groups?.find((g) => g.id === m.group)?.kind !== "add" && (
-                  <label className="inline-check">
-                    <input type="checkbox" checked={Boolean(m.default)} onChange={(e) => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, default: e.target.checked } : mod.group === m.group && e.target.checked ? { ...mod, default: false } : mod)) })} />
-                    Pilihan bawaan
-                  </label>
-                )}
-                <p className="small muted">Efek ke stok: {describeDelta(m.recipe, stockItems) || "tidak ada"}</p>
-                {m.recipe.map((r) => (
-                  <div className="bill-row" key={r.stockId}>
-                    <span>{r.qty > 0 ? "+" : "−"}{quantity(Math.abs(r.qty))} {stockItems.find((s) => s.id === r.stockId)?.unit} {stockItems.find((s) => s.id === r.stockId)?.name}</span>
-                    <button className="text-button" onClick={() => setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, recipe: mod.recipe.filter((x) => x.stockId !== r.stockId) } : mod)) })}>Hapus</button>
-                  </div>
-                ))}
-                {effectFor === i ? (
-                  <div className="form-grid">
-                    <Select label="Bahan" value={effect.stockId} onChange={(v) => setEffect({ ...effect, stockId: v, unit: stockItems.find((s) => s.id === v)?.unit ?? "" })} options={[{ value: "", label: "Pilih bahan" }, ...stockItems.map((s) => ({ value: s.id, label: `${s.name} (${s.unit})` }))]} />
-                    <Select label="Efek" value={effect.sign} onChange={(v) => setEffect({ ...effect, sign: v })} options={SIGNS} />
-                    <label>
-                      Jumlah
-                      <input inputMode="decimal" value={effect.amount} onChange={(e) => setEffect({ ...effect, amount: e.target.value })} />
-                    </label>
-                    <Select label="Satuan" value={effect.unit} onChange={(v) => setEffect({ ...effect, unit: v })} options={unitsFor(stockItems.find((s) => s.id === effect.stockId))} />
-                    <Button
-                      variant="secondary"
-                      disabled={!effect.stockId || !effect.amount}
-                      onClick={() => {
-                        const s = stockItems.find((x) => x.id === effect.stockId)!;
-                        try {
-                          const qty = convert(effect.amount, effect.unit || s.unit, s.unit, s.packs) * (effect.sign === "add" ? 1 : -1);
-                          setItem({ ...item, modifiers: item.modifiers.map((mod, j) => (j === i ? { ...mod, recipe: [...mod.recipe.filter((x) => x.stockId !== s.id), { stockId: s.id, qty }] } : mod)) });
-                          setEffect({ stockId: "", amount: "", unit: "", sign: "add" });
-                          setEffectFor(undefined);
-                        } catch (e) {
-                          setError(e instanceof Error ? e.message : "Jumlah tidak valid");
-                        }
-                      }}
-                    >
-                      Simpan efek
-                    </Button>
-                  </div>
-                ) : (
-                  <button className="text-button" onClick={() => { setEffectFor(i); setEffect({ stockId: "", amount: "", unit: "", sign: "add" }); }}>Tambah efek bahan</button>
-                )}
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    setItem({
-                      ...item,
-                      modifiers: item.modifiers.filter((_, j) => j !== i),
-                    })
-                  }
-                >
-                  Hapus tambahan
-                </button>
-              </div>
-            ))}
-            <Button
-              className="mt"
-              variant="secondary"
-              onClick={() =>
-                setItem({
-                  ...item,
-                  modifiers: [
-                    ...item.modifiers,
-                    { id: uid(), name: "", price: 0, recipe: [] },
-                  ],
-                })
-              }
-            >
-              Tambah pilihan
-            </Button>
-            {item.active && !item.recipe.length && (
-              <p className="callout">
-                <AlertTriangle size={18} /> Menu aktif tanpa resep tidak memotong stok. {manager ? "" : "Menerbitkannya perlu PIN manajer."}
-              </p>
-            )}
-            <Button
-              className="full mt"
-              loading={busy}
-              disabled={busy || !item.name}
-              onClick={() => void saveItem()}
-            >
-              Simpan versi menu
-            </Button>
-          </>
-        )}
-      </Dialog>
+      </>
+      )}
       <Dialog
         open={Boolean(stock)}
         onOpenChange={() => setStock(undefined)}
@@ -1535,6 +1675,35 @@ export default function SettingsPage() {
         )}
       </Dialog>
       <ApprovalDialog request={ask} onClose={() => setAsk(undefined)} onApproved={(a) => { setAsk(undefined); if (item) void saveItem(a); else void applyImport(a); }} />
+      {/* Accounts and devices are not created in the app (no public sign-up, no pairing codes): say how it is done. */}
+      <Dialog
+        open={Boolean(help)}
+        onOpenChange={() => setHelp(undefined)}
+        title={help === "device" ? "Tambah perangkat" : "Tambah orang"}
+        description={help === "device" ? "Perangkat dipasangkan dari perangkat itu sendiri, setelah masuk dengan akun staf." : "Pendaftaran publik dimatikan. Akun staf dibuat pemilik dari terminal, bukan dari aplikasi."}
+      >
+        {help === "device" ? (
+          <ol className="set-steps">
+            <li>Buka Takar di tablet atau laptop itu, lalu masuk dengan akun staf (email dan PIN masuk).</li>
+            <li>Manajer membuka Lainnya → Tim & perangkat di perangkat itu dan memasangkannya sebagai stasiun atau back office.</li>
+            <li>Untuk kasir utama: pemilik masuk di perangkat itu dan memilih Jadikan perangkat ini kasir utama. Kasir lama langsung dicabut, jadi sinkronkan dulu.</li>
+          </ol>
+        ) : (
+          <>
+            <div className="code-block set-code">
+              <code>{`pnpm staff add <email> <peran> <nama> --restaurant ${user.restaurantId} --pin <6 angka>`}</code>
+            </div>
+            <p className="small muted">Peran: owner, manager, admin, chef, cashier, barista, kitchen. Sandi awal tampil sekali; serahkan langsung ke orangnya. Peran dan akses diubah di area pemilik.</p>
+            {user.role === "owner" && !user.demo && (
+              <Button asChild variant="secondary">
+                <a href="/admin">
+                  <UserCog size={16} /> Buka area pemilik
+                </a>
+              </Button>
+            )}
+          </>
+        )}
+      </Dialog>
       <Dialog
         open={pinDialog}
         onOpenChange={setPinDialog}
@@ -1603,17 +1772,22 @@ export default function SettingsPage() {
         </div>
       </Dialog>
       <Dialog open={signout} onOpenChange={setSignout} title="Keluar akun?">
-        <p>
-          Data perangkat dan {pending.length} operasi yang belum tersinkron
-          tetap disimpan dan hanya terlihat saat akun yang sama masuk lagi.
-          Ekspor pemulihan terlebih dahulu bila diperlukan.
-        </p>
+        {blockers === null ? (
+          <p className="muted">Memeriksa sif, keranjang, dan sinkronisasi…</p>
+        ) : blockers.length ? (
+          <div className="close-missing">
+            <strong>Belum bisa keluar:</strong>
+            <ul>{blockers.map((b) => <li key={b}>{b}</li>)}</ul>
+          </div>
+        ) : (
+          <p>Semua sudah tersinkron. Data di perangkat ini tetap tersimpan untuk akun Anda.</p>
+        )}
         <div className="dialog-actions">
           <Button variant="secondary" onClick={() => setSignout(false)}>
             Batal
           </Button>
-          <Button variant="destructive" onClick={() => void logout()}>
-            Keluar tanpa menghapus data
+          <Button variant="destructive" disabled={!blockers || blockers.length > 0} onClick={() => void logout()}>
+            Keluar akun
           </Button>
         </div>
       </Dialog>

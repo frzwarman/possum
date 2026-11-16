@@ -64,7 +64,7 @@ export default function Station(){
      <Button size="sm" variant="secondary" disabled={busy||balance(e.item.id)<=0} onClick={()=>void act(()=>commands.stockRecord(e.item.id,'waste',e.remaining,'Kedaluwarsa'),'Sisa batch dicatat terbuang')}>Buang sisa {quantity(e.remaining)} {e.item.unit}</Button></div>):<p className="muted">Tidak ada batch yang mendekati masa simpan.</p>}
    </article>
   </div>
-  {user.mode!=='station'&&!user.primary&&<p className="callout">Perangkat ini belum dipasangkan sebagai stasiun (Lainnya → Perangkat), jadi tombol Siap dan catat buang belum bisa dipakai.</p>}
+  {user.mode!=='station'&&!user.primary&&<p className="callout">Perangkat ini belum dipasangkan sebagai stasiun (Lainnya → Tim & perangkat), jadi tombol Siap dan catat buang belum bisa dipakai.</p>}
   <Dialog open={Boolean(waste)} onOpenChange={()=>setWaste(undefined)} title="Catat buang" description="Bahan, jumlah, alasan. Dicatat atas nama Anda.">
    {waste&&<>
     <Select label="Bahan" value={waste.stockId} onChange={v=>setWaste({...waste,stockId:v,unit:item(v)?.unit??''})} options={[{value:'',label:'Pilih bahan'},...[...here,...stockItems.filter(s=>!here.includes(s))].map(s=>({value:s.id,label:`${s.name} (${s.unit})`}))]}/>

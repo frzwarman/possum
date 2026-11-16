@@ -1,0 +1,95 @@
+/* Figma pass 2, audit screens. Loaded after styles.css (main.tsx), so equal-specificity rules here win. */
+/* Log audit (Figma M3): white search and counted pills on the canvas, a quiet table whose picked row is lime with
+   rounded ends, and the picked entry on the right (under its own row when the screen is too narrow for two panels). */
+.audit-page .page-heading .button-row{gap:10px;align-items:center}
+.audit-page .page-heading .btn{min-height:44px;margin:0;padding:0 20px;gap:12px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);color:var(--ink);font-size:15px;font-weight:500}
+.audit-page .page-heading .btn:hover{background:var(--bg-subtle)}
+.audit-page .page-heading .btn-icon{width:44px;padding:0}
+.audit-page .page-heading .pill-selects .select-trigger{min-height:44px;padding:0 14px;gap:8px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);font-size:14px;font-weight:500;color:var(--ink)}
+.audit-page .page-heading .pill-selects .select-menu{left:auto;right:0;min-width:200px}
+.audit-filters{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:20px}
+.audit-filters .search-box.compact{flex:0 1 318px;width:auto;min-width:220px;height:40px;padding:0 16px;gap:12px;background:var(--surface);border-radius:12px;color:var(--text-secondary)}
+.audit-filters .search-box.compact input{font-size:14px}
+.audit-filters .search-box input::placeholder{color:var(--text-secondary)}
+.audit-filters .pill-tabs{gap:10px}
+.audit-filters .pill-tabs>button{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;background:var(--surface);font-size:15px;font-weight:500}
+.audit-filters .pill-tabs>button:hover{background:var(--bg-muted)}
+.audit-filters .pill-tabs>button.active{background:var(--ink)}
+.audit-filters .pill-tabs>button small{font-size:12px;font-weight:400;color:var(--text-secondary)}
+.audit-filters .pill-tabs>button.active small{color:color-mix(in srgb,#fff 60%,var(--ink))}
+.audit-range{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:13px;color:var(--text-secondary)}
+.audit-range input{height:40px;min-height:40px;padding:0 10px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);font-size:14px;color:var(--ink)}
+.audit-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:stretch}
+.audit-grid>.panel{margin:0;padding:20px}
+.audit-log{display:flex;flex-direction:column;min-width:0}
+.audit-log>p.muted{margin:0}
+/* Table: 12px muted headers over one rule, 14px rows of 20px lines; time muted, people semibold. */
+.audit-table th{padding:0 9px 8px;font-size:12px;line-height:16px}
+.audit-table th:nth-child(1){width:14%}.audit-table th:nth-child(2){width:16.5%}.audit-table th:nth-child(4){width:13.5%}.audit-table th:nth-child(5){width:18.5%}
+.audit-table td{padding:11px 9px 10px;line-height:20px;border-bottom:1px solid var(--border);vertical-align:middle}
+.audit-table th:first-child,.audit-table td:first-child{padding-left:9px}
+.audit-table tr:not(.audit-inline) td:nth-child(-n+2),.audit-table tr:not(.audit-inline) td:nth-child(n+4){white-space:nowrap}
+.audit-table tbody tr:last-child td,.audit-table tbody tr:has(+ .audit-inline:last-child) td{border-bottom:0}
+.audit-table .audit-time{color:var(--text-secondary)}
+.audit-table td strong{font-weight:600}
+.audit-table .dot-chip{padding:2px 8px;gap:5px;line-height:16px;vertical-align:top}
+/* The row highlight is a pseudo-element so the rules between rows stay straight under the rounded lime shape. */
+.audit-table tbody tr:not(.audit-inline){cursor:pointer}
+.audit-table tbody tr:not(.audit-inline) td{position:relative;z-index:0}
+.audit-table tbody tr:not(.audit-inline):hover td::before,.audit-table tbody tr.on td::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--bg-subtle)}
+.audit-table tbody tr.on:not(.audit-inline) td::before{background:var(--lime-subtle)}
+.audit-table tbody tr td:first-child::before{border-radius:10px 0 0 10px}
+.audit-table tbody tr td:last-child::before{border-radius:0 10px 10px 0}
+.audit-table tbody tr:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+.audit-table tr.audit-inline{display:none}
+.audit-note{display:flex;align-items:flex-start;gap:6px;margin:auto 0 0;padding-top:16px;font-size:12px;line-height:16px;color:var(--text-secondary)}
+.audit-note svg{flex:0 0 auto;margin-top:1px}
+/* The picked entry: chip, 20px title, label/value pairs, and a grey box with what changed. */
+.audit-detail{display:flex;flex-direction:column;min-width:0}
+.audit-entry{display:flex;flex-direction:column;align-items:flex-start;min-width:0}
+.audit-entry>.dot-chip{padding:4px 8px;gap:5px;line-height:16px}
+.audit-entry h2{margin:14px 0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-.4px;overflow-wrap:anywhere}
+.audit-entry dl{display:grid;gap:14px;width:100%;margin:0}
+.audit-entry dt{font-size:12px;line-height:16px;color:var(--text-secondary)}
+.audit-entry dd{margin:2px 0 0;font-size:14px;line-height:20px;color:var(--text);overflow-wrap:anywhere}
+.audit-change{display:grid;gap:8px;width:100%;margin-top:14px;padding:12px;border-radius:10px;background:var(--bg-subtle)}
+.audit-change span{display:block;font-size:12px;line-height:16px;color:var(--text-secondary)}
+.audit-change strong{display:block;margin-top:2px;font-size:14px;line-height:20px;font-weight:600;overflow-wrap:anywhere}
+@media(max-width:1300px){.audit-grid{grid-template-columns:minmax(0,1fr) 300px}.audit-filters .search-box.compact{flex-basis:260px}.audit-filters .pill-tabs{gap:8px}.audit-filters .pill-tabs>button{padding:0 12px}}
+@media(max-width:1100px){
+ .audit-grid{grid-template-columns:minmax(0,1fr)}
+ .audit-detail{display:none}
+ .audit-table tr.audit-inline{display:table-row}
+ .audit-table tbody tr.on td{border-bottom-color:transparent}
+ .audit-table .audit-inline td{padding:6px 9px 18px;border-bottom:1px solid var(--border)}
+ .audit-inline .audit-entry>.dot-chip{display:none}
+ .audit-inline .audit-entry h2{margin:0 0 12px;font-size:17px;line-height:24px}
+ .audit-inline .audit-entry dl{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px 16px}
+}
+@media(max-width:700px){
+ .audit-page .page-heading>.button-row{flex:1 1 100%;flex-wrap:wrap}
+ .audit-page .page-heading .pill-selects{flex:1 1 0;min-width:0}
+ .audit-page .page-heading .pill-selects .field{flex:1 1 auto;min-width:0}
+ .audit-page .page-heading .pill-selects .select-trigger{width:100%}
+ .audit-page .page-heading .btn:not(.btn-icon){flex:1 1 100%}
+ .audit-filters .search-box.compact{flex:1 1 100%;min-width:0}
+ .audit-filters .search-box.compact input,.audit-range input{font-size:16px}
+ .audit-filters .pill-tabs{gap:8px}
+ .audit-filters .pill-tabs>button{padding:0 14px}
+ .audit-range{margin-left:0;flex-wrap:wrap}
+ .audit-grid>.panel{padding:12px}
+ /* Phone: each entry stacks (time and chip, the detail, who did and who approved it). */
+ .audit-table thead{display:none}
+ .audit-table,.audit-table tbody{display:block}
+ .audit-table tbody tr:not(.audit-inline){display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px 12px;padding:12px 10px;border-bottom:1px solid var(--border)}
+ .audit-table tbody tr:not(.audit-inline) td:nth-child(n){padding:0;border:0;white-space:normal;position:static}
+ .audit-table tbody tr:not(.audit-inline) td::before,.audit-table tbody tr:not(.audit-inline):hover td::before{content:none}
+ .audit-table tbody tr:not(.audit-inline) td[data-label]::before,.audit-table tbody tr:not(.audit-inline):hover td[data-label]::before{content:attr(data-label) ' ';position:static;background:none;font-size:12px;color:var(--text-secondary)}
+ .audit-table tbody tr:not(.audit-inline):hover{background:var(--bg-subtle)}
+ .audit-table tbody tr.on,.audit-table tbody tr.on:hover{background:var(--lime-subtle);border-bottom-color:transparent;border-radius:12px}
+ .audit-table td:nth-child(2){justify-self:end}
+ .audit-table td:nth-child(3){grid-column:1/-1}
+ .audit-table td:nth-child(n+4){font-size:13px}
+ .audit-table tr.audit-inline{display:block}
+ .audit-table .audit-inline td{display:block;padding:12px 10px 16px}
+}

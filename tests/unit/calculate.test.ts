@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_MONEY, businessDay, change, consumption, convert, expectedCash, money, refundStock, rupiah, stamp, totals, when } from '../../src/domain/calculate'
+import { MAX_MONEY, businessDay, change, consumption, convert, expectedCash, money, niceStep, refundStock, rupiah, stamp, totals, when } from '../../src/domain/calculate'
 import { defaultSettings } from '../../src/domain/sample'
 import type { CashMovement, Line, Modifier, Order, Settings, Shift } from '../../src/domain/types'
 
@@ -347,4 +347,12 @@ describe('itemsLost()',()=>{
  const menu=[{name:'Espresso',active:true,recipe:[{stockId:'beans',qty:18_000}]},{name:'Latte',active:true,recipe:[{stockId:'beans',qty:9_000}]},{name:'Old',active:false,recipe:[{stockId:'beans',qty:50_000}]}]
  it('reads a shortfall as portions of the active item that needs the most',()=>{expect(itemsLost(-50_000,'beans',menu)).toEqual({n:3,name:'Espresso'})})
  it('says nothing for a surplus or an ingredient no menu uses',()=>{expect([itemsLost(10_000,'beans',menu),itemsLost(-1_000,'salt',menu)]).toEqual([undefined,undefined])})
+})
+
+describe('niceStep', () => {
+  it('puts a round top just above the peak so the tallest bar fills most of the chart', () => {
+    expect(niceStep(400_000)).toBe(100_000)
+    expect(niceStep(410_000) * 4).toBe(600_000) // 1/2/5 steps would jump to 800.000
+    expect(niceStep(1_250_000) * 4).toBe(1_600_000)
+  })
 })

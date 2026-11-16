@@ -48,6 +48,14 @@ test('the cashier has a Stock tab: low and sold-out menu, waste, batches and cou
   await dialog.getByRole('button', { name: 'Jatuh' }).click()
   await dialog.getByRole('button', { name: 'Simpan pergerakan' }).click()
   await expect(page.getByText('Pergerakan stok tersimpan')).toBeVisible()
+  // Figma C8: prep is recorded from Stok; a short batch puts the real yield in (50 demo portions + 18).
+  await page.getByRole('button', { name: 'Catat prep' }).click()
+  const prep = page.getByRole('dialog', { name: 'Catat prep' })
+  await prep.getByRole('radio', { name: 'Sambal (porsi)' }).check()
+  await prep.getByRole('radio', { name: '18 porsi' }).check()
+  await prep.getByRole('button', { name: 'Tambah 18 porsi ke stok' }).click()
+  await expect(page.getByText('Batch tercatat; stok diperbarui')).toBeVisible()
+  await expect(balance(page, 'Sambal (porsi)')).toHaveText('68')
 })
 
 test('the owner uploads the store logo; it shows in the sidebar and on the receipt', async ({ page }) => {
@@ -77,4 +85,14 @@ test('the line under the store name is the owner’s own, and can stay empty', a
   await page.getByLabel(/Keterangan di bawah nama/).fill('')
   await page.getByRole('button', { name: 'Simpan pengaturan' }).click()
   await expect(line).toHaveCount(0)
+})
+test('a locked till stays locked through a reload', async ({ page }) => {
+  await demo(page)
+  // A staff device (not the demo) with a PIN on it, locked after its idle minutes.
+  await page.evaluate(() => { const u = JSON.parse(localStorage.getItem('meja-identity')!); const me = { ...u, demo: false }; localStorage.setItem('meja-identity', JSON.stringify(me)); localStorage.setItem('takar-pin-hash', 'x'); localStorage.setItem('takar-locked', me.id) })
+  await page.reload()
+  await expect(page.getByRole('dialog', { name: 'Layar terkunci' })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('dialog', { name: 'Layar terkunci' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Layar terkunci' }).getByRole('button', { name: 'Buka' })).toHaveCount(0)
 })

@@ -2,7 +2,7 @@ import { useEffect,useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { ArrowRight,ArrowLeft,ShieldCheck,KeyRound,Mail,Lock } from 'lucide-react'
+import { ArrowRight,ArrowLeft,ShieldCheck,KeyRound,Mail,LockKeyhole } from 'lucide-react'
 import { Mark } from '../../components/logo'
 import { PinPad } from '../../components/ui/pinpad'
 import { useRegisterSW } from 'virtual:pwa-register/react'
@@ -18,6 +18,8 @@ export interface TeamMember { id:string; name:string; role:Role; login?:string }
 // PBKDF2 with many rounds: a 6-digit PIN is small, so make each guess against the stored hash cost ~0.1 s.
 export async function pinHash(pin:string,userId:string){const enc=new TextEncoder();const key=await crypto.subtle.importKey('raw',enc.encode(pin),'PBKDF2',false,['deriveBits']);const bytes=await crypto.subtle.deriveBits({name:'PBKDF2',salt:enc.encode(`takar:${userId}`),iterations:200000,hash:'SHA-256'},key,256);return [...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,'0')).join('')}
 export const team=():TeamMember[]=>{try{return JSON.parse(localStorage.getItem('takar-team')||'[]')}catch{return []}}
+// Two letters, as the Figma avatars draw them: first letters of two words, or the first two of a single name (Kinoy → KI).
+export const initials=(n:string)=>{const w=n.trim().split(/\s+/);return (w.length>1?w[0][0]+w[1][0]:w[0].slice(0,2)).toUpperCase()}
 // The server decides who this account is and how this device is paired; local data is refreshed from
 // it unless unsynced work is waiting. Runs at sign-in and after pairing the device.
 export async function bootstrap(id:string,deviceId:string):Promise<Identity>{
@@ -49,13 +51,14 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
  // Each demo role has its own local data, so trying the cashier view never touches the owner's demo.
  function demo(){onLogin({id:`demo-${demoRole}`,name:`${roleLabel[demoRole]} Demo`,role:demoRole,restaurantId:'local-demo',deviceId,primary:true,demo:true})}
  const member=members.find(m=>m.id===who);const people=!byEmail&&members.length>0
- const initials=(n:string)=>n.split(/\s+/).slice(0,2).map(w=>w[0]??'').join('').toUpperCase()
  const store=(()=>{try{return localStorage.getItem('takar-store')||''}catch{return ''}})()
- const now=new Date().toLocaleString('id-ID',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
+ // The shared tablet can sit on this screen for hours: keep the clock in the corner current.
+ const [tick,setTick]=useState(()=>new Date());useEffect(()=>{const t=setInterval(()=>setTick(new Date()),30000);return()=>clearInterval(t)},[])
+ const now=`${tick.toLocaleDateString('id-ID',{weekday:'long'})} ${tick.toLocaleDateString('id-ID',{day:'numeric',month:'long'})}, ${tick.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}`
  const demoBox=<div className="signin-demo"><Select label="Coba sebagai" value={demoRole} onChange={v=>setDemoRole(v as Role)} options={roles.map(r=>({value:r,label:roleTitle[r]}))}/><Button variant="secondary" className="full" onClick={demo}>Jelajahi demo lokal <ArrowRight size={18}/></Button><p className="small muted"><ShieldCheck size={15}/> Demo tersimpan di perangkat ini. Tidak terhubung ke data restoran.</p></div>
  // Figma C0a/C0b: pick your name, then a card with your PIN. Everyone signs in as themselves on the shared tablet.
  if(people)return <main className="signin">
-  <header className="signin-top"><div className="login-brand"><span className="brand-mark"><Mark size={30}/></span><span>takar</span></div><span>{[store,now].filter(Boolean).join('. ')}</span></header>
+  <header className="signin-top"><div className="login-brand"><span className="brand-mark"><Mark size={40}/></span><span>takar</span></div><span>{[store,now].filter(Boolean).join('. ')}</span></header>
   {!member?<section className="signin-pick">
    <h1>Siapa yang bertugas hari ini?</h1><p className="muted">Ketuk nama Anda, lalu masukkan PIN.</p>
    <div className="signin-people" role="list">{members.map(m=><button type="button" role="listitem" key={m.id} className="signin-person" onClick={()=>{setWho(m.id);setPin('');setError('')}}><span className="avatar">{initials(m.name)}</span><strong>{m.name}</strong><small>{roleLabel[m.role]}</small>{['owner','manager'].includes(m.role)&&<span className="signin-chip">Menyetujui dan menutup hari</span>}</button>)}</div>
@@ -64,13 +67,13 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
    {tryDemo&&demoBox}
   </section>
   :<form className="signin-card" onSubmit={e=>{e.preventDefault();if(member.login)void signIn(member.login,pin,pin)}}>
-   <div className="signin-who"><span className="avatar">{initials(member.name)}</span><h2>Hai {member.name}</h2><p className="muted">{roleLabel[member.role]}. PIN Anda 6 angka.</p>
-    <Button type="button" variant="secondary" onClick={()=>{setWho('');setPin('');setError('')}}><ArrowLeft size={17}/> Bukan Anda? Pilih nama</Button>
+   <div className="signin-who"><span className="avatar">{initials(member.name)}</span><h2>Hai {member.name}</h2><p className="muted">{roleLabel[member.role]}.<br/>PIN Anda 6 angka.</p>
+    <Button type="button" variant="secondary" onClick={()=>{setWho('');setPin('');setError('')}}><ArrowLeft size={18}/> Bukan Anda? Pilih nama</Button>
     {error&&<p role="alert" className="error">{error}</p>}</div>
    {/* The sixth digit signs in, as on the Figma; no extra button to find. */}
    <div className="signin-pin"><strong>{loading?'Memeriksa…':'Masukkan PIN'}</strong><PinPad label="Masukkan PIN" value={pin} onChange={v=>{setPin(v);if(v.length===6&&member.login&&configured&&!loading)void signIn(member.login,v,v)}} hint="3 kali salah mengunci masuk selama 5 menit."/></div>
   </form>}
-  <p className="signin-foot"><Lock size={14}/> Setiap orang masuk dengan PIN sendiri, jadi setiap penjualan dan pembatalan tercatat atas namanya.</p>
+  {!member&&<p className="signin-foot"><LockKeyhole size={18}/> Setiap orang masuk dengan PIN sendiri, jadi setiap penjualan dan pembatalan tercatat atas namanya.</p>}
  </main>
  return <main className="login-page">
   <header className="login-top"><div className="login-brand"><span className="brand-mark"><Mark size={32}/></span><span>takar</span></div><small>{new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long'})}</small></header>

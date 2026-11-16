@@ -41,7 +41,7 @@ export default function Admin(){
   <article className="panel"><div className="panel-heading"><h2>Daftar akun</h2><span className="badge">Perubahan langsung berlaku</span></div>
   {busy&&!staff.length&&[0,1,2].map(i=><div className="skeleton skeleton-row" key={i} role="status" aria-label="Memuat akun staf"/>)}
   {staff.map(s=><div className="staff-row" key={s.user_id}>
-   <span className="staff-avatar" aria-hidden>{s.name.slice(0,1).toUpperCase()}</span>
+   <span className="staff-avatar" aria-hidden>{s.name.split(/\s+/).slice(0,2).map(w=>w[0]??'').join('').toUpperCase()}</span>
    <div><div className="staff-name">{s.name}{s.user_id===me.user_id&&<span className="chip">Anda</span>}</div>
     <div className="staff-meta"><span className={`status-dot ${s.active?'':'offline'}`}/>{s.active?'Aktif':'Nonaktif'}{s.user_id===me.user_id?' · peran dan akses sendiri diubah lewat terminal':s.active?'':' · ditolak server saat masuk'}</div></div>
    <div className="staff-controls"><Select ariaLabel={`Peran ${s.name}`} disabled={busy||s.user_id===me.user_id} value={s.role} onChange={v=>change(s,{role:v as Role})} options={(Object.keys(roleTitle) as Role[]).map(r=>({value:r,label:roleTitle[r]}))}/>

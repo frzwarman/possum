@@ -1,7 +1,7 @@
 import { useEffect,useRef,useState } from 'react'
 import { Printer,Copy,Check } from 'lucide-react'
 import { useApp } from '../../app/context'
-import type { Order,Station } from '../../domain/types'
+import type { Line,Order,Station } from '../../domain/types'
 import { Dialog } from '../../components/ui/dialog'
 import { Button } from '../../components/ui/button'
 import { browserPrinter,receiptText } from '../../lib/printer'
@@ -9,6 +9,7 @@ import { rupiah } from '../../domain/calculate'
 import { uid } from '../../lib/db'
 import { Mark } from '../../components/logo'
 export const modeLabel=(o:Pick<Order,'mode'|'compliment'>)=>o.mode==='dinein'?'Makan di sini':o.mode==='takeaway'?'Bungkus':o.compliment?.kind==='family'?'Compliment · keluarga pemilik':'Compliment · staff meal'
+export const lineTotal=(l:Line)=>(l.price+l.modifiers.reduce((n,m)=>n+m.price,0))*l.qty
 export const payLabel=(o:Order)=>!o.payment?'Belum dibayar':o.payment.method==='none'?'Compliment, tanpa pembayaran':o.payment.method==='cash'?'Tunai':`${o.payment.method==='card'?'Kartu':'QRIS'}${o.payment.edc?`, EDC ${o.payment.edc}`:''}`
 // auto: the cashless pilot has no print switch, the receipt prints as soon as the payment is confirmed.
 export function Receipt({order,onClose,kitchen=false,reprint=false,station,auto=false}:{order:Order;onClose:()=>void;kitchen?:boolean;reprint?:boolean;station?:Station;auto?:boolean}){
@@ -32,12 +33,12 @@ export function Receipt({order,onClose,kitchen=false,reprint=false,station,auto=
    <div><dt>Pesanan</dt><dd>#{order.receiptId.slice(-6).toUpperCase()}</dd></div>
    <div><dt>Tipe</dt><dd>{modeLabel(order)}</dd></div>
    <div><dt>Kasir</dt><dd>{order.cashier}</dd></div>
-   <div><dt>{order.payment?'Dibayar':'Dibuat'}</dt><dd>{new Date(order.payment?.at??order.createdAt).toLocaleString('id-ID',{timeZone:s.timezone,dateStyle:'medium',timeStyle:'short'})}</dd></div>
+   <div><dt>{order.payment?'Dibayar':'Dibuat'}</dt><dd>{(d=>`${d.toLocaleString('id-ID',{timeZone:s.timezone,weekday:'short'})} ${d.toLocaleString('id-ID',{timeZone:s.timezone,day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}`)(new Date(order.payment?.at??order.createdAt))}</dd></div>
   </dl>
   <div className="receipt-items">
    {order.lines.filter(l=>!l.cancelled).map(l=><div className="receipt-item" key={l.id}>
     <span className="receipt-name"><strong>{l.qty}× {l.name}</strong>{l.modifiers.length>0&&<small>{l.modifiers.map(m=>m.price?`${m.name} +${rupiah(m.price)}`:m.name).join(', ')}</small>}{l.note&&<small>Catatan: {l.note}</small>}</span>
-    <span className="receipt-price">{rupiah((l.price+l.modifiers.reduce((n,m)=>n+m.price,0))*l.qty)}</span></div>)}</div>
+    <span className="receipt-price">{rupiah(lineTotal(l))}</span></div>)}</div>
   <div className="receipt-sums">
    <div className="receipt-row"><span>Subtotal</span><span>{rupiah(order.totals.subtotal)}</span></div>
    {order.totals.discount>0&&<div className="receipt-row"><span>Diskon{order.discountReason&&` · ${order.discountReason}`}</span><span>−{rupiah(order.totals.discount)}</span></div>}

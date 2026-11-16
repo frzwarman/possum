@@ -1,0 +1,135 @@
+/* Figma pass 2, purchases screens. Loaded after styles.css (main.tsx), so equal-specificity rules here win. */
+
+/* Receive delivery (Figma M5): breadcrumb, title + status chip, the lines table beside the summary. */
+.receive-page .crumbs{margin:0;font-size:12px;line-height:16px;color:var(--text-secondary)}
+.receive-page .crumbs button{margin:-12px 0;padding:12px 0;border:0;background:none;font:inherit;color:inherit;cursor:pointer}
+.receive-page .crumbs button:hover{color:var(--text);text-decoration:underline}
+.receive-heading{display:flex;align-items:center;flex-wrap:wrap;gap:6px 16px;margin:4px 0 21px}
+.receive-heading h1{min-width:0;font-size:32px;line-height:40px;font-weight:700;letter-spacing:-.7px}
+.receive-heading .dot-chip{padding:4px 10px;font-size:12px;line-height:16px}
+.receive-grid{display:grid;grid-template-columns:minmax(0,1fr) 338px;gap:22px;align-items:start}
+.receive-grid>.panel{margin:0;padding:20px;border:0;border-radius:20px}
+.receive-lines{container-type:inline-size}
+
+/* A table without boxes; fixed columns in the Figma's proportions so the inputs line up row to row. */
+.receive-table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:14px;line-height:20px}
+.receive-table th{padding:0 0 8px;font-size:12px;line-height:16px;font-weight:400;color:var(--text-secondary);text-align:left;vertical-align:bottom}
+.receive-table th:nth-child(1){width:17.9%}.receive-table th:nth-child(2){width:16.8%}.receive-table th:nth-child(3){width:30.6%}.receive-table th:nth-child(4){width:16.5%}.receive-table th:nth-child(5){width:18.2%}
+.receive-table td{padding:12px 0 11px;border-top:1px solid var(--border);vertical-align:middle;overflow-wrap:anywhere}
+.receive-table tbody tr:first-child td{border-top:0}
+.receive-table .num{text-align:right}
+.receive-table td>strong{font-weight:600}
+.receive-table td:first-child>strong{font-weight:500}
+.receive-table td:nth-child(3){padding-right:23px}
+.receive-table td small{display:block;margin-top:3px;font-size:12px;line-height:16px;color:var(--text-secondary)}
+.receive-table .ordered{color:var(--text-secondary)}
+.unit-field{position:relative;display:block}
+.unit-field input{height:40px;min-height:40px;padding:0 64px 0 12px;border:1px solid var(--border-strong);border-radius:10px;font-size:14px;color:var(--text)}
+.unit-field>span{position:absolute;right:12px;top:50%;transform:translateY(-50%);max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-secondary);pointer-events:none}
+/* Price per pack reads as text, as drawn, but stays editable for a delivery whose price changed. */
+.receive-table .money-field{display:inline-flex;align-items:baseline;justify-content:flex-end;width:auto;max-width:calc(100% + 6px);margin-right:-6px;padding:0 6px;border-radius:6px;cursor:text}
+.receive-table .money-field:hover{background:var(--bg-subtle)}
+.receive-table .money-field:focus-within{background:var(--surface);box-shadow:inset 0 0 0 1px var(--ink)}
+.receive-table .money-prefix{position:static;transform:none;font-size:14px;font-weight:400;color:var(--text)}
+.receive-table .money-field input{width:8ch;min-width:0;height:30px;min-height:30px;padding:0;border:0;border-radius:0;background:none;font-size:14px;text-align:right;color:var(--text)}
+@supports (field-sizing:content){.receive-table .money-field input{field-sizing:content;width:auto;min-width:1ch}}
+.receive-table .money-field input:focus{outline:none}
+.receive-table td.num>strong{white-space:nowrap}
+
+/* A delivery far off the usual size (PUR-4): the row and its note share one red block until it is checked. */
+.receive-table tr.flagged td{background:var(--critical-bg)}
+.receive-table tr.flagged:not(.flag-note) td{padding-bottom:4px}
+.receive-table tr.flagged:not(.flag-note) td:first-child{padding-left:12px;border-top-left-radius:8px}
+.receive-table tr.flagged:not(.flag-note) td:last-child{padding-right:12px;border-top-right-radius:8px}
+.receive-table tr.flagged td:last-child>strong,.receive-table tr.flagged td small{color:var(--critical-fg)}
+.receive-table tr.flagged .unit-field input{border-color:var(--critical-fg);box-shadow:inset 0 0 0 1px var(--critical-fg)}
+.receive-table tr.flag-note td{padding:3px 12px 10px;border-top:0;border-radius:0 0 8px 8px}
+.flag-note td>div{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
+.flag-note td>div>svg{flex:0 0 auto;color:var(--critical-fg);stroke-width:1.5}
+.flag-note p{flex:1 1 220px;margin:0;font-size:14px;line-height:22px;color:var(--text)}
+.flag-actions{display:flex;align-items:center;gap:12px;margin-left:auto}
+.flag-note p>strong,.flag-note p>span{display:block}
+.flag-note p>strong{font-weight:500;color:var(--critical-fg)}
+/* Drawn 32px tall; the hit area still reaches 40px. */
+.flag-note .btn{position:relative;min-height:32px;height:32px;padding:0 12px;border-radius:8px;font-size:13px;font-weight:500}
+.flag-note .btn::after{content:'';position:absolute;inset:-4px 0}
+.flag-note .btn-secondary{background:var(--surface)}
+.flag-note .btn-ghost{color:var(--text)}
+
+.receive-summary{display:flex;flex-direction:column;gap:10px}
+.receive-summary dl{display:grid;gap:10px;margin:0}
+.receive-summary dl>div{display:flex;justify-content:space-between;gap:12px;font-size:14px;line-height:20px}
+.receive-summary dt{color:var(--text-secondary)}
+.receive-summary dd{margin:0;font-weight:600;white-space:nowrap}
+.receive-summary .inline-check{margin:4px 0 0;min-height:40px;gap:10px;font-size:14px;font-weight:400}
+.receive-summary .field{margin:0 0 6px}
+.receive-alert{margin:0;font-size:14px;line-height:20px;font-weight:500;color:var(--critical-fg)}
+.receive-summary .receive-confirm{min-height:56px;padding:0 14px;border-radius:16px;font-size:15px;font-weight:500}
+/* Icons on lime buttons are white and thin in the Figma (M5, M7, M8). */
+.receive-confirm svg{color:#fff;stroke-width:1.5}
+.receive-summary .receive-confirm:disabled{opacity:1;background:color-mix(in srgb,var(--lime) 40%,var(--surface));border-color:transparent;color:var(--text-disabled)}
+
+/* The flagged row as drawn: its middle columns sit 12px left of the rows around it (table layout only). */
+@container (min-width:561px){
+ .receive-table tr.flagged:not(.flag-note) td:nth-child(2){text-indent:-12px}
+ .receive-table tr.flagged:not(.flag-note) td:is(:nth-child(3),:nth-child(4))>*{position:relative;left:-12px}
+}
+/* A narrower table (laptop with the summary beside it, tablet portrait) gives the money columns more room. */
+@container (max-width:680px){
+ .receive-table th:nth-child(1){width:19%}.receive-table th:nth-child(2){width:15%}.receive-table th:nth-child(3){width:27%}.receive-table th:nth-child(4){width:19%}.receive-table th:nth-child(5){width:20%}
+ .receive-table td:nth-child(3){padding-right:16px}
+}
+/* Phone: each line becomes a small card: name and line total, what was ordered, the input, the price. */
+@container (max-width:560px){
+ .receive-table,.receive-table tbody,.receive-table tr,.receive-table td{display:block;width:auto}
+ .receive-table thead{display:none}
+ .receive-table tr:not(.flag-note){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:12px 0;border-top:1px solid var(--border)}
+ .receive-table tbody tr:first-child{border-top:0}
+ .receive-table td,.receive-table td:nth-child(3){padding:0;border:0}
+ .receive-table td:nth-child(5){grid-column:2;grid-row:1}
+ .receive-table td:nth-child(2){grid-column:1/-1;grid-row:2;font-size:13px;line-height:18px}
+ .receive-table td:nth-child(3){grid-column:1/-1;grid-row:3}
+ .receive-table td:nth-child(4){grid-column:1/-1;grid-row:4;display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+ .receive-table td[data-label]::before{content:attr(data-label) ' ';color:var(--text-secondary)}
+ .receive-table tr.flagged:not(.flag-note){padding:12px 12px 8px;border-radius:8px 8px 0 0}
+ .receive-table tr.flagged:not(.flag-note) td,.receive-table tr.flagged:not(.flag-note) td:first-child,.receive-table tr.flagged:not(.flag-note) td:last-child,.receive-table tr.flag-note td{padding:0;background:none;border-radius:0}
+ .receive-table tr.flagged{background:var(--critical-bg)}
+ .receive-table tr.flag-note{padding:0 12px 12px;border-radius:0 0 8px 8px}
+}
+@media(max-width:1100px){.receive-grid{grid-template-columns:minmax(0,1fr)}.receive-summary{max-width:520px}}
+@media(max-width:700px){
+ .receive-heading h1{font-size:26px;line-height:32px;letter-spacing:-.5px}
+ .unit-field input,.receive-table .money-field input,.receive-table .money-prefix{font-size:16px}
+ .receive-summary{max-width:none}
+}
+
+/* Pembelian list in the same system: pastel tiles, filter pills with counts, white cards with a status chip. */
+.purchases-page .metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+.purchases-page .category-tabs{margin:0 0 16px;gap:8px}
+.purchases-page .category-tabs>button{min-height:40px;padding:0 14px;gap:6px;border:0;font-size:14px;font-weight:500}
+.purchases-page .category-tabs>button span{font-size:13px;color:var(--text-secondary)}
+.purchases-page .category-tabs>button.active span{color:var(--text-disabled)}
+.purchases-page .orders-grid{margin-top:0;gap:16px;grid-template-columns:repeat(auto-fill,minmax(min(420px,100%),1fr))}
+.purchases-page .order-card{display:flex;flex-direction:column;gap:4px;padding:20px;border:0;border-radius:20px}
+.purchases-page .order-card-heading{align-items:flex-start;gap:12px;margin:0}
+.purchases-page .order-card h2{margin:0;font-size:16px;line-height:22px;font-weight:600}
+.purchases-page .order-card>p{margin:0;font-size:12px;line-height:17px}
+.purchases-page .order-item-list{display:grid;gap:6px;min-height:0;margin:10px 0 0}
+.purchases-page .order-item-list>div{display:flex;justify-content:space-between;gap:12px;margin:0;padding:8px 12px;border-radius:12px;background:var(--bg-subtle);font-size:14px}
+.purchases-page .order-item-list>div>span:last-child{white-space:nowrap}
+.purchases-page .order-card .bill-total{margin-top:8px;padding:10px 0 2px;border-top:1px solid var(--border);font-size:14px}
+.purchases-page .order-card .bill-total>strong:last-child{font-size:16px;line-height:22px;font-weight:600}
+.purchases-page .order-card .button-row{margin-top:auto;padding-top:12px}
+.purchases-page .order-card .btn{min-height:40px;padding:0 14px;border-radius:10px;font-size:14px}
+.purchases-page .supplier-list{display:grid;gap:8px;padding:12px}
+.purchases-page .admin-row{gap:12px;padding:10px 12px;border:0;border-radius:12px;background:var(--bg-subtle)}
+.purchases-page .admin-row strong{font-size:14px;font-weight:600}
+.purchases-page .admin-row p{margin-top:1px;font-size:12px;line-height:17px}
+.purchases-page .admin-row .btn{min-height:40px}
+.purchases-page .admin-row .btn-secondary{background:var(--surface)}
+@media(max-width:700px){.purchases-page .metrics{grid-template-columns:1fr}.purchases-page .orders-grid{grid-template-columns:1fr}}
+/* PO dialog: each line on a grey row, its delete a full-size touch target. */
+.po-dialog .bill-row{margin:0 0 6px;padding:4px 4px 4px 12px;border-radius:12px;background:var(--bg-subtle);color:var(--text)}
+.po-dialog .bill-row>span:last-child{display:flex;align-items:center;gap:4px;color:var(--text);font-weight:600;white-space:nowrap}
+.po-dialog .bill-row .text-button{display:inline-grid;place-items:center;width:40px;height:40px;padding:0;border-radius:10px;color:var(--text-secondary)}
+.po-dialog .bill-row .text-button:hover{background:var(--bg-muted);color:var(--critical-fg)}

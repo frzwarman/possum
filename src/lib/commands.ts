@@ -44,7 +44,7 @@ export class Commands {
  async run<T>(kind:OpKind, payload:Record<string,unknown>, mutate:(op:Operation)=>Promise<T>):Promise<T>{
   if(SELLING.includes(kind))this.need('sell')
   if(SELLING.includes(kind)&&!this.user.primary)throw new Error('Transaksi hanya di perangkat kasir utama')
-  if(!this.user.primary&&!this.user.mode)throw new Error('Perangkat belum dipasangkan (Lainnya → Perangkat)')
+  if(!this.user.primary&&!this.user.mode)throw new Error('Perangkat belum dipasangkan (Lainnya → Tim & perangkat)')
   const op:Operation={id:uid(),kind,actor:this.user.id,restaurantId:this.user.restaurantId,deviceId:this.user.deviceId,occurredAt:new Date().toISOString(),payload,state:'pending',attempts:0,nextAttempt:0}
   try{return await this.db.transaction('rw',this.db.tables,async()=>{const result=await mutate(op);await this.db.outbox.add(op);return result})}catch(e){throw new Error(e instanceof Error?e.message:'Penyimpanan gagal. Jangan tutup halaman; ekspor pemulihan.')}
  }

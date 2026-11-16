@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Link, Navigate } from "@tanstack/react-router";
+import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { can } from "../../domain/permissions";
-import { Search, Info, Plus, Minus, ShoppingBag, ArrowRight, ChefHat, Save, Wallet, Ellipsis, Percent, FilePlus, Check, CreditCard, QrCode, Printer } from "lucide-react";
+import { Search, Info, Plus, Minus, ShoppingBag, ArrowRight, ChefHat, Save, Wallet, Ellipsis, Percent, FilePlus, Check, Banknote, QrCode, Printer, ReceiptText, TriangleAlert, NotebookPen } from "lucide-react";
 import { useApp } from "../../app/context";
 import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
 import { Dialog } from "../../components/ui/dialog";
-import { businessDay, complimentDiscount, tills, describeDelta, itemStation, menuType, nextPager, orderTotals, rupiah, search } from "../../domain/calculate";
+import { businessDay, complimentDiscount, tills, describeDelta, itemStation, lineUse, menuType, nextPager, orderTotals, quantity, rupiah, search } from "../../domain/calculate";
 import { team } from "../auth/Login";
 import { menuPicture } from "../../lib/menu-photo";
-import type { Compliment, Draft, Line, MenuItem, MenuType, Modifier, Order } from "../../domain/types";
+import type { Compliment, Draft, Line, MenuItem, MenuType, Modifier, OptionGroup, Order } from "../../domain/types";
 import { uid } from "../../lib/db";
 import { Receipt } from "../orders/Receipt";
 // POS-3: a new order is dine-in with the next pager number of the day; one tap switches to take away.
@@ -21,6 +21,7 @@ const TYPES: [MenuType | "all", string][] = [["all", "Semua"], ["food", "Makanan
 export default function Pos() {
   const { menu, hydrating, settings, db, commands, shift, act, busy, user, manager, setError, orders, stockItems, canMake } = useApp();
   const saved = useLiveQuery(() => db.drafts.get("current"), [db]);
+  const navigate = useNavigate();
   const [draft, setDraft] = useState<Draft>(() => fresh("Pager 1"));
   const initialized = useRef(false);
   const [query, setQuery] = useState("");
@@ -28,6 +29,8 @@ export default function Pos() {
   const [cartOpen, setCartOpen] = useState(false);
   const [selected, setSelected] = useState<MenuItem>();
   const [note, setNote] = useState("");
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [pick, setPick] = useState(1);
   const [mods, setMods] = useState<string[]>([]);
   const [checkout, setCheckout] = useState<Order>();
   const [receipt, setReceipt] = useState<Order>();
@@ -36,13 +39,12 @@ export default function Pos() {
   const [approvalCode, setApprovalCode] = useState("");
   const [received, setReceived] = useState("");
   const [verified, setVerified] = useState(false);
-  const [opening, setOpening] = useState("200000");
-  const [openingDialog, setOpeningDialog] = useState(false);
   const [discountDialog, setDiscountDialog] = useState(false);
   const [discountValue, setDiscountValue] = useState("0");
   const [discountReason, setDiscountReason] = useState("");
   const [ask, setAsk] = useState<ApprovalRequest>();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [typing, setTyping] = useState(false);
   // The order menu closes on any tap outside it, like a native menu.
   useEffect(() => {
     if (!moreOpen) return;
@@ -59,7 +61,11 @@ export default function Pos() {
   // One device per store sells (kasir utama): receipts and shifts never clash. Any other device says why it cannot.
   const notTill = !user.primary && !user.demo;
   const pairedAs = user.mode === "office" ? "back office (laptop)" : user.mode === "station" ? "stasiun dapur/bar" : "belum dipasangkan";
-  const staff = team().map((m) => m.name);
+  // Figma C2c/C2d: who the compliment is for, as pills. Staff meals list the team; the owner's family lists the
+  // owners and a family guest. "Lainnya" (or an empty team) types the name.
+  const people = team();
+  const staff = people.filter((m) => m.role !== "owner").map((m) => m.name);
+  const family = [...people.filter((m) => m.role === "owner").map((m) => m.name), "Tamu keluarga"];
   const today = businessDay(new Date().toISOString(), settings?.timezone, settings?.cutoff);
   const pager = `Pager ${nextPager(orders.filter((o) => businessDay(o.createdAt, settings?.timezone, settings?.cutoff) === today).map((o) => o.label))}`;
   useEffect(() => {
@@ -100,6 +106,15 @@ export default function Pos() {
   const clock = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { timeZone: settings?.timezone, hour: "2-digit", minute: "2-digit" });
   const drink = (l: Line) => { const m = menu.find((x) => x.id === l.itemId); return m ? menuType(m) === "beverage" : l.station === "bar"; };
   const setCompliment = (c: Compliment) => void update({ ...draft, mode: "compliment", compliment: c });
+  const names = comp?.kind === "staff" ? staff : family;
+  const other = Boolean(comp) && (typing || !names.length || (comp!.who !== "" && !names.includes(comp!.who)));
+  const lineValue = (l: Line) => (l.price + l.modifiers.reduce((n, m) => n + m.price, 0)) * l.qty;
+  // What the line costs under the compliment rule (the order total stays the authority): free, or food at half.
+  const compPrice = (l: Line) => (comp?.kind === "family" || drink(l) ? 0 : lineValue(l) - Math.floor(lineValue(l) / 2));
+  // Figma C2: options read as one phrase, "Large +Rp5.000, oat milk +Rp5.000, less sugar".
+  const options = (l: Line) => l.modifiers.map((m, i) => { const n = i && /^[A-Z][a-z]/.test(m.name) ? m.name[0].toLowerCase() + m.name.slice(1) : m.name; return m.price ? `${n} +${rupiah(m.price)}` : n; }).join(", ");
+  // Figma C4: "Pager 12, Indra, makan di sini, 4 item. Ziggy Lounge tanpa tunai."
+  const payNote = (o: Order) => `${[/^\d+$/.test(o.label) ? `Pager ${o.label}` : o.label, o.compliment?.who ?? o.name, o.mode === "dinein" ? "makan di sini" : o.mode === "takeaway" ? "bungkus" : "compliment", `${o.lines.filter((l) => !l.cancelled).reduce((n, l) => n + l.qty, 0)} item`].filter(Boolean).join(", ")}.${cash ? "" : ` ${settings?.name || "Toko ini"} tanpa tunai.`}`;
   let total = { subtotal: 0, discount: 0, service: 0, tax: 0, total: 0 };
   let invalid = "";
   if (settings)
@@ -125,19 +140,21 @@ export default function Pos() {
       setSelected(item);
       setMods(groupsOf(item).flatMap((g) => { const c = choices(item, g.id); const d = c.find((m) => m.default) ?? (g.kind !== "add" && g.required ? c[0] : undefined); return d ? [d.id] : []; }));
       setNote("");
+      setNoteOpen(false);
+      setPick(1);
       return;
     }
     void addLine(item, [], "");
   }
-  async function addLine(item: MenuItem, ids: string[], notes: string) {
+  async function addLine(item: MenuItem, ids: string[], notes: string, n = 1) {
     // A base choice (Regular, Susu segar, Normal) changes nothing and stays off the ticket.
     const picked = item.modifiers.filter((m) => ids.includes(m.id) && (m.price || m.recipe.length));
     // The same item with the same options and note, not yet sent, is one line with a higher quantity.
     const key = (ms: Modifier[]) => ms.map((m) => m.id).sort().join("|");
     const same = draft.lines.find((l) => !l.prepared && !l.cancelled && l.itemId === item.id && l.catalogVersion === item.version && l.note === notes && key(l.modifiers) === key(picked) && l.qty < 999);
-    if (same) await update({ ...draft, lines: draft.lines.map((l) => (l === same ? { ...l, qty: l.qty + 1 } : l)) });
+    if (same) await update({ ...draft, lines: draft.lines.map((l) => (l === same ? { ...l, qty: Math.min(999, l.qty + n) } : l)) });
     else {
-      const line: Line = { id: uid(), itemId: item.id, name: item.name, price: item.price, qty: 1, modifiers: picked, note: notes, recipe: item.recipe, catalogVersion: item.version, prepared: false, cancelled: false, station: itemStation(item) };
+      const line: Line = { id: uid(), itemId: item.id, name: item.name, price: item.price, qty: n, modifiers: picked, note: notes, recipe: item.recipe, catalogVersion: item.version, prepared: false, cancelled: false, station: itemStation(item) };
       await update({ ...draft, lines: [...draft.lines, line] });
     }
     setSelected(undefined);
@@ -229,33 +246,38 @@ export default function Pos() {
         <div className="segmented mode-switch">
           <button className={draft.mode === "dinein" ? "active" : ""} onClick={() => void update({ ...draft, mode: "dinein", compliment: undefined })}>Makan di sini</button>
           <button className={draft.mode === "takeaway" ? "active" : ""} onClick={() => void update({ ...draft, mode: "takeaway", compliment: undefined })}>Bungkus</button>
-          <button className={draft.mode === "compliment" ? "active" : ""} onClick={() => setCompliment(draft.compliment ?? { kind: "staff", who: "" })}>Compliment</button>
+          <button className={draft.mode === "compliment" ? "active" : ""} onClick={() => { setTyping(false); setCompliment(draft.compliment ?? { kind: "staff", who: "" }); }}>Compliment</button>
         </div>
         {comp && (
           <div className="compliment-panel">
-            <span className="small muted">Compliment untuk</span>
+            <span className="comp-label">Compliment untuk</span>
             <div className="choice-cards">
-              <button className={comp.kind === "staff" ? "active" : ""} onClick={() => setCompliment({ ...comp, kind: "staff" })}><strong>Staff meal</strong><small>Minuman gratis, makanan 50%</small></button>
-              <button className={comp.kind === "family" ? "active" : ""} onClick={() => setCompliment({ ...comp, kind: "family" })}><strong>Keluarga pemilik</strong><small>Semua gratis</small></button>
+              <button className={comp.kind === "staff" ? "active" : ""} aria-pressed={comp.kind === "staff"} onClick={() => setCompliment({ ...comp, kind: "staff" })}><strong>Staff meal</strong><small>Minum gratis, makan 50%</small></button>
+              <button className={comp.kind === "family" ? "active" : ""} aria-pressed={comp.kind === "family"} onClick={() => setCompliment({ ...comp, kind: "family" })}><strong>Keluarga pemilik</strong><small>Semua gratis</small></button>
             </div>
-            <label className="table-label">
-              {comp.kind === "staff" ? "Siapa yang makan?" : "Untuk siapa?"}
-              <input aria-label="Nama penerima compliment" placeholder={comp.kind === "staff" ? "Nama staf" : "Nama keluarga"} maxLength={60} value={comp.who} onChange={(e) => setCompliment({ ...comp, who: e.target.value })} />
-            </label>
-            {comp.kind === "staff" && staff.length > 0 && <div className="chip-row">{staff.map((n) => <button key={n} className={comp.who === n ? "chip active" : "chip"} onClick={() => setCompliment({ ...comp, who: n })}>{n}</button>)}</div>}
+            <span className="comp-label">{comp.kind === "staff" ? "Siapa yang makan?" : "Untuk siapa?"}</span>
+            {names.length > 0 && (
+              <div className="person-pills" role="group" aria-label={comp.kind === "staff" ? "Siapa yang makan?" : "Untuk siapa?"}>
+                {names.map((n) => <button key={n} className={comp.who === n && !typing ? "on" : ""} aria-pressed={comp.who === n && !typing} onClick={() => { setTyping(false); setCompliment({ ...comp, who: n }); }}>{n}</button>)}
+                <button className={other ? "on" : ""} aria-pressed={other} onClick={() => { setTyping(true); setCompliment({ ...comp, who: names.includes(comp.who) ? "" : comp.who }); }}>Lainnya</button>
+              </div>
+            )}
+            {other && <input className="comp-who" aria-label="Nama penerima compliment" autoFocus={typing} placeholder={comp.kind === "staff" ? "Nama staf" : "Nama keluarga"} maxLength={60} value={comp.who} onChange={(e) => setCompliment({ ...comp, who: e.target.value })} />}
           </div>
         )}
-        {/* Figma C2: the pager the guest takes, and their name if they give one, side by side. */}
-        <div className="order-who">
+        {/* Figma C2: the pager the guest takes, and their name if they give one, side by side. A compliment (C2c/C2d)
+            names its person above instead and keeps the pager it has. The field is labelled Pager, so it shows "12"
+            while the order keeps "Pager 12" for tickets, receipts and the day's pager count; a table stays as typed. */}
+        {!comp && <div className="order-who">
           <label className="table-label">
             Pager
-            <input aria-label="Nomor pager / meja" placeholder="12" maxLength={100} value={draft.label} onChange={(e) => void update({ ...draft, label: e.target.value })} />
+            <input aria-label="Nomor pager / meja" placeholder="12" maxLength={100} value={draft.label.replace(/^Pager (?=\d+$)/, "")} onChange={(e) => void update({ ...draft, label: /^\d+$/.test(e.target.value) ? `Pager ${e.target.value}` : e.target.value })} />
           </label>
           <label className="table-label">
             Nama (opsional)
             <input placeholder="Nama tamu" maxLength={60} value={draft.name ?? ""} onChange={(e) => void update({ ...draft, name: e.target.value })} />
           </label>
-        </div>
+        </div>}
         <div className="cart-lines">
           {!count ? (
             <div className="cart-empty">
@@ -268,9 +290,10 @@ export default function Pos() {
               <div className="cart-line" key={l.id}>
                 <div className="line-heading">
                   <strong>{l.name}</strong>
-                  <span>{rupiah((l.price + l.modifiers.reduce((n, m) => n + m.price, 0)) * l.qty)}</span>
+                  <span>{comp ? (compPrice(l) ? rupiah(compPrice(l)) : "Gratis") : rupiah(lineValue(l))}</span>
                 </div>
-                {l.modifiers.length > 0 && <p className="line-options">{l.modifiers.map((m) => (m.price ? `${m.name} +${rupiah(m.price)}` : m.name)).join(", ")}</p>}
+                {l.modifiers.length > 0 && <p className="line-options">{options(l)}</p>}
+                {comp && <p className="line-options">{comp.kind === "family" ? "Keluarga pemilik: gratis" : drink(l) ? "Minuman staf: gratis" : "Makanan staf: 50%"}</p>}
                 {l.note && <p className="line-note">{l.note}</p>}
                 <div className="line-bottom">
                   {/* The station badge tells the cashier where the line is made, even before it is sent. */}
@@ -279,9 +302,9 @@ export default function Pos() {
                     <span className={`badge badge-${l.station ?? "kitchen"}`}><ChefHat size={13} /> Dikirim · {(l.station ?? "kitchen") === "bar" ? "bar" : "dapur"} · {l.qty}×</span>
                   ) : (
                     <div className="quantity-control">
-                      <button aria-label={`${l.qty > 1 ? "Kurangi" : "Hapus"} ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.flatMap((x) => (x.id !== l.id ? [x] : x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : [])) })}><Minus size={15} /></button>
+                      <button aria-label={`${l.qty > 1 ? "Kurangi" : "Hapus"} ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.flatMap((x) => (x.id !== l.id ? [x] : x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : [])) })}><Minus size={20} strokeWidth={1.6} /></button>
                       <span>{l.qty}</span>
-                      <button aria-label={`Tambah ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.map((x) => (x.id === l.id ? { ...x, qty: x.qty + 1 } : x)) })}><Plus size={15} /></button>
+                      <button aria-label={`Tambah ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.map((x) => (x.id === l.id ? { ...x, qty: x.qty + 1 } : x)) })}><Plus size={20} strokeWidth={1.6} /></button>
                     </div>
                   )}
                 </div>
@@ -293,7 +316,7 @@ export default function Pos() {
       <div className="cart-footer">
         <div className="bill-row"><span>Subtotal</span><span>{rupiah(total.subtotal)}</span></div>
         {comp ? (
-          <div className="bill-row"><span>{comp.kind === "staff" ? "Potongan staff meal" : "Compliment keluarga pemilik"}</span><span>−{rupiah(total.discount)}</span></div>
+          <div className="bill-row"><span>{comp.kind === "staff" ? "Diskon staff meal" : "Compliment keluarga pemilik"}</span><span>−{rupiah(total.discount)}</span></div>
         ) : draft.discount > 0 && (
           <div className="bill-row"><span>Diskon · {draft.discountReason}</span><span>−{rupiah(draft.discount)}</span></div>
         )}
@@ -305,13 +328,13 @@ export default function Pos() {
           notTill ? (
             <p className="callout small"><span>Penjualan hanya di perangkat kasir utama. <Link to="/settings" className="text-button">Atur di Lainnya</Link></span></p>
           ) : (
-            <Button className="full" onClick={() => setOpeningDialog(true)} disabled={!user.primary}><Wallet size={18} /> Buka sif untuk melayani</Button>
+            <Button className="full" onClick={() => void navigate({ to: "/sif/buka" })} disabled={!user.primary}><Wallet size={18} /> Buka sif untuk melayani</Button>
           )
         ) : (
           <>
             {tablets && <Button variant="secondary" className="full station-btn" disabled={busy || !count || draft.lines.every((l) => l.prepared)} onClick={() => void prepare()}><ChefHat size={16} /> Ke stasiun</Button>}
             <Button className="full checkout-btn" disabled={busy || !count || (tablets && draft.lines.some((l) => !l.prepared && !l.cancelled))} onClick={() => void payStart()}>{comp && total.total === 0 ? "Simpan compliment" : `Bayar ${rupiah(total.total)}`}</Button>
-            {comp && <p className="small muted center">{comp.kind === "staff" ? `${comp.who || "Staf"} membayar 50% makanan. Minuman gratis tapi tetap mengurangi stok dan masuk laporan compliment.` : "Tanpa pembayaran. Struk tercetak sebagai Compliment, stok tetap berkurang."}</p>}
+            {comp && <p className="small muted center">{comp.kind === "staff" ? `${comp.who || "Staf"} bayar 50% untuk makanan. Minuman gratis tapi tetap mengurangi stok dan masuk laporan compliment.` : "Tanpa pembayaran. Struk tercetak sebagai Compliment, stok tetap berkurang."}</p>}
             {tablets && count > 0 && draft.lines.some((l) => !l.prepared) && <p className="small muted center">Kirim ke stasiun sebelum menerima pembayaran.</p>}
             {!tablets && !comp && <p className="small muted center">Beri tahu bar dan dapur apa yang dibuat. Stok berkurang saat pesanan dibayar.</p>}
           </>
@@ -339,7 +362,7 @@ export default function Pos() {
         )}
         <div className="search-box">
           <Search size={20} />
-          <input aria-label="Cari menu" placeholder="Cari nama, alias, atau tag… salah ketik tidak apa-apa" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input aria-label="Cari menu" placeholder="Cari menu, mis. americano" value={query} onChange={(e) => setQuery(e.target.value)} />
           <kbd>⌕</kbd>
         </div>
         <div className="category-tabs" aria-label="Jenis menu">
@@ -359,8 +382,8 @@ export default function Pos() {
                   <button key={item.id} className={`menu-card ${notTill && !a.soldOut ? "view-only" : ""}`} disabled={a.soldOut || !user.primary} onClick={() => add(item)}>
                     <div className="menu-photo">
                       <img src={menuPicture(item)} alt="" loading="lazy" />
-                      {a.soldOut && <span className="sold-out-label">{item.soldOut ? "Habis" : "Habis · bahan kurang"}</span>}
-                      {!a.soldOut && a.low && <span className="low-label">Sisa {a.left}</span>}
+                      {a.soldOut && <span className="sold-out-label">Habis</span>}
+                      {!a.soldOut && a.low && <span className="low-label">Hampir habis</span>}
                     </div>
                     <h3>{item.name}</h3>
                     <div className="menu-card-bottom">
@@ -369,7 +392,7 @@ export default function Pos() {
                       {Number.isFinite(a.left) && (
                         <span className={`menu-level ${a.soldOut ? "empty" : a.low ? "low" : ""}`}>
                           <span className={`level ${a.soldOut ? "empty" : a.low ? "low" : ""}`}><i style={{ width: `${Math.min(100, Math.round((a.left / Math.max(1, (item.lowAt ?? settings?.lowAt ?? 5) * 2)) * 100))}%` }} /></span>
-                          <small>{a.soldOut ? "Habis" : `${a.left} tersisa`}</small>
+                          <small>{a.soldOut ? (item.soldOut ? "Habis" : "Bahan habis") : `${a.left} tersisa`}</small>
                         </span>
                       )}
                     </div>
@@ -393,47 +416,46 @@ export default function Pos() {
         <ArrowRight size={22} />
       </button>
       <Dialog open={cartOpen} onOpenChange={setCartOpen} title="Keranjang pesanan" wide><div className="mobile-cart">{cart}</div></Dialog>
-      <Dialog open={Boolean(selected)} onOpenChange={() => setSelected(undefined)} title={selected?.name || "Pilih menu"} description="Pilihan, tambahan, dan catatan untuk stasiun">
-        {selected && (
-          <>
-            <img className="selected-menu-photo" src={menuPicture(selected)} alt="" />
-            <p className="item-price">{rupiah(optionPrice)}</p>
-            {groupsOf(selected).map((g) => (
-              <fieldset className="option-group" key={g.id}>
-                <legend>{g.name}{g.required && <small> · wajib pilih satu</small>}</legend>
-                {choices(selected, g.id).map((m) => (
-                  <label className="check-row" key={m.id}>
-                    <input type={g.kind === "add" ? "checkbox" : "radio"} name={`opt-${g.id}`} checked={mods.includes(m.id)} onChange={() => toggle(selected, m, g.kind !== "add")} />
-                    <span>{m.name}{describeDelta(m.recipe, stockItems) && <small className="muted">{describeDelta(m.recipe, stockItems)}</small>}</span>
-                    <strong>{m.price ? `+${rupiah(m.price)}` : "—"}</strong>
-                  </label>
-                ))}
-              </fieldset>
-            ))}
-            {loose(selected).length > 0 && (
-              <div className="modifier-list">
-                {loose(selected).map((m) => (
-                  <label className="check-row" key={m.id}>
-                    <input type="checkbox" checked={mods.includes(m.id)} onChange={() => toggle(selected, m, false)} />
-                    <span>{m.name}{describeDelta(m.recipe, stockItems) && <small className="muted">{describeDelta(m.recipe, stockItems)}</small>}</span>
-                    <strong>+{rupiah(m.price)}</strong>
-                  </label>
-                ))}
-              </div>
-            )}
-            <label>
-              Catatan persiapan
-              <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Contoh: tidak pedas, tanpa bawang" maxLength={300} />
+      {/* Figma C3: the photo and what it costs, where it is made and how many are left; options as pills; what the
+          chosen cup takes from stock; how many, then add. */}
+      <Dialog open={Boolean(selected)} onOpenChange={() => setSelected(undefined)} className="item-dialog" title={selected?.name || "Pilih menu"} media={selected && <img className="item-thumb" src={menuPicture(selected)} alt="" />}
+        description={selected ? [rupiah(selected.price), itemStation(selected) === "bar" ? "Bar" : "Dapur", (() => { const a = canMake(selected); return a.left === Infinity ? "" : a.soldOut ? "habis" : `sisa ${a.left} hari ini`; })()].filter(Boolean).join(", ") : undefined}>
+        {selected && (() => {
+          const chosen = selected.modifiers.filter((m) => mods.includes(m.id));
+          const uses = lineUse({ recipe: selected.recipe, modifiers: chosen, qty: 1 }).flatMap((r) => { const s = stockItems.find((x) => x.id === r.stockId); return s ? [`${quantity(r.qty)}${s.unit === "pcs" ? "" : ` ${s.unit}`} ${s.name.toLowerCase()}`] : []; });
+          const hint: Record<string, string> = { size: "Wajib", swap: "Mengganti bahan di resep", level: "Mengurangi bahan di resep", add: "Opsional" };
+          // Figma C3 explains a swap or a level beside its name ("Swaps the milk in the recipe"): here, what the chosen
+          // option does to the recipe ("ganti Susu segar → Susu oat"). Sizes and extras show in the sentence below.
+          const effect = (g: OptionGroup) => (g.kind === "swap" || g.kind === "level" ? choices(selected, g.id).filter((m) => mods.includes(m.id)).map((m) => describeDelta(m.recipe, stockItems)).filter(Boolean).join(", ") : "");
+          const pill = (m: Modifier, single: boolean, group?: string) => (
+            <label className={`opt-pill ${mods.includes(m.id) ? "on" : ""}`} key={m.id}>
+              <input type={single ? "radio" : "checkbox"} name={group ? `opt-${group}` : undefined} checked={mods.includes(m.id)} onChange={() => toggle(selected, m, single)} />
+              {m.name}{m.price > 0 && <small>+{rupiah(m.price)}</small>}
             </label>
-            <Button className="full btn-accent" onClick={() => void addLine(selected, mods, note)}>Tambah ke pesanan · {rupiah(optionPrice)} <Plus size={18} /></Button>
-          </>
-        )}
-      </Dialog>
-      <Dialog open={openingDialog} onOpenChange={setOpeningDialog} title="Buka sif" description={cash ? "Hitung uang kembalian di laci sebelum mulai." : "Tanpa tunai: periksa mesin EDC dan printer sebelum mulai."}>
-        {cash && <label>Modal kas awal<Money value={opening} onChange={setOpening} /></label>}
-        {edcMode && <p className="callout">Pastikan EDC {edcs.join(", ")} menyala dan printer struk berisi kertas.{cash ? "" : " Tidak ada modal kas."}</p>}
-        <p className="callout">Otorisasi berlaku maksimal 12 jam. Membuka sif memerlukan internet dan perangkat kasir utama.</p>
-        <Button loading={busy} disabled={busy} className="full btn-accent" onClick={() => void act(async () => { await commands.openShift(cash ? Number(opening) : 0); setOpeningDialog(false); }, "Sif tersimpan")}>Buka sif sekarang</Button>
+          );
+          // The options scroll between the heading and the footer, so "Tambah ke pesanan" stays on screen. A prep note
+          // is not on the Figma: it opens from the footer and then stays.
+          return <>
+            <div className="item-options">
+              {groupsOf(selected).map((g) => (
+                <fieldset className="option-group" key={g.id}>
+                  <legend>{g.name}<small>{effect(g) || (g.required && g.kind === "size" ? "Wajib" : hint[g.kind] ?? (g.required ? "Wajib" : "Opsional"))}</small></legend>
+                  <div className="opt-pills">{choices(selected, g.id).map((m) => pill(m, g.kind !== "add", g.id))}</div>
+                </fieldset>
+              ))}
+              {loose(selected).length > 0 && (
+                <fieldset className="option-group"><legend>Tambahan<small>Opsional</small></legend><div className="opt-pills">{loose(selected).map((m) => pill(m, false))}</div></fieldset>
+              )}
+              {uses.length > 0 && <p className="recipe-note"><ReceiptText size={20} /><span>{menuType(selected) === "beverage" ? "Minuman ini" : "Menu ini"} memakai {uses.length > 1 ? `${uses.slice(0, -1).join(", ")} dan ${uses.at(-1)}` : uses[0]}.</span></p>}
+              {noteOpen && <label className="note-field">Catatan persiapan<input autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="Contoh: tidak pedas, tanpa bawang" maxLength={300} /></label>}
+            </div>
+            <div className="option-footer">
+              <div className="qty-stepper"><button type="button" aria-label="Kurangi jumlah" disabled={pick <= 1} onClick={() => setPick(pick - 1)}><Minus size={20} strokeWidth={1.6} /></button><span aria-live="polite">{pick}</span><button type="button" className="plus" aria-label="Tambah jumlah" disabled={pick >= 99} onClick={() => setPick(pick + 1)}><Plus size={20} strokeWidth={1.6} /></button></div>
+              <Button className="btn-accent" onClick={() => void addLine(selected, mods, note, pick)}>Tambah ke pesanan, {rupiah(optionPrice * pick)}</Button>
+              {!noteOpen && <Button variant="ghost" className="note-toggle" onClick={() => setNoteOpen(true)}><NotebookPen size={18} /> Tambah catatan</Button>}
+            </div>
+          </>;
+        })()}
       </Dialog>
       <Dialog open={discountDialog} onOpenChange={setDiscountDialog} title="Diskon manajer" description={manager ? undefined : "Kasir memerlukan PIN manajer untuk memberi diskon."}>
         <label>Potongan<Money value={discountValue} onChange={setDiscountValue} /></label>
@@ -449,29 +471,32 @@ export default function Pos() {
         }}>Terapkan diskon</Button>
       </Dialog>
       <ApprovalDialog request={ask} onClose={() => setAsk(undefined)} onApproved={(discountApproval) => { setAsk(undefined); setDiscountDialog(false); void update({ ...draft, discount: discountApproval.amount!, discountReason, discountApproval }); }} />
-      <Dialog open={Boolean(checkout)} onOpenChange={() => setCheckout(undefined)} title="Terima pembayaran" description={checkout?.label || "Pesanan tanpa label"}>
+      {/* Figma C4/C4b: the total, how the guest pays, which EDC, what to do on it, the slip's code, then one confirm.
+          Stores that take cash keep the cash and manual-check paths in the same layout. */}
+      <Dialog open={Boolean(checkout)} onOpenChange={() => setCheckout(undefined)} className="pay-dialog" title="Terima pembayaran" description={checkout ? payNote(checkout) : undefined}>
         {checkout && (
           <>
             <div className="payment-total"><span>Total tagihan</span><strong>{rupiah(checkout.totals.total)}</strong></div>
-            <div className="segmented">
+            <span className="pay-label">Bagaimana tamu membayar?</span>
+            <div className="segmented pay-methods">
               {([...(cash ? (["cash"] as const) : []), "card", "qris"] as const).map((m) => (
-                <button key={m} onClick={() => setMethod(m)} className={method === m ? "active" : ""}>{m === "cash" ? "Tunai" : m === "qris" ? <><QrCode size={16} /> QRIS</> : <><CreditCard size={16} /> Kartu</>}</button>
+                <button key={m} onClick={() => setMethod(m)} className={method === m ? "active" : ""} aria-pressed={method === m}>{m === "cash" ? <><Banknote size={18} /> Tunai</> : m === "qris" ? <><QrCode size={18} /> QRIS</> : <><Wallet size={18} /> Kartu</>}</button>
               ))}
             </div>
             {viaEdc ? (
               <>
-                <span className="small muted" style={{ display: "block", marginTop: 14 }}>Mesin EDC</span>
-                <div className="segmented">
-                  {edcs.map((e) => <button key={e} onClick={() => setEdc(e)} className={edc === e ? "active" : ""}>EDC {e}</button>)}
+                <span className="pay-label">Mesin EDC mana?</span>
+                <div className="segmented edc-choice">
+                  {edcs.map((e) => <button key={e} onClick={() => setEdc(e)} className={edc === e ? "active" : ""} aria-pressed={edc === e}>EDC {e}</button>)}
                 </div>
-                <p className="callout">{method === "card" ? `Ketik ${rupiah(checkout.totals.total)} di EDC ${edc}, tamu tap atau masukkan kartu. Tekan Konfirmasi setelah EDC mencetak "Approved".` : `Di EDC ${edc} pilih QRIS, ketik ${rupiah(checkout.totals.total)} dan tunjukkan QR ke tamu. Tekan Konfirmasi setelah EDC mencetak "Paid".`}</p>
-                <label>Kode approval di slip EDC (opsional)<input inputMode="numeric" maxLength={30} value={approvalCode} onChange={(e) => setApprovalCode(e.target.value)} placeholder="412093" /></label>
-                <p className="small muted">Membantu menemukan pembayaran yang tertunda di EDC.</p>
-                <p className="save-status"><Printer size={14} /> Struk tercetak saat Anda konfirmasi.</p>
+                <p className="pay-info"><TriangleAlert size={20} /><span>{method === "card" ? `Ketik ${rupiah(checkout.totals.total)} di EDC ${edc}, tamu tap atau masukkan kartu. Tekan Konfirmasi setelah EDC mencetak "Approved".` : `Di EDC ${edc} pilih QRIS, ketik ${rupiah(checkout.totals.total)} dan tunjukkan QR ke tamu. Tekan Konfirmasi setelah EDC mencetak "Paid".`}</span></p>
+                <label className="pay-field">Kode approval di slip EDC (opsional)<input inputMode="numeric" maxLength={30} value={approvalCode} onChange={(e) => setApprovalCode(e.target.value)} placeholder="412093" aria-describedby="pay-help" /></label>
+                <p className="pay-help" id="pay-help">Membantu menemukan pembayaran yang tertunda di EDC.</p>
+                <p className="pay-print"><Printer size={20} /> Struk tercetak saat Anda konfirmasi.</p>
               </>
             ) : method === "cash" ? (
               <>
-                <label>Uang diterima<Money autoFocus value={received} onChange={setReceived} /></label>
+                <label className="pay-field">Uang diterima<Money autoFocus value={received} onChange={setReceived} /></label>
                 <div className="tender-options">
                   {[checkout.totals.total, 50000, 100000, 200000].map((n, i) => (
                     <button key={i} disabled={n < checkout.totals.total} onClick={() => setReceived(String(n))}>{i === 0 ? "Uang pas" : rupiah(n)}</button>
@@ -481,11 +506,11 @@ export default function Pos() {
               </>
             ) : (
               <>
-                <p className="callout">Pembayaran diverifikasi manual. Periksa transaksi berhasil pada aplikasi merchant / terminal kartu. Screenshot pelanggan bukan bukti penerimaan.</p>
+                <p className="pay-info"><TriangleAlert size={20} /><span>Pembayaran diverifikasi manual. Periksa transaksi berhasil pada aplikasi merchant / terminal kartu. Screenshot pelanggan bukan bukti penerimaan.</span></p>
                 <label className="check-row"><input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />Saya sudah memeriksa penerimaan di akun merchant.</label>
               </>
             )}
-            <Button className="full btn-accent" loading={busy} disabled={busy || (viaEdc ? !edc : method === "cash" ? Number(received) < checkout.totals.total : !verified)} onClick={() => void pay()}><Check size={18} /> {viaEdc ? `Konfirmasi: ${method === "qris" ? "QRIS " : ""}dibayar di EDC ${edc}` : "Catat pembayaran"}</Button>
+            <Button className="full btn-accent pay-confirm" loading={busy} disabled={busy || (viaEdc ? !edc : method === "cash" ? Number(received) < checkout.totals.total : !verified)} onClick={() => void pay()}><Check size={20} /> {viaEdc ? `Konfirmasi: ${method === "qris" ? "QRIS " : ""}dibayar di EDC ${edc}` : "Catat pembayaran"}</Button>
           </>
         )}
       </Dialog>

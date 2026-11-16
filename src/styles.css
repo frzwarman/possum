@@ -581,3 +581,269 @@ p.small>svg:first-child{margin-top:.15em}
 .close-missing{margin-top:12px;padding:12px 14px;border-radius:10px;background:var(--warning-bg);color:var(--warning-fg);font-size:13px}
 .close-missing ul{margin:6px 0 0;padding-left:18px;display:grid;gap:4px}
 .close-missing ul{list-style:disc}
+/* Close-shift page with no shift open: the next step first, then the last shifts as a table you scan by column. */
+.shift-idle{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.shift-idle h2{margin-bottom:6px}
+.shift-idle .muted{max-width:60ch}
+.shift-history td>strong,.shift-history td>small{display:block}
+.shift-history td>small{font-size:12px;margin-top:2px}
+.shift-history .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.shift-history td.num small.negative{color:var(--critical-fg)}
+.shift-history td.num small.over{color:var(--warning-fg)}
+.chip-status{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.chip-status.good{background:var(--good-bg);color:var(--good-fg)}
+.chip-status.critical{background:var(--critical-bg);color:var(--critical-fg)}
+.chip-status.warning{background:var(--warning-bg);color:var(--warning-fg)}
+/* Lock screen (Figma C0c): the sixth digit unlocks; the password button and "Ganti pengguna" keep clear of the pad. */
+.lock-card form{display:flex;flex-direction:column;align-items:stretch}
+.lock-card .lock-submit{margin-top:20px}
+.lock-card form+.text-button,.lock-card .close-missing+.text-button{margin-top:20px}
+.lock-card>.text-button{margin-top:20px}
+/* Open shift (Figma C1): centred greeting, payments on the left, readiness on the right; one column on a phone. */
+.open-shift{max-width:820px}
+.open-shift-head{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:24px 0 28px}
+.open-shift-head .avatar{width:40px;height:40px;background:var(--lime-subtle);border:0;font-size:13px}
+.open-shift-head h1{font-size:30px;letter-spacing:-.8px;text-wrap:balance}
+.open-shift-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:20px;align-items:start}
+.open-shift-grid .panel{display:flex;flex-direction:column;gap:14px;border-radius:20px}
+.open-shift-grid .panel>h2{margin:0}
+.open-shift-grid .panel>p.small{margin:0}
+.open-shift-grid label{margin:0}
+.ready-list{display:grid;gap:10px}
+.ready-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:0;border-radius:12px;background:var(--bg-subtle);color:var(--ink);text-align:left;font:inherit}
+.ready-row>span:last-child{display:grid;gap:2px;min-width:0}
+.ready-row strong{font-size:14px;font-weight:600}
+.ready-row small{font-size:12px;color:var(--text-secondary)}
+.ready-row>svg{flex:0 0 auto;color:var(--text-secondary)}
+.ready-row.ok>svg{color:var(--good-fg)}
+.ready-row.warn>svg{color:var(--warning-fg)}
+button.ready-row{cursor:pointer;min-height:56px}
+button.ready-row:hover{background:var(--bg-muted)}
+.ready-dot{width:20px;height:20px;flex:0 0 20px;border-radius:50%;border:2px solid var(--border-strong)}
+@media(max-width:760px){.open-shift-grid{grid-template-columns:1fr}.open-shift-head{margin-top:8px}.open-shift-head h1{font-size:26px}}
+.last-shift{margin-top:4px}
+.last-shift{margin-top:4px}
+/* ===== Figma pass 2 (2026-11-16): shell, page headers and stat tiles as drawn on "Ziggy pilot: Product" ===== */
+/* Manager laptop: no top bar; the store card, a plain nav list and the person at the bottom. Sync sits above the person. */
+@media(min-width:701px){.topbar{display:none}}
+.sidebar:not(.rail) .brand-dot{display:none}
+.sidebar:not(.rail) .nav-caption,.sidebar:not(.rail) .shift-note,.sidebar:not(.rail) .profile>svg{display:none}
+/* Logo and store stay put; only the nav list scrolls between them and the sync/profile footer. */
+.sidebar{overflow:hidden}
+.sidebar>.brand,.sidebar>.restaurant-switch,.sidebar>.nav-caption,.sidebar>.sidebar-bottom{flex:0 0 auto}
+.sidebar>nav{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.sidebar:not(.rail)>nav{margin:0 -6px;padding:2px 6px}
+.sidebar:not(.rail) .restaurant-switch{margin:22px 0 18px;padding:10px;gap:10px;border-radius:12px}
+.sidebar:not(.rail) .restaurant-icon{width:36px;height:36px;flex:0 0 36px;border-radius:8px}
+.sidebar:not(.rail) .restaurant-switch strong{font-size:14px;font-weight:600}
+.sidebar:not(.rail) .restaurant-switch small{font-size:12px}
+.sidebar:not(.rail) nav{gap:2px}
+.sidebar:not(.rail) .nav-link{min-height:42px;padding:9px 12px;gap:12px;font-size:14px;font-weight:400;border-radius:10px}
+.sidebar:not(.rail) .nav-link svg{width:18px;height:18px}
+.sidebar:not(.rail) .nav-link.active{font-weight:600}
+.sidebar:not(.rail) .sidebar-bottom{display:flex;flex-direction:column;gap:6px}
+.side-sync{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;font-size:12px;color:var(--text-secondary);text-decoration:none}
+.side-sync:hover{background:var(--bg-subtle);color:var(--text)}
+.side-sync .status-dot{margin-left:auto}
+.sidebar:not(.rail) .profile{padding:8px 4px 0;border-top:0;gap:10px}
+.sidebar:not(.rail) .profile .avatar{width:34px;height:34px;flex:0 0 34px;font-size:12px}
+.sidebar:not(.rail) .profile strong{font-size:14px}
+.sidebar:not(.rail) .profile small{font-size:12px}
+@media(max-width:950px){.side-sync{justify-content:center}.side-sync>span:not(.status-dot){display:none}.side-sync .status-dot{margin-left:0}}
+/* Page headers: a title and one line under it. No eyebrow, no decorative icon (Figma has neither). */
+.page-heading .eyebrow,.page-heading>svg{display:none}
+.page-heading h1{letter-spacing:-.8px}
+/* Stat tiles: pastel, a white round icon with the label at the top left, the number and its line centred. */
+.metrics{gap:20px}
+.metric{display:flex;flex-direction:column;min-height:124px;padding:14px 16px 16px;gap:2px;border-radius:16px;text-align:center}
+.metric>span{display:flex;align-items:center;gap:10px;margin-bottom:auto;font-size:13px;font-weight:500;text-align:left;color:var(--text)}
+.metric>span svg{flex:0 0 28px;width:28px;height:28px;padding:6px;border-radius:50%;background:#fff;color:var(--ink)}
+.metric>strong{margin-top:10px;font-size:24px;line-height:30px;letter-spacing:-.4px}
+.metric>small{font-size:12px;line-height:16px;color:var(--text)}
+.metrics .metric:nth-child(n){color:var(--text)}
+.metrics .metric:nth-child(n)>span,.metrics .metric:nth-child(n)>strong,.metrics .metric:nth-child(n)>small{color:var(--text)}
+.metrics .metric:nth-child(3n+1){background:var(--lavender)}.metrics .metric:nth-child(3n+2){background:var(--sky)}.metrics .metric:nth-child(3n+3){background:var(--mint)}
+/* The teal card is a call to action (Figma "Weekly count due today", "Count before closing"), never a number tile. */
+.cta-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:18px 18px 16px;border-radius:16px;background:var(--teal);color:#fff;overflow:hidden}
+.cta-card h2{margin:0;max-width:75%;font-size:20px;line-height:26px;font-weight:600;color:#fff}
+.cta-card p{margin:0;font-size:14px;line-height:20px;color:#fff;opacity:.92}
+.cta-card .cta-button{display:inline-flex;align-items:center;margin-top:4px;padding:7px 10px;border-radius:6px;background:var(--ink);color:var(--lime);font-size:13px;font-weight:500;text-decoration:none;border:0}
+.cta-card>svg{position:absolute;right:16px;top:14px;width:52px;height:52px;color:#fff;opacity:.35;stroke-width:1.4}
+/* Small shared pieces from the Figma: round icon button, dark button with lime text, dot chips, month chip. */
+.icon-button{display:inline-grid;place-items:center;width:44px;height:44px;border:0;border-radius:12px;background:var(--surface);color:var(--ink)}
+.icon-button:hover{background:var(--bg-subtle)}
+.dark-button{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:0;border-radius:8px;background:var(--ink);color:var(--lime);font-size:13px;font-weight:500;text-decoration:none;white-space:nowrap}
+.dark-button:hover{background:var(--ink-hover)}
+.text-link{border:0;background:none;padding:0;font-size:13px;color:var(--text-secondary);text-decoration:none;cursor:pointer}
+.text-link:hover{color:var(--text)}
+.dot-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap;background:var(--bg-muted);color:var(--text-secondary)}
+.dot-chip::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+.dot-chip.critical{background:var(--critical-bg);color:var(--critical-fg)}.dot-chip.warning{background:var(--warning-bg);color:var(--warning-fg)}.dot-chip.good{background:var(--good-bg);color:var(--good-fg)}.dot-chip.info{background:var(--info-bg);color:var(--info-fg)}.dot-chip.kitchen{background:var(--kitchen-bg);color:var(--kitchen-fg)}.dot-chip.bar{background:var(--bar-bg);color:var(--bar-fg)}
+.month-chip{padding:3px 10px;border-radius:999px;background:var(--bg-subtle);font-size:12px;color:var(--text-secondary)}
+.panel{border-radius:20px}
+.panel-heading h2{font-weight:600}
+/* A table without boxes: muted headers, one rule under them, airy rows (Figma "Running low", "Today's transactions"). */
+.plain-table{min-width:0}
+.plain-table th{padding:0 8px 12px;font-size:13px;font-weight:400;color:var(--text-secondary);background:none;border-bottom:1px solid var(--border)}
+.plain-table td{padding:14px 8px;border-bottom:0;font-size:14px;vertical-align:middle}
+.plain-table th:first-child,.plain-table td:first-child{padding-left:0}
+.plain-table td strong{font-weight:600}
+/* Today (Figma M1). */
+.today-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
+.today-main,.today-side{display:grid;gap:20px;min-width:0}
+.today-main .metrics{grid-template-columns:repeat(3,minmax(0,1fr));margin:0}
+.today-row{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:20px}
+.today .panel{margin:0}
+.legend{display:inline-flex;align-items:center;gap:6px;margin-left:12px;margin-right:auto;font-size:13px;color:var(--text-secondary)}
+.legend i{width:8px;height:8px;border-radius:50%}.legend i.bar{margin-left:8px}
+.legend i.kitchen,.hour-bars i.kitchen{background:var(--lavender)}.legend i.bar,.hour-bars i.bar{background:var(--mint)}
+.hour-panel .panel-heading{justify-content:flex-start}
+.hour-chart{display:grid;grid-template-columns:auto 1fr;gap:10px;height:170px}
+.hour-axis{display:flex;flex-direction:column;justify-content:space-between;padding-bottom:24px;font-size:12px;color:var(--text-secondary);text-align:right}
+.hour-axis span{height:0;line-height:0}
+.hour-plot{display:flex;align-items:stretch;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(25% - 1px),var(--border) calc(25% - 1px),var(--border) 25%);background-size:100% calc(100% - 24px);background-repeat:no-repeat;border-top:1px dashed var(--border)}
+.hour-col{flex:1;display:flex;flex-direction:column;align-items:center;min-width:0}
+.hour-bars{flex:1;display:flex;align-items:flex-end;gap:3px;width:100%;justify-content:center}
+.hour-bars i{width:min(10px,30%);min-height:0;border-radius:4px 4px 0 0}
+.hour-col>span{height:24px;line-height:24px;font-size:12px;color:var(--text-secondary)}.hour-col.empty>span{color:var(--text-disabled)}
+.need-list{display:grid;gap:10px}
+.need-row{display:flex;align-items:center;gap:12px;padding:8px 12px 8px 8px;border-radius:12px;background:var(--bg-subtle);color:var(--text);text-decoration:none;font-size:14px;font-weight:500}
+.need-row:hover{background:var(--bg-muted)}
+.need-row>span:nth-child(2){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.need-row>svg{color:var(--text-secondary);flex:0 0 auto}
+.need-icon{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border-radius:50%;background:var(--surface)}
+.need-row.critical .need-icon{color:var(--critical-fg)}.need-row.warning .need-icon{color:var(--warning-fg)}.need-row.info .need-icon{color:var(--info-fg)}
+.budget-panel{display:flex;flex-direction:column;gap:8px}
+.budget-panel .panel-heading{margin-bottom:4px}
+.budget-used{font-size:24px;line-height:30px;font-weight:700;letter-spacing:-.4px}
+.budget-panel p{margin:0}
+.budget-panel .budget-track{margin:4px 0 6px;background:var(--bg-subtle)}
+.budget-line{display:flex;justify-content:space-between;gap:12px;font-size:14px}
+.budget-line>span{display:grid;gap:1px}.budget-line small{font-size:12px;color:var(--text-secondary)}
+.person-row{display:flex;align-items:center;gap:12px;padding:8px 12px 8px 8px;border-radius:12px;background:var(--bg-subtle);color:var(--text);text-decoration:none}
+.person-row .avatar{width:36px;height:36px;flex:0 0 36px;font-size:12px}
+.person-row>span:nth-child(2){flex:1;display:grid;gap:1px;min-width:0}.person-row strong{font-size:14px;font-weight:500}.person-row small{font-size:12px;color:var(--text-secondary)}
+.person-row>svg{color:var(--text-secondary)}
+@media(max-width:1190px){.today-grid{grid-template-columns:1fr}.today-side{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}}
+@media(max-width:900px){.today-row{grid-template-columns:1fr}}
+@media(max-width:700px){.today-main .metrics{grid-template-columns:1fr}}
+.need-list{grid-template-columns:minmax(0,1fr)}.need-row{min-width:0}
+.budget-panel .panel-heading h2{font-size:15px;white-space:nowrap}
+/* Tile tones by meaning, not by position: dark for the day's total (Figma C9), pastels for the rest. */
+.metrics .metric.tone-lavender{background:var(--lavender)}.metrics .metric.tone-sky{background:var(--sky)}.metrics .metric.tone-mint{background:var(--mint)}
+.metrics .metric.tone-dark{background:var(--ink);text-align:left;justify-content:center;gap:4px}
+.metrics .metric.tone-dark>span,.metrics .metric.tone-dark>strong,.metrics .metric.tone-dark>small{color:#fff}
+.metrics .metric.tone-dark>span{margin-bottom:0}
+.metrics .metric.tone-dark>strong{margin-top:0;font-size:30px;line-height:38px}
+/* Close shift (Figma C9). */
+.close-metrics{grid-template-columns:minmax(0,1.5fr) repeat(auto-fit,minmax(0,1fr));grid-auto-flow:column;grid-auto-columns:minmax(0,1fr)}
+.close-columns{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
+.close-columns .panel{margin:0}
+.close-transactions .panel-heading{gap:16px;margin-bottom:14px}
+.search-box.compact{height:40px;width:min(260px,50%);padding:0 12px;gap:8px;border:0;border-radius:12px;background:var(--bg-subtle)}
+.search-box.compact input{font-size:14px;background:transparent}
+.filter-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.pill-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.pill-tabs>button{min-height:32px;padding:5px 12px;border:0;border-radius:999px;background:var(--bg-subtle);color:var(--text);font-size:14px;font-weight:500}
+.pill-tabs>button:hover{background:var(--bg-muted)}
+.pill-tabs>button.active{background:var(--ink);color:var(--on-ink)}
+.pill-selects{display:flex;gap:8px}
+.pill-selects .field{margin:0}
+.pill-selects .select-trigger{min-height:32px;padding:5px 12px;gap:6px;border-radius:999px;border-color:var(--border);font-size:14px;font-weight:500;color:var(--ink)}
+.plain-table.dense td{padding:10px 8px;border-bottom:1px solid var(--border)}
+.plain-table.dense tbody tr:last-child td{border-bottom:0}
+.plain-table .num{text-align:right;white-space:nowrap}
+.sort-head{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:0;font:inherit;font-size:13px;color:var(--text)}
+.settle-panel{display:flex;flex-direction:column;gap:10px}
+.settle-panel>h2{margin:0;font-size:16px}
+.settle-panel>p.small{margin:0 0 4px}
+.settle-panel .settle-row{margin:0;padding:12px 14px;gap:6px 12px;border-radius:14px}
+.settle-panel .settle-row>strong{font-size:15px;font-weight:500}
+.settle-row .match{text-align:right;font-size:14px}
+.settle-row.over{background:var(--warning-bg)}.settle-row.over .match{color:var(--warning-fg)}
+.slip-field{display:flex;align-items:center;gap:4px;height:34px;margin:0;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:14px;font-weight:600;color:var(--ink)}
+.slip-field:focus-within{outline:2px solid var(--ink);outline-offset:0}
+.slip-field .money-field{display:flex;align-items:center;gap:2px;border:0;padding:0;background:none;min-height:0}
+.slip-field .money-prefix{position:static;font-weight:600;color:var(--ink);transform:none}
+.slip-field input{width:96px;min-height:0;height:30px;padding:0;border:0;background:none;font-weight:600;text-align:left;box-shadow:none}
+.slip-field input:focus{outline:none}
+.settle-row.short .slip-field{border-color:var(--critical-fg)}
+.settle-note{display:flex;gap:8px;align-items:flex-start;margin:4px 0 0;font-size:13px;line-height:18px;color:var(--text)}
+.settle-note>svg{flex:0 0 auto;margin-top:1px;color:var(--warning-fg)}
+.close-button{min-height:52px;margin-top:6px;font-size:16px}
+@media(max-width:1100px){.close-columns{grid-template-columns:1fr}.close-metrics{grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr))}.close-metrics .tone-dark{grid-column:1/-1}}
+@media(max-width:700px){.search-box.compact{width:100%}.close-transactions .panel-heading{flex-wrap:wrap}}
+label.slip-field{flex-direction:row;justify-self:end;width:auto}
+.plain-table.dense td:first-child,.plain-table.dense th:first-child{padding-left:0}
+.plain-table.dense td:last-child,.plain-table.dense th:last-child{padding-right:0}
+.slip-field .money-prefix{font-size:14px}
+/* Item options (Figma C3): thumbnail beside the name, pills per group, what the cup takes from stock, qty + add. */
+.dialog-content.item-dialog{width:min(640px,calc(100vw - 32px));max-width:none;padding:24px}
+.item-dialog .dialog-heading{display:flex;align-items:center;gap:16px;margin-bottom:12px}
+.item-dialog .dialog-heading>div{flex:1;min-width:0}
+.item-dialog .dialog-heading h2{font-size:24px;font-weight:700;letter-spacing:-.5px}
+.item-dialog .dialog-heading p{font-size:14px;margin-top:2px}
+.item-dialog .dialog-heading .btn-icon{width:44px;height:44px;border-radius:50%;background:var(--bg-subtle)}
+.item-thumb{width:56px;height:56px;flex:0 0 56px;border-radius:10px;object-fit:cover;background:var(--bg-subtle)}
+.item-dialog .option-group{border:0;padding:0;margin:0 0 16px;border-radius:0}
+.item-dialog .option-group legend{display:flex;align-items:baseline;gap:8px;padding:0;margin-bottom:10px;font-size:15px;font-weight:600;color:var(--text)}
+.item-dialog .option-group legend small{font-size:12px;font-weight:400;color:var(--text-secondary)}
+.opt-pills{display:flex;flex-wrap:wrap;gap:8px}
+.opt-pill{position:relative;display:inline-flex;align-items:center;gap:6px;min-height:44px;margin:0;padding:8px 16px;border:1px solid var(--border);border-radius:999px;background:var(--surface);font-size:14px;font-weight:500;color:var(--text);cursor:pointer;flex-direction:row}
+.opt-pill input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.opt-pill small{font-size:12px;font-weight:400;color:var(--text-secondary)}
+.opt-pill:hover{border-color:var(--border-strong)}
+.opt-pill.on{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+.opt-pill.on small{color:color-mix(in srgb,#fff 70%,transparent)}
+.opt-pill:has(input:focus-visible){outline:2px solid var(--ink);outline-offset:2px}
+.recipe-note{display:flex;gap:12px;align-items:flex-start;margin:4px 0 14px;padding:12px 16px;border-radius:10px;background:var(--lime-subtle);font-size:14px;line-height:20px;color:var(--text)}
+.recipe-note>svg{flex:0 0 auto;margin-top:1px}
+.recipe-note p{margin:0}.recipe-note small{display:block;font-size:12px;color:var(--text-secondary)}
+.note-field{margin:0 0 16px;font-size:13px;color:var(--text-secondary)}
+.note-field input{min-height:44px}
+.option-footer{display:flex;align-items:center;gap:16px}
+.option-footer .btn{min-height:52px;padding:0 22px;font-size:16px}
+.qty-stepper{display:inline-flex;align-items:center;gap:12px}
+.qty-stepper>span{min-width:20px;text-align:center;font-size:16px;font-weight:600}
+.qty-stepper>button{display:grid;place-items:center;width:32px;height:32px;padding:0;border:1px solid var(--border-strong);border-radius:50%;background:var(--surface);color:var(--ink)}
+.qty-stepper>button.plus{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+.qty-stepper>button:disabled{opacity:.4}
+@media(max-width:700px){.option-footer{flex-wrap:wrap}.option-footer .btn{flex:1}}
+.item-dialog .dialog-heading{margin-bottom:20px}
+/* Open shift, closer to Figma C1: two fixed-width cards of equal height, roomier rows. */
+.open-shift{max-width:none}
+.open-shift-grid{grid-template-columns:minmax(0,460px) minmax(0,320px);justify-content:center;align-items:stretch;gap:24px}
+.open-shift-grid .panel{padding:26px 28px 28px;gap:16px}
+.open-shift-head .avatar{width:34px;height:34px;font-size:12px}
+.open-shift-grid .panel:first-child .ready-list{gap:18px}
+.ready-row{min-height:58px}
+@media(max-width:860px){.open-shift-grid{grid-template-columns:1fr}}
+
+/* Integration pass (2026-11-16): shared pieces the per-screen files rely on. */
+/* Breadcrumb back to a list (M2, M6, M7) and a title with chips beside it. */
+.crumb{display:inline-flex;align-items:center;min-height:24px;margin:0 0 2px;padding:0;border:0;background:none;font-size:13px;color:var(--text-secondary);cursor:pointer}
+.crumb:hover{color:var(--text);text-decoration:underline}
+.title-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
+.title-row h1{margin:0;overflow-wrap:anywhere}
+/* Till rail per C2: 40px logo, 68x64 items 8px apart with 20px icons and 13px labels; avatar, first name, lock. */
+@media(min-width:701px){
+ .sidebar.rail{padding:20px 10px}
+ .sidebar.rail .brand-mark,.sidebar.rail .brand-mark svg,.sidebar.rail .rail-logo{width:40px;height:40px}
+ .sidebar.rail>nav{margin-top:32px;gap:8px}
+ .sidebar.rail .nav-link{width:68px;min-height:64px;gap:6px;padding:8px 2px;font-size:13px;line-height:16px;font-weight:400;border-radius:12px}
+ .sidebar.rail .nav-link.active{font-weight:500}
+ .sidebar.rail .nav-link svg{width:20px;height:20px}
+ .sidebar.rail .rail-name{font-size:13px;line-height:16px}
+ .sidebar.rail .rail-lock{width:40px;height:32px}
+}
+/* Dropdowns on the new surface: white menu, 14px options, selected in ink. */
+.select-menu{background:var(--surface);border-color:var(--border)}
+.select-option{color:var(--text);border-radius:10px}
+.select-option[aria-selected=true]{color:var(--text);font-weight:600}
+@media(min-width:701px){.select-option{font-size:14px}}
+/* A heading that stacks on a phone must not keep its 280px row basis as height. */
+@media(max-width:700px){.page-heading>div:first-child{flex:0 1 auto}}
+/* Manager nav per M1-M8: 44px items on a 48px pitch. */
+@media(min-width:951px){.sidebar:not(.rail)>nav{gap:4px}.sidebar:not(.rail) .nav-link{min-height:44px}}
+/* Cashier frames (C7, C9, C11...) put page content 24px after the 88px rail. */
+@media(min-width:701px){.workspace.rail .page-content{padding-left:24px;padding-right:24px}}

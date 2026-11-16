@@ -1,0 +1,100 @@
+/* Figma pass 2, stock screens. Loaded after styles.css (main.tsx), so equal-specificity rules here win. */
+/* C7 Stok: the three tiles, then the short list over two columns beside the count card and the prep list. */
+.stock-page .page-heading{align-items:center;margin-bottom:18px}
+.stock-page .page-heading .button-row{gap:12px}
+.stock-page .page-heading .btn{min-height:44px;padding:0 18px 0 16px;border-radius:12px;font-size:15px;font-weight:500}
+.stock-page .page-heading .icon-button{width:42px;height:42px}
+/* Chips as drawn on C7/M6: 12px regular, 8px sides. */
+.stock-page .dot-chip{padding:3px 8px;font-weight:400}
+.stock-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px 24px;align-items:start;margin-bottom:28px}
+.stock-grid>.metric{align-self:stretch}
+.stock-grid>.metric,.stock-detail .metric{padding-top:16px}
+.stock-grid>.metric>span,.stock-detail .metric>span{gap:8px}
+.stock-grid>.metric>strong,.stock-detail .metric>strong{margin-bottom:3px;font-weight:600}
+.stock-grid>.metric:nth-child(1){background:var(--lavender)}.stock-grid>.metric:nth-child(2){background:var(--sky)}.stock-grid>.metric:nth-child(3){background:var(--mint)}
+/* One line under each number, as drawn; long name lists end in an ellipsis (the table below lists them all). Narrow tiles get two lines. */
+.stock-grid>.metric>small,.stock-detail .metric>small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The short list is 4px wider than two tiles: the row under the tiles has a 20px gap where the tiles have 24px. */
+.stock-grid>.panel{grid-column:span 2;margin:0 -4px 0 0;min-width:0;padding:20px}
+.stock-side{display:grid;gap:20px;min-width:0}
+.stock-side .panel{margin:0}
+.stock-open{display:inline;min-height:0;border:0;background:none;font:inherit;font-weight:inherit;color:inherit;text-align:left;cursor:pointer}
+.stock-open:hover{text-decoration:underline}
+/* Touch: the names, the Produksi link and the count button keep their drawn size but get a 40px+ hit area. */
+.stock-open,.prep-panel .panel-heading .text-link{padding:12px 0;margin:-12px 0}
+.stock-side .cta-button{position:relative}.stock-side .cta-button::after{content:'';position:absolute;inset:-5px -2px}
+.stock-short td:first-child{font-weight:500}
+.stock-short tbody tr{cursor:pointer}
+.stock-grid>.panel .panel-heading{margin-bottom:15px}
+.stock-grid>.panel .panel-heading h2,.stock-side .panel-heading h2{font-size:16px;font-weight:500}
+/* Columns start at their text (no left padding), so Area, Sisa and Habis line up as drawn. */
+.stock-short .plain-table th{padding:0 8px 20px 0;font-size:12px}
+.stock-short .plain-table th:nth-child(1){width:30%}.stock-short .plain-table th:nth-child(2){width:29.5%}.stock-short .plain-table th:nth-child(3){width:21%}
+.stock-short .plain-table td{padding:16px 8px 16px 0}
+.stock-short .plain-table tbody tr:first-child td{padding-top:22px}
+.stock-short .plain-table tbody tr:last-child td{padding-bottom:24px}
+.stock-short td.muted{font-size:14px}
+.stock-short .dot-chip{vertical-align:middle}
+/* The count card as drawn on C7: a two-line title beside a large faded icon (two lines kept for short titles, so the
+   icon never sits behind the text), the dark button under the text. */
+.stock-side .cta-card{padding:22px 20px 18px;gap:10px}
+.stock-side .cta-card h2{max-width:60%;min-height:56px;font-size:20px;font-weight:500;line-height:28px}
+.stock-side .cta-card>svg{right:auto;left:52%;top:12px;width:80px;height:80px;stroke-width:.8}
+.stock-side .cta-card .cta-button{margin-top:2px;padding:6px 12px;line-height:20px}
+/* Daftar prep sits where C7 draws "Tell Toper": same title, rows and spacing. */
+.prep-panel{padding:29px 20px 20px}
+.prep-panel .panel-heading{margin-bottom:20px}
+.prep-panel .panel-heading .text-link{font-size:14px}
+.prep-panel .need-list{gap:12px}
+.prep-panel .need-row{padding:8px 12px}
+.prep-panel .need-row>small{font-size:13px;color:var(--text-secondary);white-space:nowrap}
+button.need-row{width:100%;border:0;font:inherit;font-weight:500;text-align:left;cursor:pointer}
+/* Every ingredient, under the summary: a white search on the canvas, the filters, then the list as before. */
+.stock-all-head{margin:8px 0 12px}
+.stock-page .search-box.compact{width:min(360px,100%);height:44px;background:var(--surface)}
+.stock-note{display:flex;align-items:center;gap:6px;margin:0 0 12px;color:var(--text-secondary)}
+.stock-note svg{flex:0 0 auto}
+/* M6: an ingredient on the Stok page; breadcrumb back (12px, 40px hit area), chips beside the name, then its movements. */
+.stock-detail .crumb{display:flex;width:fit-content;min-height:0;padding:11px 8px;margin:-11px -8px -9px;font-size:12px;line-height:18px}
+.stock-detail .page-heading{margin-bottom:20px}
+.stock-detail .page-heading .btn-accent svg{color:#fff}
+.stock-detail .metrics{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:20px}
+.stock-detail .panel{margin:0 0 20px;padding:20px}
+.stock-detail .panel-heading{flex-wrap:wrap;gap:4px 16px;margin-bottom:15px}
+.stock-detail .panel-heading h2{font-size:20px;font-weight:500}
+.stock-detail .panel-heading .small{margin:0;font-size:12px}
+.stock-detail .plain-table th{white-space:nowrap;padding-bottom:5px;font-size:12px}
+.stock-detail .plain-table td.muted{font-size:14px}
+.movements td:first-child{white-space:nowrap}
+.movements th:nth-child(1){width:13.3%}.movements th:nth-child(3){width:12%}.movements th:nth-child(4){width:11.2%}.movements th:nth-child(5){width:15.3%}
+/* Column widths as drawn on M6 ("Compare suppliers"); a chip in a row stays within the 21px line. */
+.suppliers th:nth-child(1){width:44.4%}.suppliers th:nth-child(2){width:17%}.suppliers th:nth-child(3){width:13.1%}.suppliers th:nth-child(4){width:14.9%}
+.stock-detail .plain-table .dot-chip{padding-top:1px;padding-bottom:1px}
+.nota-thumb{width:28px;height:28px;margin-left:8px;border-radius:6px;object-fit:cover;vertical-align:middle}
+/* C8 Catat prep: a 640px dialog of pills, the lime note of what it uses, one lime button. */
+.dialog-content.prep-dialog{width:min(640px,calc(100vw - 32px));max-width:none;padding:26px 28px 24px;border-radius:24px}
+.prep-dialog .dialog-heading{align-items:flex-start;margin-bottom:20px;padding-top:0}
+.prep-dialog .dialog-heading h2{font-size:24px;line-height:30px;font-weight:700;letter-spacing:-.5px}
+.prep-dialog .dialog-heading p{font-size:14px;margin-top:2px}
+.prep-dialog .dialog-heading .btn-icon{width:44px;height:44px;min-height:44px;margin:3px 0 0;padding:0;border-radius:50%;background:var(--bg-subtle);color:var(--text)}
+.prep-dialog .opt-pill{min-height:46px;font-size:15px}
+.prep-dialog .option-group{border:0;padding:0;margin:0 0 22px;border-radius:0}
+.prep-dialog .option-group legend{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;padding:0;margin-bottom:10px;font-size:16px;font-weight:500;color:var(--text)}
+.prep-dialog .option-group legend small{font-size:12px;font-weight:400;color:var(--text-secondary)}
+.prep-dialog .form-grid{margin:-8px 0 16px;gap:0 12px}
+.prep-dialog .form-grid label{margin:0 0 10px}
+.prep-dialog .prep-note{grid-column:1/-1}
+.prep-dialog .recipe-note{align-items:center;margin:0 0 20px;border-radius:12px}
+.prep-dialog .recipe-note p{line-height:20px}
+.prep-dialog .recipe-note small.negative{color:var(--critical-fg)}
+.prep-save.btn{min-height:56px;border-radius:14px;font-size:15px;font-weight:500}
+@media(max-width:1100px){.stock-grid>.panel{grid-column:1/-1;margin-right:0}.stock-grid>.metric>small,.stock-detail .metric>small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal}.stock-side{grid-column:1/-1;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}}
+/* Phone: the short list drops the area column; each movement becomes a stacked row (what, change; when, balance; who). */
+@media(max-width:700px){.stock-short th:nth-child(2),.stock-short td:nth-child(2){display:none}.stock-short .plain-table th:nth-child(1){width:auto}
+ .movements,.movements tbody{display:block}.movements thead{display:none}
+ .movements tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:10px 0;border-bottom:1px solid var(--border)}
+ .movements tr:last-child{border-bottom:0}
+ .plain-table.movements td{padding:0;border:0;font-size:14px}
+ .plain-table.movements td:nth-child(1),.plain-table.movements td:nth-child(4),.plain-table.movements td:nth-child(5){font-size:12px}
+ .movements td:nth-child(2){grid-area:1/1}.movements td:nth-child(3){grid-area:1/2}.movements td:nth-child(1){grid-area:2/1}.movements td:nth-child(4){grid-area:2/2}.movements td:nth-child(5){grid-area:3/1}}
+@media(max-width:700px){.stock-grid,.stock-detail .metrics{grid-template-columns:1fr;gap:12px}.stock-grid>.metric{min-height:0}.stock-page .filter-row{flex-direction:column;align-items:stretch}.stock-page .filter-row .button-row{justify-content:space-between}.prep-dialog .form-grid{grid-template-columns:1fr}.dialog-content.prep-dialog{padding:20px}}
