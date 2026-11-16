@@ -536,3 +536,16 @@ describe('cashless: EDC, compliments, line voids and the settlement',()=>{
   expect((await db.outbox.toArray()).find(op=>op.kind==='shift.close')?.payload).toMatchObject({settlements:[{edc:'BCA',slip:slips.BCA},{edc:'BRI',slip:slips.BRI},{edc:'Mandiri',slip:0}]})
  })
 })
+describe('removing menu items',()=>{
+ it('removes an item never sold, queues one catalog.remove, and refuses one that was sold or a cashier',async()=>{
+  const {db,commands}=await seed(identity({demo:true}))
+  await commands.publish([...sampleMenu,{...sampleMenu[0],id:'tmp',name:'TEST',version:1}],sampleStock)
+  await commands.removeMenu(['tmp'])
+  expect(await db.menu.get('tmp')).toBeUndefined()
+  expect((await db.outbox.toArray()).find(o=>o.kind==='catalog.remove')?.payload).toEqual({ids:['tmp']})
+  await sale(commands)
+  await expect(commands.removeMenu(['nasi-goreng'])).rejects.toThrow('sudah pernah terjual')
+  const cashier=await seed(identity({role:'cashier',demo:true}))
+  await expect(cashier.commands.removeMenu(['es-teh'])).rejects.toThrow('Perlu akun manajer')
+ })
+})

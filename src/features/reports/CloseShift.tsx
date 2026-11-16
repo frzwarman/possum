@@ -13,7 +13,7 @@ import { payLabel } from '../orders/Receipt'
 // EDC's settlement slip against what Takar recorded on it, and, when the store takes cash, the drawer counted blind.
 // The stock count comes first.
 export function CloseShift(){
- const {orders,settings,shift,shifts,counts,cash:moves,commands,act,busy,manager,user}=useApp()
+ const {orders,settings,shift,shifts,counts,cash:moves,commands,act,busy,manager,user,stockItems}=useApp()
  const [slips,setSlips]=useState<Record<string,string>>({});const [drawer,setDrawer]=useState('');const [query,setQuery]=useState('');const [kind,setKind]=useState('all');const [edc,setEdc]=useState('');const [byAmount,setByAmount]=useState(true);const [ask,setAsk]=useState<ApprovalRequest>()
  const {cash,edcs}=tills(settings)
  if(!shift)return <article className="panel"><div className="panel-heading"><h2>Tutup sif</h2><span className="badge">Tidak ada sif aktif</span></div><p className="muted">Buka sif dari kasir.{cash?'':' Tanpa tunai: tidak ada modal kas.'}</p>
@@ -22,9 +22,12 @@ export function CloseShift(){
  const sum=(list:Order[])=>list.reduce((n,o)=>n+o.totals.total,0)
  const sales=paid.filter(isSale),comps=paid.filter(o=>o.mode==='compliment'),given=(k:string)=>comps.filter(o=>o.compliment?.kind===k).reduce((n,o)=>n+o.discount,0)
  // The count before closing: any count this cashier started and sent since the shift opened.
- const counted=counts.some(c=>c.status!=='draft'&&(c.submittedAt??c.approvedAt??'')>=shift.openedAt)
+ // The count before closing: any count sent since the shift opened. A store with no ingredients yet has nothing to count.
+ const counted=!stockItems.length||counts.some(c=>c.status!=='draft'&&(c.submittedAt??c.approvedAt??'')>=shift.openedAt)
  const amounts=Object.fromEntries(edcs.map(e=>[e,Number(slips[e]||0)])),list=settlements(shift.id,orders,amounts,edcs),cashGap=cash?Math.abs(Number(drawer||0)-expectedCash(shift,orders,moves)):0,gap=settlementGap(list)+cashGap,limit=settings?.varianceLimit??10000
  const shown=paid.filter(o=>(kind==='all'||(kind==='compliment'?o.mode==='compliment':o.payment?.method===kind))&&(!edc||o.payment?.edc===edc)&&[o.receiptId.slice(-6),o.label,o.name,o.payment?.approvalCode].join(' ').toLowerCase().includes(query.trim().toLowerCase())).sort((a,b)=>byAmount?b.totals.total-a.totals.total:b.payment!.at.localeCompare(a.payment!.at))
+ const blank=edcs.filter(e=>slips[e]===undefined||slips[e]==='')
+ const missing=[...(!counted?['Kirim hitung stok dulu (Stok → Hitung stok).']:[]),...(open>0?[`Bayar atau batalkan ${open} pesanan terbuka di Pesanan.`]:[]),...(blank.length?[`Isi slip ${blank.map(e=>`EDC ${e}`).join(', ')}. Ketik 0 bila mesinnya tidak dipakai.`]:[]),...(cash&&drawer===''?['Isi uang tunai di laci.']:[]),...(!(shift.actor===user.id||manager)?[`Hanya ${shift.cashier} atau manajer yang bisa menutup sif ini.`]:[])]
  async function close(approval?:Approval){if(!manager&&!approval&&gap>limit){setAsk({action:'variance',amount:gap,what:cash?'Selisih kas atau EDC di atas batas; manajer perlu menyetujui penutupan sif':`Selisih EDC ${rupiah(gap)}; manajer perlu menyetujui penutupan sif`});return}
   await act(async()=>{await commands.closeShift(cash?Number(drawer||0):0,approval,amounts);setSlips({});setDrawer('')},'Sif ditutup. Hasil hitung stok menunggu persetujuan manajer.')}
  return <>
@@ -55,8 +58,9 @@ export function CloseShift(){
     {cash&&<div className="settle-row mt"><strong>Uang tunai di laci</strong><span className="match"/><small className="muted">Hitung semua uang, termasuk modal {rupiah(shift.opening)}</small><Money aria-label="Uang tunai di laci" value={drawer} onChange={setDrawer}/></div>}
     <p className="callout"><AlertTriangle size={16}/>Selisih di atas {rupiah(limit)} perlu persetujuan manajer dengan PIN. Selisih {cash?'kas dan ':''}tiap EDC dijumlahkan, tidak saling menutup.</p>
     {!counted&&<p className="callout"><ClipboardList size={16}/><span>Hitung stok dulu sebelum menutup sif. <Link to="/counts" className="text-button">Ke Hitung stok</Link></span></p>}
-    <Button className="full btn-accent" loading={busy} disabled={busy||!counted||open>0||edcs.some(e=>slips[e]===undefined||slips[e]==='')||(cash&&drawer==='')||!(shift.actor===user.id||manager)} onClick={()=>void close()}><Lock size={17}/> Tutup sif</Button>
-    {open>0&&<p className="small muted center">Selesaikan atau batalkan pesanan terbuka dulu.</p>}
+    <Button className="full btn-accent" loading={busy} disabled={busy||missing.length>0} onClick={()=>void close()}><Lock size={17}/> Tutup sif</Button>
+    {/* Say exactly what still blocks the close, instead of a grey button with no reason. */}
+    {missing.length>0&&<div className="close-missing"><strong>Belum bisa ditutup:</strong><ul>{missing.map(m=><li key={m}>{m}</li>)}</ul></div>}
    </article>
   </div>
   <ApprovalDialog request={ask} onClose={()=>setAsk(undefined)} onApproved={a=>{setAsk(undefined);void close(a)}}/>

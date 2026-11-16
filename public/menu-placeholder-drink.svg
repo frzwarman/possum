@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 280" role="img" aria-labelledby="title desc">
+  <title id="title">Gambar minuman standar</title>
+  <desc id="desc">Ilustrasi gelas minuman dingin dengan sedotan</desc>
+  <rect width="420" height="280" fill="#F6F7F8"/>
+  <circle cx="335" cy="48" r="82" fill="#E3E5E8"/>
+  <path d="M224 92l20-62" fill="none" stroke="#9A9EA5" stroke-width="8" stroke-linecap="round"/>
+  <path d="M160 104l17 128c1 7 6 11 13 11h40c7 0 12-4 13-11l17-128H160Z" fill="#FFFFFF" stroke="#9A9EA5" stroke-width="8" stroke-linejoin="round"/>
+  <rect x="148" y="84" width="124" height="22" rx="9" fill="#FFFFFF" stroke="#9A9EA5" stroke-width="8"/>
+  <path d="M170 150h80" stroke="#EBEDEF" stroke-width="7" stroke-linecap="round"/>
+  <rect x="180" y="166" width="24" height="24" rx="6" fill="none" stroke="#C9CCD1" stroke-width="6" transform="rotate(-10 192 178)"/>
+  <rect x="214" y="186" width="24" height="24" rx="6" fill="none" stroke="#C9CCD1" stroke-width="6" transform="rotate(12 226 198)"/>
+  <path d="M122 168c-8 12-8 20 0 24 8-4 8-12 0-24ZM296 132c-8 12-8 20 0 24 8-4 8-12 0-24Z" fill="#C9CCD1"/>
+</svg>

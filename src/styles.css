@@ -572,3 +572,12 @@ p.small>svg:first-child{margin-top:.15em}
 .receipt-logo{display:block;max-width:120px;max-height:72px;margin:0 auto 10px;object-fit:contain;filter:grayscale(1)}
 /* PIN fields are plain text (no password-manager popups on a shared till); the digits still show as dots. */
 .pin-field,.pin-input{-webkit-text-security:disc}
+/* A device that is not the cashier device shows the menu to look at: full colour, not tappable, unlike sold-out cards. */
+.menu-card.view-only:disabled{opacity:1;cursor:default}
+.callout.till-only{margin:0 0 16px}
+/* The store's address under its name (Figma M1), one line, cut with an ellipsis when long. */
+.restaurant-switch>div{min-width:0}
+.restaurant-switch small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.close-missing{margin-top:12px;padding:12px 14px;border-radius:10px;background:var(--warning-bg);color:var(--warning-fg);font-size:13px}
+.close-missing ul{margin:6px 0 0;padding-left:18px;display:grid;gap:4px}
+.close-missing ul{list-style:disc}

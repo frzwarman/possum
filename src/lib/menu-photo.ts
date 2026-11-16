@@ -1,4 +1,9 @@
+import { menuType } from "../domain/calculate";
+import type { MenuItem } from "../domain/types";
 const INPUT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+// An item without a photo gets the picture for its type: a bowl for food, a glass for drinks, fries for snacks.
+export const menuPicture = (m: Pick<MenuItem, "photo" | "type" | "category">) =>
+  m.photo || { food: "/menu-placeholder.svg", beverage: "/menu-placeholder-drink.svg", snack: "/menu-placeholder-snack.svg" }[menuType(m)];
 const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
 const MAX_DATA_URL_LENGTH = 70_000;
 

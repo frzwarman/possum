@@ -36,12 +36,13 @@ import { convert, describeDelta, itemStation, menuType, quantity, rupiah, typeLa
 import { can } from "../../domain/permissions";
 import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { supabase } from "../../lib/supabase";
-import { compressLogo, compressMenuPhoto } from "../../lib/menu-photo";
+import { compressLogo, compressMenuPhoto, menuPicture } from "../../lib/menu-photo";
 import { bootstrap, pinHash } from "../auth/Login";
 import { roleTitle } from "../../domain/permissions";
 const schema = z.object({
   appName: z.string().min(1).max(30),
   name: z.string().min(1).max(100),
+  tagline: z.string().trim().max(60, "Maksimal 60 karakter"),
   address: z.string().max(200),
   phone: z.string().max(40),
   footer: z.string().max(150),
@@ -84,6 +85,8 @@ export default function SettingsPage() {
     stockItems,
     db,
     logo,
+    orders,
+    salesOrders,
     commands,
     user,
     manager,
@@ -117,6 +120,9 @@ export default function SettingsPage() {
   const [recipeStock, setRecipeStock] = useState("");
   const [recipeQty, setRecipeQty] = useState("");
   const [signout, setSignout] = useState(false);
+  // Menu items with a sale (till or catering) can only be switched off; the rest can be removed for good.
+  const [removing, setRemoving] = useState<MenuItem>();
+  const sold = new Set([...orders.flatMap((o) => o.lines.map((l) => l.itemId)), ...salesOrders.flatMap((o) => o.lines.map((l) => l.itemId))]);
   const [claim, setClaim] = useState(false);
   const [testPrint, setTestPrint] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -130,7 +136,7 @@ export default function SettingsPage() {
   const [pinAgain, setPinAgain] = useState("");
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
-    values: settings && { ...settings, stationTablets: Boolean(settings.stationTablets), cash: !settings.cashless, edcs: (settings.edcs ?? []).join(", "), lockMinutes: settings.lockMinutes ?? 2, complimentBudget: settings.complimentBudget ?? 0, kitchenTarget: settings.stations?.kitchen ?? 15, barTarget: settings.stations?.bar ?? 8, varianceLimit: settings.varianceLimit ?? 10000, lowAt: settings.lowAt ?? 5 },
+    values: settings && { ...settings, tagline: settings.tagline ?? "", stationTablets: Boolean(settings.stationTablets), cash: !settings.cashless, edcs: (settings.edcs ?? []).join(", "), lockMinutes: settings.lockMinutes ?? 2, complimentBudget: settings.complimentBudget ?? 0, kitchenTarget: settings.stations?.kitchen ?? 15, barTarget: settings.stations?.bar ?? 8, varianceLimit: settings.varianceLimit ?? 10000, lowAt: settings.lowAt ?? 5 },
   });
   const errors = form.formState.errors;
   async function saveSettings(values: z.infer<typeof schema>) {
@@ -319,6 +325,13 @@ export default function SettingsPage() {
         </div>
         <Settings2 className="muted" />
       </div>
+      {/* Only here: the back-office tabs are missing on the cashier device while a shift is open, so say why. */}
+      {tillLocked && (can(user.role, "settings") || can(user.role, "catalog")) && (
+        <p className="callout">
+          <AlertTriangle size={16} />
+          <span>Restoran, menu, dan bahan tertutup selama sif terbuka di kasir ini. Tutup sif dulu, atau buka dari laptop.</span>
+        </p>
+      )}
       <div className="category-tabs">
         {[
           ...(settingsRole ? [["restaurant", "Restoran"]] : []),
@@ -369,6 +382,11 @@ export default function SettingsPage() {
                 <input {...form.register("name")} />
               </label>
             </div>
+            <label>
+              Keterangan di bawah nama (opsional)
+              <input placeholder="Contoh: Kopi & makan siang, lantai 2" maxLength={60} {...form.register("tagline")} />
+              <small className="muted">Tampil di sidebar di bawah nama restoran. Kosongkan bila tidak perlu.</small>
+            </label>
             <label>
               Alamat di struk
               <input {...form.register("address")} />
@@ -575,7 +593,7 @@ export default function SettingsPage() {
             <div className="admin-row" key={m.id}>
               <img
                 className="admin-menu-thumb"
-                src={m.photo || "/menu-placeholder.svg"}
+                src={menuPicture(m)}
                 alt=""
               />
               <div>
@@ -596,6 +614,17 @@ export default function SettingsPage() {
               >
                 Edit
               </Button>
+              {manager && (
+                <Button
+                  variant="ghost"
+                  aria-label={`Hapus ${m.name}`}
+                  title={sold.has(m.id) ? "Sudah terjual: nonaktifkan lewat Edit" : "Hapus menu ini"}
+                  disabled={sold.has(m.id)}
+                  onClick={() => setRemoving(m)}
+                >
+                  <Trash2 size={16} />
+                </Button>
+              )}
             </div>
           ))}
         </article>
@@ -991,7 +1020,7 @@ export default function SettingsPage() {
           <>
             <div className="menu-photo-editor">
               <img
-                src={item.photo || "/menu-placeholder.svg"}
+                src={menuPicture(item)}
                 alt="Pratinjau foto menu"
               />
               <div>
@@ -1563,6 +1592,13 @@ export default function SettingsPage() {
         >
           Simpan PIN
         </Button>
+      </Dialog>
+      <Dialog open={Boolean(removing)} onOpenChange={() => setRemoving(undefined)} title={`Hapus ${removing?.name ?? "menu"}?`} description="Untuk menu yang belum pernah terjual, misalnya hasil impor uji coba.">
+        <p>Menu, foto, resep, dan semua versinya dihapus dari semua perangkat. Tidak bisa dibatalkan. Menu yang sudah terjual tidak bisa dihapus; nonaktifkan lewat Edit agar struk dan laporannya tetap utuh.</p>
+        <div className="dialog-actions">
+          <Button variant="secondary" onClick={() => setRemoving(undefined)}>Batal</Button>
+          <Button variant="destructive" loading={busy} disabled={busy} onClick={() => removing && void act(async () => { await commands.removeMenu([removing.id]); setRemoving(undefined); }, `${removing?.name} dihapus`)}>Hapus menu</Button>
+        </div>
       </Dialog>
       <Dialog open={signout} onOpenChange={setSignout} title="Keluar akun?">
         <p>

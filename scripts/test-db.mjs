@@ -1013,6 +1013,23 @@ await test("A store that takes cash and EDC: cash needs no machine, card does, a
   await login(owner);
   await send(op("settings.update", { settings: current }));
 });
+await test("A menu item never sold can be removed for good; a sold one cannot, and devices drop it on their next pull", async () => {
+  await login(owner);
+  const tmp = { ...menu, id: "tmp-import", name: "TEST Kopi", price: 20000, recipe: [], modifiers: [], version: 1 };
+  await send(op("catalog.publish", { menu: [tmp], stock: [] }));
+  await login(cashier);
+  await assert.rejects(send(op("catalog.remove", { ids: ["tmp-import"] })), /Manager permission/);
+  await login(owner);
+  await assert.rejects(send(op("catalog.remove", { ids: ["nasi"] })), /Menu already sold/);
+  await assert.rejects(send(op("catalog.remove", { ids: ["nope"] })), /Unknown menu item/);
+  const before = new Date(Date.now() - 1000).toISOString();
+  await send(op("catalog.remove", { ids: ["tmp-import"] }));
+  assert.equal((await read("select count(*)::int n from public.catalog_versions where item_id='tmp-import'")).rows[0].n, 0);
+  const pulled = (await db.query("select public.pull($1,$2) as p", [before, device])).rows[0].p;
+  assert.ok(pulled.catalog && !pulled.catalog.menu.some((m) => m.id === "tmp-import") && pulled.catalog.menu.some((m) => m.id === "nasi"));
+  const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10), tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  assert.ok((await db.query("select public.audit_log($1,$2) as a", [today, tomorrow])).rows[0].a.some((r) => r.kind === "catalog.remove" && r.actorName === "Owner"));
+});
 await test("Only an owner or manager sets the store logo, and only a small WebP", async () => {
   const logo = "data:image/webp;base64,UklGRg==";
   await login(cashier);

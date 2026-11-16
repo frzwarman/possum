@@ -30,6 +30,8 @@ export interface Settings {
  // cashless = the store takes no cash (no float, no drawer count). edcs = the EDC machines card and QRIS go through;
  // each one's settlement slip is matched at close. A store may take cash, use EDCs, or both.
  cashless?: boolean; edcs?: string[]
+ // The owner's own line under the store name in the sidebar (a tagline, a branch); empty shows nothing.
+ tagline?: string
  // A shared till or station tablet locks after this many idle minutes (default 2, 0 = never).
  lockMinutes?: number
  // Staff meals and the owner's family: what they may take free each month, in rupiah. 0 or unset = no budget.
@@ -105,7 +107,7 @@ export interface CountSession {
 }
 export type OpKind =
  | 'shift.open' | 'shift.close' | 'shift.cash' | 'order.save' | 'order.prepare' | 'order.ready' | 'order.void' | 'order.voidline' | 'payment.record' | 'refund.record'
- | 'stock.record' | 'catalog.publish' | 'settings.update' | 'purchase.save' | 'purchase.receive' | 'purchase.cancel' | 'purchase.pay' | 'production.record' | 'supplier.save'
+ | 'stock.record' | 'catalog.publish' | 'catalog.remove' | 'settings.update' | 'purchase.save' | 'purchase.receive' | 'purchase.cancel' | 'purchase.pay' | 'production.record' | 'supplier.save'
  | 'salesorder.save' | 'salesorder.pay' | 'salesorder.deliver' | 'salesorder.cancel' | 'transfer.send' | 'transfer.receive' | 'transfer.cancel' | 'count.record' | 'count.submit'
 export interface Operation { id: string; kind: OpKind; actor: string; restaurantId: string; deviceId: string; occurredAt: string; payload: Record<string, unknown>; state: 'pending' | 'synced' | 'rejected'; attempts: number; nextAttempt: number; error?: string; receivedAt?: string }
 export interface PrintAttempt { id: string; orderId: string; kind: 'receipt' | 'kitchen' | 'test'; at: string; status: 'requested' | 'confirmed'; reprint: boolean; lineIds: string[] }

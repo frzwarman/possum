@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 280" role="img" aria-labelledby="title desc">
+  <title id="title">Gambar camilan standar</title>
+  <desc id="desc">Ilustrasi wadah kentang goreng</desc>
+  <rect width="420" height="280" fill="#F6F7F8"/>
+  <circle cx="335" cy="48" r="82" fill="#E3E5E8"/>
+  <g fill="#FFFFFF" stroke="#C9CCD1" stroke-width="6" stroke-linejoin="round">
+    <rect x="166" y="58" width="18" height="96" rx="5" transform="rotate(-12 175 106)"/>
+    <rect x="190" y="44" width="18" height="110" rx="5" transform="rotate(-4 199 99)"/>
+    <rect x="214" y="48" width="18" height="106" rx="5" transform="rotate(5 223 101)"/>
+    <rect x="238" y="62" width="18" height="92" rx="5" transform="rotate(14 247 108)"/>
+  </g>
+  <path d="M146 124c40 18 88 18 128 0l-18 108c-1 7-7 12-14 12h-64c-7 0-13-5-14-12l-18-108Z" fill="#FFFFFF" stroke="#9A9EA5" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M182 186h56" stroke="#EBEDEF" stroke-width="7" stroke-linecap="round"/>
+</svg>

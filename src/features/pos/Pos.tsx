@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Navigate } from "@tanstack/react-router";
+import { Link, Navigate } from "@tanstack/react-router";
 import { can } from "../../domain/permissions";
-import { Search, Plus, Minus, ShoppingBag, ArrowRight, ChefHat, Save, Wallet, Ellipsis, Percent, FilePlus, Check, CreditCard, QrCode, Printer } from "lucide-react";
+import { Search, Info, Plus, Minus, ShoppingBag, ArrowRight, ChefHat, Save, Wallet, Ellipsis, Percent, FilePlus, Check, CreditCard, QrCode, Printer } from "lucide-react";
 import { useApp } from "../../app/context";
 import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { Button } from "../../components/ui/button";
@@ -10,6 +10,7 @@ import { Money } from "../../components/ui/money";
 import { Dialog } from "../../components/ui/dialog";
 import { businessDay, complimentDiscount, tills, describeDelta, itemStation, menuType, nextPager, orderTotals, rupiah, search } from "../../domain/calculate";
 import { team } from "../auth/Login";
+import { menuPicture } from "../../lib/menu-photo";
 import type { Compliment, Draft, Line, MenuItem, MenuType, Modifier, Order } from "../../domain/types";
 import { uid } from "../../lib/db";
 import { Receipt } from "../orders/Receipt";
@@ -55,6 +56,9 @@ export default function Pos() {
   // With an EDC the receipt prints by itself (pilot PRD: no print switch).
   const { cash, edcs, edc: edcMode } = tills(settings);
   const viaEdc = method !== "cash" && edcMode;
+  // One device per store sells (kasir utama): receipts and shifts never clash. Any other device says why it cannot.
+  const notTill = !user.primary && !user.demo;
+  const pairedAs = user.mode === "office" ? "back office (laptop)" : user.mode === "station" ? "stasiun dapur/bar" : "belum dipasangkan";
   const staff = team().map((m) => m.name);
   const today = businessDay(new Date().toISOString(), settings?.timezone, settings?.cutoff);
   const pager = `Pager ${nextPager(orders.filter((o) => businessDay(o.createdAt, settings?.timezone, settings?.cutoff) === today).map((o) => o.label))}`;
@@ -298,7 +302,11 @@ export default function Pos() {
         <div className="bill-total"><strong>Total</strong><strong>{rupiah(total.total)}</strong></div>
         {invalid && <p className="error" role="alert">{invalid}</p>}
         {!shift ? (
-          <Button className="full" onClick={() => setOpeningDialog(true)} disabled={!user.primary}><Wallet size={18} /> Buka sif untuk melayani</Button>
+          notTill ? (
+            <p className="callout small"><span>Penjualan hanya di perangkat kasir utama. <Link to="/settings" className="text-button">Atur di Lainnya</Link></span></p>
+          ) : (
+            <Button className="full" onClick={() => setOpeningDialog(true)} disabled={!user.primary}><Wallet size={18} /> Buka sif untuk melayani</Button>
+          )
         ) : (
           <>
             {tablets && <Button variant="secondary" className="full station-btn" disabled={busy || !count || draft.lines.every((l) => l.prepared)} onClick={() => void prepare()}><ChefHat size={16} /> Ke stasiun</Button>}
@@ -323,6 +331,12 @@ export default function Pos() {
           </div>
           <span className={`badge ${shift ? "badge-green" : ""}`}><span className="status-dot" />{shift ? "Sif terbuka" : "Sif belum dibuka"}</span>
         </div>
+        {notTill && (
+          <p className="callout till-only" role="status">
+            <Info size={17} />
+            <span>Perangkat ini dipasangkan sebagai <strong>{pairedAs}</strong>, jadi menu hanya bisa dilihat. Penjualan berjalan di satu perangkat kasir utama per toko. Untuk berjualan di sini, pemilik atau manajer membuka <Link to="/settings" className="text-button">Lainnya → Printer &amp; perangkat</Link> lalu memilih "Jadikan perangkat ini kasir utama".</span>
+          </p>
+        )}
         <div className="search-box">
           <Search size={20} />
           <input aria-label="Cari menu" placeholder="Cari nama, alias, atau tag… salah ketik tidak apa-apa" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -342,9 +356,9 @@ export default function Pos() {
             : filtered.map((item) => {
                 const a = canMake(item);
                 return (
-                  <button key={item.id} className="menu-card" disabled={a.soldOut || !user.primary} onClick={() => add(item)}>
+                  <button key={item.id} className={`menu-card ${notTill && !a.soldOut ? "view-only" : ""}`} disabled={a.soldOut || !user.primary} onClick={() => add(item)}>
                     <div className="menu-photo">
-                      <img src={item.photo || "/menu-placeholder.svg"} alt="" loading="lazy" />
+                      <img src={menuPicture(item)} alt="" loading="lazy" />
                       {a.soldOut && <span className="sold-out-label">{item.soldOut ? "Habis" : "Habis · bahan kurang"}</span>}
                       {!a.soldOut && a.low && <span className="low-label">Sisa {a.left}</span>}
                     </div>
@@ -382,7 +396,7 @@ export default function Pos() {
       <Dialog open={Boolean(selected)} onOpenChange={() => setSelected(undefined)} title={selected?.name || "Pilih menu"} description="Pilihan, tambahan, dan catatan untuk stasiun">
         {selected && (
           <>
-            <img className="selected-menu-photo" src={selected.photo || "/menu-placeholder.svg"} alt="" />
+            <img className="selected-menu-photo" src={menuPicture(selected)} alt="" />
             <p className="item-price">{rupiah(optionPrice)}</p>
             {groupsOf(selected).map((g) => (
               <fieldset className="option-group" key={g.id}>

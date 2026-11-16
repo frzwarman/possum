@@ -179,6 +179,7 @@ export interface Database { public: { Tables: {
     settings_at: string
     logo: string | null
     logo_at: string | null
+    catalog_at: string | null
   }; Insert: never; Update: never; Relationships: [] }
   sales_orders: { Row: {
     restaurant_id: string

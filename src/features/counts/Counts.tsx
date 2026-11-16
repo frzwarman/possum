@@ -27,7 +27,7 @@ export default function Counts(){
  const due=countsDue(stockItems,movements,counts)
  const units=(s:StockItem)=>[{value:s.unit,label:s.unit},...(s.unit==='g'?[{value:'kg',label:'kg'}]:s.unit==='ml'?[{value:'l',label:'liter'}]:[]),...(s.packs??[]).map(p=>({value:p.name,label:`${p.name} (${quantity(p.qty)} ${s.unit})`}))]
  // CNT-1: a session lives in this device until it is submitted; every keystroke is saved so a pause costs nothing.
- async function start(){const lines=stockItems.filter(s=>!area||s.area===area).map(s=>({stockId:s.id}));if(!lines.length){setError('Tidak ada bahan di area ini');return}
+ async function start(){const lines=stockItems.filter(s=>!area||s.area===area).map(s=>({stockId:s.id}));if(!lines.length){setError(stockItems.length?'Tidak ada bahan di area ini':'Belum ada bahan untuk dihitung. Tambahkan dulu di Lainnya → Daftar bahan.');return}
   const c:CountSession={id:uid(),area:area||'Semua area',status:'draft',lines,startedBy:user.id,startedAt:new Date().toISOString()};await db.counts.put(c);resume(c)}
  function resume(c:CountSession){setSession(c);setTyped(Object.fromEntries(c.lines.map(l=>[l.stockId,{amount:l.counted===undefined?'':String(l.counted/1000),unit:item(l.stockId)?.unit??''}])))}
  async function type(stockId:string,amount:string,unit:string){if(!session)return;setTyped(t=>({...t,[stockId]:{amount,unit}}));const s=item(stockId);let counted:number|undefined

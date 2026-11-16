@@ -148,6 +148,13 @@ export class Commands {
   const expected=cash+(list?list.reduce((n,x)=>n+x.expected,0):0),variance=counted-expected
   const limit=settings?.varianceLimit??10000,ok=gap>limit?this.approver('variance',approval,{amount:gap}):{by:undefined,payload:{}}
   Object.assign(s,{status:'closed',counted,expected,variance,closedAt:op.occurredAt,...(list&&{settlements:list}),...(ok.by&&!can(this.user.role,'approve')&&{varianceApprovedBy:ok.by})});op.payload={counted,id:s.id,...(list&&{settlements:list.map(({edc,slip})=>({edc,slip}))}),...ok.payload};await this.db.shifts.put(s);return s})}
+ // A menu item never sold goes for good (a test import, a typo), versions and all; a sold one is only switched off so
+ // its receipts and reports keep it. The server checks again: a rejected removal would hold up the outbox, so ask first.
+ async removeMenu(ids:string[]){this.need('approve',true);if(!ids.length)throw new Error('Pilih menu yang dihapus')
+  const sold=(await this.db.orders.toArray()).some(o=>o.lines.some(l=>ids.includes(l.itemId)))||(await this.db.salesOrders.toArray()).some(o=>o.lines.some(l=>ids.includes(l.itemId)))
+  if(!sold&&!this.user.demo){const {count,error}=await supabase!.from('order_lines').select('item_id',{count:'exact',head:true}).in('item_id',ids);if(error)throw new Error(error.message);if(count)throw new Error('Menu ini sudah pernah terjual: nonaktifkan saja')}
+  if(sold)throw new Error('Menu ini sudah pernah terjual: nonaktifkan saja')
+  return this.run('catalog.remove',{ids},async()=>{await this.db.menu.bulkDelete(ids)})}
  async publish(menu:MenuItem[],stock:StockItem[],approval?:Approval){this.need('catalog',true)
   // "Tambah pilihan" starts a blank row, and older builds saved untouched ones; one of those anywhere
   // in the menu then blocked every later save. Nameless, free and untracked is not an add-on: drop it.
