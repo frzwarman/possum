@@ -145,3 +145,13 @@ describe('Takar columns',()=>{
   expect(stockImportSchema.safeParse(stockRow({pack_name:'karton'})).success).toBe(false) // a pack needs its size
  })
 })
+
+describe('demo stock sample', () => {
+  it('docs/samples/stock-import/bahan-demo.csv imports cleanly, with one item sold out and four below par', async () => {
+    const { readFileSync } = await import('node:fs')
+    const rows = parseCSV(readFileSync('docs/samples/stock-import/bahan-demo.csv', 'utf8')).map(r => stockImportSchema.parse(r))
+    expect(new Set(rows.map(r => r.name.toLowerCase())).size).toBe(rows.length)
+    expect(rows.filter(r => Number(r.quantity) === 0).map(r => r.name)).toEqual(['Roti burger'])
+    expect(rows.filter(r => Number(r.quantity) > 0 && Number(r.quantity) <= Number(r.threshold)).map(r => r.name)).toEqual(['Susu oat', 'Bubuk matcha', 'Lemon', 'Selada'])
+  })
+})

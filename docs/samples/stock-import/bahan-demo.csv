@@ -1,0 +1,37 @@
+name,unit,quantity,threshold,area,pack_name,pack_qty
+Biji kopi espresso,g,4200,2000,Bar,pak,1000
+Susu segar,ml,18000,12000,Kulkas bar,karton,12000
+Susu oat,ml,2400,6000,Kulkas bar,karton,12000
+Krim kental,ml,3000,2000,Kulkas bar,kotak,1000
+Bubuk matcha,g,180,300,Bar,pak,500
+Bubuk cokelat,g,1600,500,Bar,pak,1000
+Gula aren cair,ml,2100,1000,Bar,botol,1000
+Sirup karamel,ml,1400,750,Bar,botol,750
+Sirup vanila,ml,900,750,Bar,botol,750
+Garam laut,g,450,100,Bar,pak,250
+Teh hitam,g,380,200,Bar,pak,250
+Lemon,pcs,6,10,Kulkas bar,,
+Es batu,g,30000,10000,Freezer,karung,10000
+Air mineral 600 ml,pcs,48,24,Kulkas bar,dus,24
+Beras,g,18000,10000,Gudang kering,karung,25000
+Telur ayam,pcs,45,30,Kulkas dapur,tray,30
+Ayam fillet,g,4500,3000,Freezer,pak,1000
+Daging sapi giling,g,2600,2000,Freezer,pak,500
+Roti burger,pcs,0,12,Kulkas dapur,pak,6
+Tortilla,pcs,20,12,Kulkas dapur,pak,12
+Keju slice,pcs,40,24,Kulkas dapur,pak,24
+Selada,g,200,300,Kulkas dapur,,
+Tomat,g,900,500,Kulkas dapur,,
+Kentang beku,g,7500,5000,Freezer,pak,2500
+Tepung panko,g,1800,1000,Gudang kering,pak,1000
+Bumbu cajun,g,650,300,Gudang kering,pak,500
+Bawang putih,g,600,500,Dapur,pak,500
+Kecap manis,ml,1200,600,Dapur,botol,600
+Saus sambal,ml,2800,1000,Dapur,botol,1000
+Mayones,g,1900,1000,Kulkas dapur,pak,1000
+Minyak goreng,ml,9000,5000,Gudang kering,jeriken,5000
+Gelas plastik 16 oz,pcs,320,200,Gudang kering,pak,50
+Tutup gelas,pcs,300,200,Gudang kering,pak,50
+Sedotan,pcs,450,200,Gudang kering,pak,100
+Box makanan,pcs,60,50,Gudang kering,pak,50
+Paper bag,pcs,80,50,Gudang kering,pak,50

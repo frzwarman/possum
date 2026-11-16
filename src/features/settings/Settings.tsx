@@ -258,10 +258,15 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
     try {
       if (file.size > 200000) throw new Error("CSV maksimal 200 KB");
       const rows = parseCSV(await file.text());
+      // The columns say which template a file follows: a bahan file picked while "Menu" is selected switches over
+      // instead of failing every row on a missing price.
+      const head = Object.keys(rows[0] ?? {});
+      const type: typeof importType = head.includes("price") ? "menu" : head.includes("unit") && head.includes("quantity") ? "stock" : importType;
+      if (type !== importType) setImportType(type);
       const errs: string[] = [];
       rows.forEach((r, i) => {
         const parsed = (
-          importType === "menu" ? menuImportSchema : stockImportSchema
+          type === "menu" ? menuImportSchema : stockImportSchema
         ).safeParse(r);
         if (!parsed.success)
           errs.push(
@@ -272,7 +277,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
         errs.push("Nama duplikat dalam impor");
       if (
         rows.some((r) =>
-          (importType === "menu" ? menu : stockItems).some(
+          (type === "menu" ? menu : stockItems).some(
             (m) => m.name.toLowerCase() === r.name.toLowerCase(),
           ),
         )
@@ -1089,9 +1094,12 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             <input
               type="file"
               accept=".csv,text/csv"
-              onChange={(e) =>
-                e.target.files?.[0] && void readFile(e.target.files[0])
-              }
+              onChange={(e) => {
+                // Cleared after each pick, so choosing the same file again (after a fix or a type change) reads it again.
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void readFile(f);
+              }}
             />
           </label>
           {importErrors.map((e) => (
@@ -1414,7 +1422,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
           </div>
         </div>
       )}
-      <div className="account-footer">
+      {/* The account strip (PINs, Telegram, sign out) belongs to Lainnya, not to the /menu and /team pages. */}
+      {!only && <div className="account-footer">
         <span className="avatar">{initials(user.name)}</span>
         <div className="account-id">
           <strong>{user.name}</strong>
@@ -1463,7 +1472,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             <LogOut size={16} /> Keluar akun
           </Button>
         </div>
-      </div>
+      </div>}
       </>
       )}
       <Dialog

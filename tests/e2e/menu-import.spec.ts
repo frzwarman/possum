@@ -43,3 +43,15 @@ test('a CSV import with photos can be removed again, except an item that was sol
   await page.locator('.upload-label input[type=file]').setInputFiles(`${dir}/menu-import-test.csv`)
   await expect(page.getByText(/Nama sudah ada/)).toBeVisible()
 })
+
+test('a bahan CSV picked while "Menu" is selected is read as bahan, with its opening stock', async ({ page }) => {
+  await demo(page)
+  await go(page, 'Lainnya')
+  await page.getByRole('button', { name: 'Impor CSV' }).click()
+  await page.locator('.upload-label input[type=file]').setInputFiles({ name: 'bahan.csv', mimeType: 'text/csv', buffer: Buffer.from('name,unit,quantity,threshold,area,pack_name,pack_qty\nSirup hazelnut,ml,1500,750,Bar,botol,750\nRoti burger,pcs,0,12,Kulkas dapur,pak,6\n') })
+  await expect(page.getByRole('combobox', { name: /Jenis data/ })).toContainText('Bahan & saldo awal')
+  await expect(page.getByText('2 baris diperiksa')).toBeVisible()
+  await page.getByRole('button', { name: 'Konfirmasi impor 2 baris' }).click()
+  await page.goto('/inventory')
+  await expect(page.locator('main').getByText('Sirup hazelnut').first()).toBeVisible()
+})

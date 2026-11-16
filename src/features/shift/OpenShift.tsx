@@ -44,8 +44,9 @@ export function OpenShift(){
     <div className="ready-list">
      <Status title="Printer struk" text={<>Dicetak lewat browser · <Link to="/settings" className="text-button">tes cetak</Link></>}/>
      <Status ok={online&&!unsent} title="Internet" text={!online?'Offline: membuka sif perlu internet':unsent?`${unsent} operasi menunggu terkirim`:'Tersambung dan tersinkron'}/>
-     <Status ok={!soldOut.length} title="Menu" text={soldOut.length?`${list(soldOut)} habis`:'Semua menu tersedia'}/>
-     <Status ok={!low} title="Stok" text={low?<>{low} bahan di bawah par · <Link to="/inventory" className="text-button">lihat</Link></>:'Semua bahan di atas par'}/>
+     {/* An empty list is not "all good": with nothing set up yet the row says so, in the neutral style. */}
+     <Status ok={menu.some(m=>m.active)?!soldOut.length:undefined} title="Menu" text={!menu.some(m=>m.active)?'Belum ada menu aktif':soldOut.length?`${list(soldOut)} habis`:'Semua menu tersedia'}/>
+     <Status ok={stockItems.length?!low:undefined} title="Stok" text={!stockItems.length?'Belum ada bahan tercatat':low?<>{low} bahan di bawah par · <Link to="/inventory" className="text-button">lihat</Link></>:'Semua bahan di atas par'}/>
     </div>
    </article>
   </div>

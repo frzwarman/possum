@@ -19,7 +19,7 @@
 .audit-filters .pill-tabs>button.active small{color:color-mix(in srgb,#fff 60%,var(--ink))}
 .audit-range{display:flex;align-items:center;gap:8px;margin-left:auto;font-size:13px;color:var(--text-secondary)}
 .audit-range input{height:40px;min-height:40px;padding:0 10px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);font-size:14px;color:var(--ink)}
-.audit-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:stretch}
+.audit-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:start}
 .audit-grid>.panel{margin:0;padding:20px}
 .audit-log{display:flex;flex-direction:column;min-width:0}
 .audit-log>p.muted{margin:0}
@@ -45,7 +45,8 @@
 .audit-note{display:flex;align-items:flex-start;gap:6px;margin:auto 0 0;padding-top:16px;font-size:12px;line-height:16px;color:var(--text-secondary)}
 .audit-note svg{flex:0 0 auto;margin-top:1px}
 /* The picked entry: chip, 20px title, label/value pairs, and a grey box with what changed. */
-.audit-detail{display:flex;flex-direction:column;min-width:0}
+/* As tall as its content, and it stays in view while a long log scrolls. */
+.audit-detail{display:flex;flex-direction:column;min-width:0;position:sticky;top:24px}
 .audit-entry{display:flex;flex-direction:column;align-items:flex-start;min-width:0}
 .audit-entry>.dot-chip{padding:4px 8px;gap:5px;line-height:16px}
 .audit-entry h2{margin:14px 0;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-.4px;overflow-wrap:anywhere}
