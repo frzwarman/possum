@@ -377,7 +377,7 @@ input[type=checkbox]{accent-color:var(--ink)}
 .receipt-paper,.receipt-paper:has(.receipt){border:1px solid var(--border);border-radius:12px;box-shadow:none;padding:24px 22px;background:#fff}.receipt-paper:has(.receipt)::after{display:none}
 @media print{.receipt,.receipt-head p,.receipt-meta dt,.receipt-meta dd,.receipt-row,.receipt-row>span:last-child,.receipt-name small,.receipt-pager small,.receipt-thanks,.receipt-brand,.receipt-id,.receipt-flag{color:#000}.receipt-pager,.receipt-items,.receipt-sums,.receipt-foot{border-color:#000}.receipt-paper{border:0;border-radius:0;padding:2mm}}
 /* Cashless pilot: compliment choice on the cart, filter chips on Orders and the close, EDC settlement rows. */
-.compliment-panel{display:grid;gap:8px;margin-top:4px}
+.compliment-panel{display:grid;gap:8px;margin-top:16px}
 .choice-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .choice-cards button{display:grid;gap:2px;text-align:left;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-md,10px);background:var(--surface);color:var(--text);cursor:pointer}
 .choice-cards button small{color:var(--text-secondary);font-size:12px}
@@ -392,3 +392,29 @@ button.chip.active{background:var(--ink);color:var(--on-ink);border-color:var(--
 .settle-row .match{font-weight:600;color:var(--good-fg)}.settle-row.short .match{color:var(--critical-fg)}
 .budget-track{height:8px;border-radius:999px;background:var(--level-track);overflow:hidden}.budget-track i{display:block;height:100%;background:var(--lime)}
 .line-voided{text-decoration:line-through;color:var(--text-disabled)}
+.mode-switch>button{white-space:nowrap;padding:0 6px;font-size:12px}
+/* Option sheet: radios inherited the full-width text-input box (only checkboxes were exempt), squeezing the option
+   name into a narrow column. Both controls are a fixed 20px tap-mark inside a 44px+ row; the price never wraps. */
+input[type=radio],input[type=checkbox]{width:20px;height:20px;min-height:20px;padding:0;margin:0;flex-shrink:0;accent-color:var(--ink)}
+.option-group .check-row,.modifier-list .check-row{gap:12px;padding:8px 0;border-top:1px solid var(--border)}
+.option-group legend+.check-row{border-top:0}
+.option-group .check-row span,.modifier-list .check-row span{min-width:0;line-height:1.45}
+.option-group .check-row span small,.modifier-list .check-row span small{font-size:12px;color:var(--text-secondary);margin-top:2px}
+.option-group .check-row>strong,.modifier-list .check-row>strong{white-space:nowrap;font-size:13px}
+/* Cart header menu (Figma C2 "⋯"): keep a tab open, a manager's discount, start the next order. */
+.cart-more{position:relative}
+.cart-more>.cart-glyph{border:0;cursor:pointer;width:40px;height:40px}
+.cart-more>.cart-glyph[aria-expanded=true]{background:var(--bg-muted);color:var(--ink)}
+.cart-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:210px;display:grid;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 30px color-mix(in srgb,var(--ink) 12%,transparent)}
+.cart-menu>button{display:flex;align-items:center;gap:10px;min-height:44px;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:var(--ink);font-size:13px;text-align:left}
+.cart-menu>button:hover:not(:disabled){background:var(--bg-subtle)}
+.checkout-btn{justify-content:center}
+.station-btn{margin-bottom:8px}
+.cart-more>.cart-glyph{display:grid}
+/* The phone cart drops the heading (the dialog has its own title) but keeps the order menu. */
+.mobile-cart .cart-heading{display:flex;justify-content:flex-end;padding:0 22px}
+.mobile-cart .cart-heading>div:first-child{display:none}
+/* Cart (Figma C2): pager and the guest's name side by side; option prices under the item name. */
+.order-who{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:10px}
+.order-who .table-label{margin:14px 0 6px}
+.line-options{font-size:12px;line-height:1.5;color:var(--text-secondary);margin-top:2px}

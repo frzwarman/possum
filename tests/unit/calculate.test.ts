@@ -305,7 +305,7 @@ describe('expiring() allocates the balance to the newest batches first',()=>{
   expect(expiring([item],[...batches,{id:'u',stockId:'sambal',qty:-40_000,kind:'preparation',at:h(0.1)}],2)).toEqual([])
  })
 })
-import { complimentDiscount, isSale, itemsLost, orderTotals, settlementGap, settlements } from '../../src/domain/calculate'
+import { complimentDiscount, isSale, itemsLost, orderTotals, settlementGap, settlements, tills } from '../../src/domain/calculate'
 describe('compliments',()=>{
  const rice=line({id:'r',price:50_000,modifiers:[mod({price:5_000})]}),matcha=line({id:'m',name:'Ice Matcha',price:55_000,station:'bar'})
  const drink=(l:Line)=>l.station==='bar'
@@ -334,6 +334,13 @@ describe('settlements()',()=>{
  })
  it('a short machine and an over machine do not cancel out',()=>{
   expect(settlementGap([{edc:'BCA',expected:100,slip:125},{edc:'BRI',expected:100,slip:75}])).toBe(50)
+ })
+})
+describe('tills()',()=>{
+ it('a store may take cash, use EDC machines, or both; a cashless store without a list uses the pilot three',()=>{
+  expect(tills(undefined)).toEqual({cash:true,edcs:[],edc:false})
+  expect(tills({edcs:['BCA']})).toEqual({cash:true,edcs:['BCA'],edc:true})
+  expect(tills({cashless:true})).toEqual({cash:false,edcs:['BCA','BRI','Mandiri'],edc:true})
  })
 })
 describe('itemsLost()',()=>{

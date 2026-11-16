@@ -960,6 +960,7 @@ await test("Cashless: card or QRIS on a named EDC, compliments priced by rule, a
   const staff = (discount, total) => build([ln(nasiV2, 2, 35000), ln(latte, 2, 31000)], { subtotal: 66000, discount, service: 0, tax: 0, total }, { mode: "compliment", compliment: { kind: "staff", who: "Raka" }, discount, discountReason: "Staff meal · Raka" });
   await assert.rejects(send(staff(0, 66000)), /Invalid compliment/);
   await assert.rejects(send(build([ln(nasiV2, 2, 35000)], { subtotal: 35000, discount: 0, service: 0, tax: 3500, total: 38500 }, { compliment: { kind: "staff", who: "Raka" } })), /Invalid compliment/);
+  await assert.rejects(send(build([ln(nasiV2, 2, 35000)], { subtotal: 35000, discount: 0, service: 0, tax: 3500, total: 38500 }, { name: "x".repeat(61) })), /Invalid order/);
   const b = await made(staff(48500, 17500));
   await send(op("payment.record", { id: b, expectedRevision: 2, method: "qris", tendered: 0, verified: true, edc: "BRI" }));
   // Owner's family: free, no payment.
@@ -967,7 +968,7 @@ await test("Cashless: card or QRIS on a named EDC, compliments priced by rule, a
   await assert.rejects(send(op("payment.record", { id: c, expectedRevision: 2, method: "card", tendered: 0, verified: true, edc: "BCA" })), /Invalid payment method/);
   await send(op("payment.record", { id: c, expectedRevision: 2, method: "none", tendered: 0, verified: true }));
   // An open order with a voided line still takes more lines; the voided one rides along unchanged.
-  const d = await made(build([ln(nasiV2, 2, 35000), ln(latte, 2, 31000)], { subtotal: 66000, discount: 0, service: 0, tax: 6600, total: 72600 }));
+  const d = await made(build([ln(nasiV2, 2, 35000), ln(latte, 2, 31000)], { subtotal: 66000, discount: 0, service: 0, tax: 6600, total: 72600 }, { name: "Indra" }));
   const dLatte = (await snap(d)).snapshot.lines.find((l) => l.itemId === "latte").id;
   await send(op("order.voidline", { id: d, lineId: dLatte, reason: "Tumpah", expectedRevision: 2, approval: (await approve(owner, "482915", "void", d)).id }));
   o = await snap(d);
@@ -989,6 +990,27 @@ await test("Cashless: card or QRIS on a named EDC, compliments priced by rule, a
   const report = (await db.query("select public.sales_report($1,$2) as r", [today, tomorrow])).rows[0].r;
   assert.deepEqual([report.compliments, report.edcs.BRI, report.methods.none], [83500, 17500, 0]);
   assert.ok((await db.query("select public.audit_log($1,$2) as a", [today, tomorrow])).rows[0].a.some((r) => r.kind === "order.voidline" && r.approvedBy === "Owner"));
+  await send(op("settings.update", { settings: current }));
+});
+await test("A store that takes cash and EDC: cash needs no machine, card does, and the close counts drawer and slips together", async () => {
+  await login(owner);
+  const current = (await read("select settings from public.restaurants where id=$1", [rid])).rows[0].settings;
+  const cfg = { ...current, cashless: false, edcs: ["BCA"], lockMinutes: 5 };
+  await assert.rejects(send(op("settings.update", { settings: { ...cfg, lockMinutes: 500 } })), /Invalid restaurant settings/);
+  await send(op("settings.update", { settings: cfg }));
+  await login(cashier);
+  const sM = randomUUID();
+  await send(op("shift.open", { id: sM, opening: 100000 }));
+  const sell = async () => { const o = op("order.save", {}); o.payload = { order: { id: randomUUID(), restaurantId: rid, shiftId: sM, actor, cashier: "Kasir", revision: 1, receiptId: "MJ-" + o.id.toUpperCase(), label: "Pager 3", mode: "dinein", status: "open", prep: "new", discount: 0, discountReason: "", settings: cfg, createdAt: o.occurredAt, updatedAt: o.occurredAt, lines: [{ id: randomUUID(), itemId: "nasi", name: "Nasi uji", price: 35000, qty: 1, modifiers: [], note: "", recipe: menu.recipe, catalogVersion: 2, prepared: false, cancelled: false }], totals: { subtotal: 35000, discount: 0, service: 0, tax: 0, total: 35000 } }, expectedRevision: 0 }; await send(o); const id = o.payload.order.id; await send(op("order.prepare", { id, expectedRevision: 1, lineIds: o.payload.order.lines.map((l) => l.id) })); return id; };
+  const a = await sell(), b = await sell();
+  await assert.rejects(send(op("payment.record", { id: a, expectedRevision: 2, method: "card", tendered: 0, verified: true })), /EDC required/);
+  await send(op("payment.record", { id: a, expectedRevision: 2, method: "card", tendered: 0, verified: true, edc: "BCA" }));
+  await send(op("payment.record", { id: b, expectedRevision: 2, method: "cash", tendered: 50000, verified: true }));
+  // Drawer 129.000 (6.000 short), BCA slip 41.000 (6.000 over): a 12.000 gap, never netted to zero.
+  await assert.rejects(send(op("shift.close", { id: sM, counted: 170000, settlements: [{ edc: "BCA", slip: 41000 }] })), /Manager approval required/);
+  await send(op("shift.close", { id: sM, counted: 170000, settlements: [{ edc: "BCA", slip: 41000 }], approval: (await approve(owner, "482915", "variance", null, 12000)).id }));
+  assert.deepEqual((await read("select counted::int as c,expected::int as e,variance::int as v from public.shifts where id=$1", [sM])).rows, [{ c: 170000, e: 170000, v: 0 }]);
+  await login(owner);
   await send(op("settings.update", { settings: current }));
 });
 // Independent database restoration, never a live environment.

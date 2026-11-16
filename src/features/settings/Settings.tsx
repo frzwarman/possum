@@ -62,8 +62,10 @@ const schema = z.object({
   printableWidth: z.coerce.number<number>().min(32).max(76),
   // Takar: station targets in minutes, the cash gap a cashier may close without a PIN, "running low" portions.
   stationTablets: z.boolean(),
-  // Cashless pilot: card or QRIS on these EDC machines (comma separated), and the monthly compliment budget.
-  cashless: z.boolean(),
+  // Payment paths: cash in a drawer, EDC machines for card and QRIS (comma separated), or both. Plus the monthly
+  // compliment budget and the idle-lock minutes.
+  cash: z.boolean(),
+  lockMinutes: z.coerce.number<number>().int().min(0).max(120),
   edcs: z.string().refine((v) => { const list = v.split(",").map((x) => x.trim()).filter(Boolean); return list.length <= 10 && list.every((x) => x.length <= 30); }, "Maksimal 10 EDC, nama maksimal 30 karakter"),
   complimentBudget: z.coerce.number<number>().int().min(0).max(1000000000),
   kitchenTarget: z.coerce.number<number>().int().min(1).max(600),
@@ -123,7 +125,7 @@ export default function SettingsPage() {
   const [pinAgain, setPinAgain] = useState("");
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
-    values: settings && { ...settings, stationTablets: Boolean(settings.stationTablets), cashless: Boolean(settings.cashless), edcs: (settings.edcs ?? ["BCA", "BRI", "Mandiri"]).join(", "), complimentBudget: settings.complimentBudget ?? 0, kitchenTarget: settings.stations?.kitchen ?? 15, barTarget: settings.stations?.bar ?? 8, varianceLimit: settings.varianceLimit ?? 10000, lowAt: settings.lowAt ?? 5 },
+    values: settings && { ...settings, stationTablets: Boolean(settings.stationTablets), cash: !settings.cashless, edcs: (settings.edcs ?? []).join(", "), lockMinutes: settings.lockMinutes ?? 2, complimentBudget: settings.complimentBudget ?? 0, kitchenTarget: settings.stations?.kitchen ?? 15, barTarget: settings.stations?.bar ?? 8, varianceLimit: settings.varianceLimit ?? 10000, lowAt: settings.lowAt ?? 5 },
   });
   const errors = form.formState.errors;
   async function saveSettings(values: z.infer<typeof schema>) {
@@ -132,14 +134,14 @@ export default function SettingsPage() {
       setError("Lebar area cetak harus lebih kecil dari lebar kertas");
       return;
     }
-    const { kitchenTarget, barTarget, varianceLimit, lowAt, stationTablets, cashless, edcs, complimentBudget, ...rest } = values;
+    const { kitchenTarget, barTarget, varianceLimit, lowAt, stationTablets, cash, edcs, complimentBudget, lockMinutes, ...rest } = values;
     const machines = words(edcs);
-    if (cashless && !machines.length) {
-      setError("Tanpa tunai perlu minimal satu mesin EDC");
+    if (!cash && !machines.length) {
+      setError("Tanpa tunai, isi minimal satu mesin EDC untuk kartu dan QRIS");
       return;
     }
     await act(
-      () => commands.settings({ ...settings, ...rest, receiptWidth: width, stations: { kitchen: kitchenTarget, bar: barTarget }, varianceLimit, lowAt, stationTablets, cashless, edcs: machines, complimentBudget }),
+      () => commands.settings({ ...settings, ...rest, receiptWidth: width, stations: { kitchen: kitchenTarget, bar: barTarget }, varianceLimit, lowAt, stationTablets, cashless: !cash, edcs: machines, complimentBudget, lockMinutes }),
       "Pengaturan tersimpan",
     );
   }
@@ -406,13 +408,14 @@ export default function SettingsPage() {
               Tablet dapur & bar menerima tiket (tanpa ini kasir memberi tahu, dan stok berkurang saat bayar)
             </label>
             <label className="inline-check">
-              <input type="checkbox" {...form.register("cashless")} />
-              Tanpa tunai: kartu atau QRIS di mesin EDC, tutup sif mencocokkan slip settlement tiap EDC
+              <input type="checkbox" {...form.register("cash")} />
+              Terima tunai: modal kas saat buka sif, laci dihitung saat tutup sif
             </label>
             <div className="form-grid">
               <label>
-                Mesin EDC (pisahkan dengan koma)
+                Mesin EDC untuk kartu & QRIS
                 <input placeholder="BCA, BRI, Mandiri" {...form.register("edcs")} />
+                <small className="muted">Pisahkan dengan koma. Slip settlement tiap EDC dicocokkan saat tutup sif. Kosongkan bila tanpa EDC.</small>
               </label>
               <label>
                 Anggaran compliment per bulan (Rp)
@@ -427,6 +430,11 @@ export default function SettingsPage() {
               <label>
                 "Hampir habis" di bawah (porsi)
                 <input type="number" {...form.register("lowAt")} />
+              </label>
+              <label>
+                Kunci layar setelah (menit)
+                <input type="number" min={0} max={120} {...form.register("lockMinutes")} />
+                <small className="muted">0 = tidak pernah dikunci</small>
               </label>
             </div>
             <p className="small muted">

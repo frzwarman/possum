@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Navigate } from "@tanstack/react-router";
 import { can } from "../../domain/permissions";
-import { Search, Star, Plus, Minus, ShoppingBag, Utensils, ArrowRight, ChefHat, Save, Trash2, NotebookPen, Wallet, Check, Gift, CreditCard, QrCode, Printer } from "lucide-react";
+import { Search, Star, Plus, Minus, ShoppingBag, ArrowRight, ChefHat, Save, NotebookPen, Wallet, Ellipsis, Percent, FilePlus, Check, CreditCard, QrCode, Printer } from "lucide-react";
 import { useApp } from "../../app/context";
 import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
 import { Dialog } from "../../components/ui/dialog";
-import { businessDay, complimentDiscount, describeDelta, itemStation, menuType, nextPager, orderTotals, rupiah, search, typeLabel } from "../../domain/calculate";
+import { businessDay, complimentDiscount, tills, describeDelta, itemStation, menuType, nextPager, orderTotals, rupiah, search, typeLabel } from "../../domain/calculate";
 import { team } from "../auth/Login";
 import type { Compliment, Draft, Line, MenuItem, MenuType, Modifier, Order } from "../../domain/types";
 import { uid } from "../../lib/db";
@@ -41,12 +41,20 @@ export default function Pos() {
   const [discountValue, setDiscountValue] = useState("0");
   const [discountReason, setDiscountReason] = useState("");
   const [ask, setAsk] = useState<ApprovalRequest>();
-  const [saving, setSaving] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  // The order menu closes on any tap outside it, like a native menu.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const away = (e: PointerEvent) => { if (!(e.target as Element).closest?.(".cart-more")) setMoreOpen(false); };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [moreOpen]);
   if (!can(user.role, "sell")) return <Navigate to="/station" />;
   const tablets = Boolean(settings?.stationTablets);
-  // Ziggy is cashless: card or QRIS on an EDC, no float, the receipt always prints.
-  const cashless = Boolean(settings?.cashless);
-  const edcs = settings?.edcs?.length ? settings.edcs : ["BCA", "BRI", "Mandiri"];
+  // The store's payment paths: cash (a float and a drawer), EDC machines for card and QRIS, or both.
+  // With an EDC the receipt prints by itself (pilot PRD: no print switch).
+  const { cash, edcs, edc: edcMode } = tills(settings);
+  const viaEdc = method !== "cash" && edcMode;
   const staff = team().map((m) => m.name);
   const today = businessDay(new Date().toISOString(), settings?.timezone, settings?.cutoff);
   const pager = `Pager ${nextPager(orders.filter((o) => businessDay(o.createdAt, settings?.timezone, settings?.cutoff) === today).map((o) => o.label))}`;
@@ -77,16 +85,15 @@ export default function Pos() {
     // State first, storage second: a quick second tap or keystroke must see this draft, not the
     // one from before IndexedDB answered.
     setDraft(next);
-    setSaving(true);
     try {
       await db.drafts.put(next);
     } catch {
       setError("Draf gagal disimpan. Penyimpanan perangkat penuh atau tidak tersedia. Ekspor data di Lainnya.");
-    } finally {
-      setSaving(false);
     }
   }
   const comp = draft.mode === "compliment" ? draft.compliment : undefined;
+  const saved_ = orders.find((o) => o.id === draft.orderId);
+  const clock = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { timeZone: settings?.timezone, hour: "2-digit", minute: "2-digit" });
   const drink = (l: Line) => { const m = menu.find((x) => x.id === l.itemId); return m ? menuType(m) === "beverage" : l.station === "bar"; };
   const setCompliment = (c: Compliment) => void update({ ...draft, mode: "compliment", compliment: c });
   let total = { subtotal: 0, discount: 0, service: 0, tax: 0, total: 0 };
@@ -121,8 +128,14 @@ export default function Pos() {
   async function addLine(item: MenuItem, ids: string[], notes: string) {
     // A base choice (Regular, Susu segar, Normal) changes nothing and stays off the ticket.
     const picked = item.modifiers.filter((m) => ids.includes(m.id) && (m.price || m.recipe.length));
-    const line: Line = { id: uid(), itemId: item.id, name: item.name, price: item.price, qty: 1, modifiers: picked, note: notes, recipe: item.recipe, catalogVersion: item.version, prepared: false, cancelled: false, station: itemStation(item) };
-    await update({ ...draft, lines: [...draft.lines, line] });
+    // The same item with the same options and note, not yet sent, is one line with a higher quantity.
+    const key = (ms: Modifier[]) => ms.map((m) => m.id).sort().join("|");
+    const same = draft.lines.find((l) => !l.prepared && !l.cancelled && l.itemId === item.id && l.catalogVersion === item.version && l.note === notes && key(l.modifiers) === key(picked) && l.qty < 999);
+    if (same) await update({ ...draft, lines: draft.lines.map((l) => (l === same ? { ...l, qty: l.qty + 1 } : l)) });
+    else {
+      const line: Line = { id: uid(), itemId: item.id, name: item.name, price: item.price, qty: 1, modifiers: picked, note: notes, recipe: item.recipe, catalogVersion: item.version, prepared: false, cancelled: false, station: itemStation(item) };
+      await update({ ...draft, lines: [...draft.lines, line] });
+    }
     setSelected(undefined);
   }
   async function save() {
@@ -169,15 +182,15 @@ export default function Pos() {
       }
       setCheckout(o);
       setReceived(String(o.totals.total));
-      setMethod(cashless ? "card" : "cash");
-      setEdc(cashless ? edcs[0] : "");
+      setMethod(cash ? "cash" : "card");
+      setEdc(edcs[0] ?? "");
       setApprovalCode("");
-      setVerified(cashless);
+      setVerified(edcMode);
     }
   }
   async function pay() {
     if (!checkout) return;
-    const paid = await act(() => commands.pay(checkout.id, method, Number(received), verified, { edc: method === "cash" ? undefined : edc, approvalCode }), "Pembayaran tersimpan di perangkat");
+    const paid = await act(() => commands.pay(checkout.id, method, Number(received), verified, { edc: viaEdc ? edc : undefined, approvalCode: viaEdc ? approvalCode : undefined }), "Pembayaran tersimpan di perangkat");
     if (paid) {
       setCheckout(undefined);
       await update(fresh(pager));
@@ -192,16 +205,27 @@ export default function Pos() {
     <>
       <div className="cart-heading">
         <div>
-          <h2>Pesanan saat ini</h2>
-          <span className="muted small">{draft.orderId ? "Pesanan tersimpan" : "Pesanan baru"} · {count} item</span>
+          <h2>{draft.orderId ? "Pesanan tersimpan" : "Pesanan baru"}</h2>
+          <span className="muted small">{saved_ ? `#${saved_.receiptId.slice(-6).toUpperCase()}, ${saved_.cashier}, ${clock(saved_.createdAt)}` : `${user.name}, ${clock(new Date().toISOString())}`}</span>
         </div>
-        <span className="cart-glyph"><NotebookPen size={21} /></span>
+        {/* Figma C2: the footer carries only the bill and one pay button; keeping a tab open, a manager's discount
+            and starting the next order live behind this menu. */}
+        <div className="cart-more" onKeyDown={(e) => { if (e.key === "Escape") setMoreOpen(false); }}>
+          <button className="cart-glyph" aria-label="Opsi pesanan" aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)}><Ellipsis size={20} /></button>
+          {moreOpen && (
+            <div className="cart-menu">
+              <button disabled={busy || !count || !shift} onClick={() => { setMoreOpen(false); void save(); }}><Save size={16} /> Simpan pesanan</button>
+              {!comp && <button onClick={() => { setMoreOpen(false); setDiscountValue(String(draft.discount)); setDiscountReason(draft.discountReason); setDiscountDialog(true); }}><Percent size={16} /> Tambah diskon</button>}
+              {draft.orderId && <button disabled={busy} onClick={() => { setMoreOpen(false); void newOrder(); }}><FilePlus size={16} /> Mulai pesanan baru</button>}
+            </div>
+          )}
+        </div>
       </div>
       <div className="cart-body">
-        <div className="segmented">
-          <button className={draft.mode === "dinein" ? "active" : ""} onClick={() => void update({ ...draft, mode: "dinein", compliment: undefined })}><Utensils size={16} /> Makan di sini</button>
-          <button className={draft.mode === "takeaway" ? "active" : ""} onClick={() => void update({ ...draft, mode: "takeaway", compliment: undefined })}><ShoppingBag size={16} /> Bungkus</button>
-          <button className={draft.mode === "compliment" ? "active" : ""} onClick={() => setCompliment(draft.compliment ?? { kind: "staff", who: "" })}><Gift size={16} /> Compliment</button>
+        <div className="segmented mode-switch">
+          <button className={draft.mode === "dinein" ? "active" : ""} onClick={() => void update({ ...draft, mode: "dinein", compliment: undefined })}>Makan di sini</button>
+          <button className={draft.mode === "takeaway" ? "active" : ""} onClick={() => void update({ ...draft, mode: "takeaway", compliment: undefined })}>Bungkus</button>
+          <button className={draft.mode === "compliment" ? "active" : ""} onClick={() => setCompliment(draft.compliment ?? { kind: "staff", who: "" })}>Compliment</button>
         </div>
         {comp && (
           <div className="compliment-panel">
@@ -217,10 +241,17 @@ export default function Pos() {
             {comp.kind === "staff" && staff.length > 0 && <div className="chip-row">{staff.map((n) => <button key={n} className={comp.who === n ? "chip active" : "chip"} onClick={() => setCompliment({ ...comp, who: n })}>{n}</button>)}</div>}
           </div>
         )}
-        <label className="table-label">
-          Nomor pager / meja
-          <input placeholder="Pager 12" maxLength={100} value={draft.label} onChange={(e) => void update({ ...draft, label: e.target.value })} />
-        </label>
+        {/* Figma C2: the pager the guest takes, and their name if they give one, side by side. */}
+        <div className="order-who">
+          <label className="table-label">
+            Pager
+            <input aria-label="Nomor pager / meja" placeholder="12" maxLength={100} value={draft.label} onChange={(e) => void update({ ...draft, label: e.target.value })} />
+          </label>
+          <label className="table-label">
+            Nama (opsional)
+            <input placeholder="Nama tamu" maxLength={60} value={draft.name ?? ""} onChange={(e) => void update({ ...draft, name: e.target.value })} />
+          </label>
+        </div>
         <div className="cart-lines">
           {!count ? (
             <div className="cart-empty">
@@ -235,7 +266,7 @@ export default function Pos() {
                   <strong>{l.name}</strong>
                   <span>{rupiah((l.price + l.modifiers.reduce((n, m) => n + m.price, 0)) * l.qty)}</span>
                 </div>
-                {l.modifiers.length > 0 && <p className="small muted">{l.modifiers.map((m) => m.name).join(", ")}</p>}
+                {l.modifiers.length > 0 && <p className="line-options">{l.modifiers.map((m) => (m.price ? `${m.name} +${rupiah(m.price)}` : m.name)).join(", ")}</p>}
                 {l.note && <p className="line-note">{l.note}</p>}
                 <div className="line-bottom">
                   {/* The station badge tells the cashier where the line is made, even before it is sent. */}
@@ -244,13 +275,10 @@ export default function Pos() {
                     <span className={`badge badge-${l.station ?? "kitchen"}`}><ChefHat size={13} /> Dikirim · {(l.station ?? "kitchen") === "bar" ? "bar" : "dapur"} · {l.qty}×</span>
                   ) : (
                     <div className="quantity-control">
-                      <button aria-label={`Kurangi ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.flatMap((x) => (x.id !== l.id ? [x] : x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : [])) })}><Minus size={15} /></button>
+                      <button aria-label={`${l.qty > 1 ? "Kurangi" : "Hapus"} ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.flatMap((x) => (x.id !== l.id ? [x] : x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : [])) })}><Minus size={15} /></button>
                       <span>{l.qty}</span>
                       <button aria-label={`Tambah ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.map((x) => (x.id === l.id ? { ...x, qty: x.qty + 1 } : x)) })}><Plus size={15} /></button>
                     </div>
-                  )}
-                  {!l.prepared && (
-                    <button className="delete-line" aria-label={`Hapus ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.filter((x) => x.id !== l.id) })}><Trash2 size={16} /></button>
                   )}
                 </div>
               </div>
@@ -262,34 +290,24 @@ export default function Pos() {
         <div className="bill-row"><span>Subtotal</span><span>{rupiah(total.subtotal)}</span></div>
         {comp ? (
           <div className="bill-row"><span>{comp.kind === "staff" ? "Potongan staff meal" : "Compliment keluarga pemilik"}</span><span>−{rupiah(total.discount)}</span></div>
-        ) : (
-          <div className="bill-row">
-            <button className="text-button" onClick={() => { setDiscountValue(String(draft.discount)); setDiscountReason(draft.discountReason); setDiscountDialog(true); }}>Tambah diskon</button>
-            <span>−{rupiah(draft.discount)}</span>
-          </div>
+        ) : draft.discount > 0 && (
+          <div className="bill-row"><span>Diskon · {draft.discountReason}</span><span>−{rupiah(draft.discount)}</span></div>
         )}
-        {total.service > 0 && <div className="bill-row"><span>Layanan</span><span>{rupiah(total.service)}</span></div>}
-        {total.tax > 0 && <div className="bill-row"><span>Pajak</span><span>{rupiah(total.tax)}</span></div>}
+        {total.service > 0 && <div className="bill-row"><span>Layanan {(settings?.serviceBps ?? 0) / 100}%</span><span>{rupiah(total.service)}</span></div>}
+        {total.tax > 0 && <div className="bill-row"><span>Pajak {(settings?.taxBps ?? 0) / 100}%</span><span>{rupiah(total.tax)}</span></div>}
         <div className="bill-total"><strong>Total</strong><strong>{rupiah(total.total)}</strong></div>
         {invalid && <p className="error" role="alert">{invalid}</p>}
         {!shift ? (
           <Button className="full" onClick={() => setOpeningDialog(true)} disabled={!user.primary}><Wallet size={18} /> Buka sif untuk melayani</Button>
         ) : (
           <>
-            <div className="cart-actions">
-              <Button variant="secondary" disabled={busy || !count} onClick={() => void save()}><Save size={16} /> Simpan</Button>
-              {tablets && <Button variant="secondary" disabled={busy || !count || draft.lines.every((l) => l.prepared)} onClick={() => void prepare()}><ChefHat size={16} /> Ke stasiun</Button>}
-            </div>
-            <Button className="full checkout-btn" disabled={busy || !count || (tablets && draft.lines.some((l) => !l.prepared && !l.cancelled))} onClick={() => void payStart()}>{comp && total.total === 0 ? "Simpan compliment" : "Lanjut pembayaran"} <ArrowRight size={18} /></Button>
+            {tablets && <Button variant="secondary" className="full station-btn" disabled={busy || !count || draft.lines.every((l) => l.prepared)} onClick={() => void prepare()}><ChefHat size={16} /> Ke stasiun</Button>}
+            <Button className="full checkout-btn" disabled={busy || !count || (tablets && draft.lines.some((l) => !l.prepared && !l.cancelled))} onClick={() => void payStart()}>{comp && total.total === 0 ? "Simpan compliment" : `Bayar ${rupiah(total.total)}`}</Button>
             {comp && <p className="small muted center">{comp.kind === "staff" ? `${comp.who || "Staf"} membayar 50% makanan. Minuman gratis tapi tetap mengurangi stok dan masuk laporan compliment.` : "Tanpa pembayaran. Struk tercetak sebagai Compliment, stok tetap berkurang."}</p>}
             {tablets && count > 0 && draft.lines.some((l) => !l.prepared) && <p className="small muted center">Kirim ke stasiun sebelum menerima pembayaran.</p>}
-            {!tablets && count > 0 && <p className="small muted center">Stok berkurang saat pembayaran dicatat.</p>}
+            {!tablets && !comp && <p className="small muted center">Beri tahu bar dan dapur apa yang dibuat. Stok berkurang saat pesanan dibayar.</p>}
           </>
         )}
-        {draft.orderId && (
-          <p className="center"><button className="text-button" disabled={busy} onClick={() => void newOrder()}>Mulai pesanan baru</button></p>
-        )}
-        <p className="save-status"><span className="status-dot" />{saving ? "Menyimpan…" : "Draf tersimpan di perangkat"}</p>
       </div>
     </>
   );
@@ -377,7 +395,7 @@ export default function Pos() {
                 {choices(selected, g.id).map((m) => (
                   <label className="check-row" key={m.id}>
                     <input type={g.kind === "add" ? "checkbox" : "radio"} name={`opt-${g.id}`} checked={mods.includes(m.id)} onChange={() => toggle(selected, m, g.kind !== "add")} />
-                    <span>{m.name}{describeDelta(m.recipe, stockItems) && <small className="muted"> · {describeDelta(m.recipe, stockItems)}</small>}</span>
+                    <span>{m.name}{describeDelta(m.recipe, stockItems) && <small className="muted">{describeDelta(m.recipe, stockItems)}</small>}</span>
                     <strong>{m.price ? `+${rupiah(m.price)}` : "—"}</strong>
                   </label>
                 ))}
@@ -388,7 +406,7 @@ export default function Pos() {
                 {loose(selected).map((m) => (
                   <label className="check-row" key={m.id}>
                     <input type="checkbox" checked={mods.includes(m.id)} onChange={() => toggle(selected, m, false)} />
-                    <span>{m.name}{describeDelta(m.recipe, stockItems) && <small className="muted"> · {describeDelta(m.recipe, stockItems)}</small>}</span>
+                    <span>{m.name}{describeDelta(m.recipe, stockItems) && <small className="muted">{describeDelta(m.recipe, stockItems)}</small>}</span>
                     <strong>+{rupiah(m.price)}</strong>
                   </label>
                 ))}
@@ -402,10 +420,11 @@ export default function Pos() {
           </>
         )}
       </Dialog>
-      <Dialog open={openingDialog} onOpenChange={setOpeningDialog} title="Buka sif" description={cashless ? "Tanpa tunai: periksa mesin EDC dan printer sebelum mulai." : "Hitung uang kembalian di laci sebelum mulai."}>
-        {cashless ? <p className="callout">Pastikan EDC {edcs.join(", ")} menyala dan printer struk berisi kertas. Tidak ada modal kas.</p> : <label>Modal kas awal<Money value={opening} onChange={setOpening} /></label>}
+      <Dialog open={openingDialog} onOpenChange={setOpeningDialog} title="Buka sif" description={cash ? "Hitung uang kembalian di laci sebelum mulai." : "Tanpa tunai: periksa mesin EDC dan printer sebelum mulai."}>
+        {cash && <label>Modal kas awal<Money value={opening} onChange={setOpening} /></label>}
+        {edcMode && <p className="callout">Pastikan EDC {edcs.join(", ")} menyala dan printer struk berisi kertas.{cash ? "" : " Tidak ada modal kas."}</p>}
         <p className="callout">Otorisasi berlaku maksimal 12 jam. Membuka sif memerlukan internet dan perangkat kasir utama.</p>
-        <Button loading={busy} disabled={busy} className="full btn-accent" onClick={() => void act(async () => { await commands.openShift(cashless ? 0 : Number(opening)); setOpeningDialog(false); }, "Sif tersimpan")}>Buka sif sekarang</Button>
+        <Button loading={busy} disabled={busy} className="full btn-accent" onClick={() => void act(async () => { await commands.openShift(cash ? Number(opening) : 0); setOpeningDialog(false); }, "Sif tersimpan")}>Buka sif sekarang</Button>
       </Dialog>
       <Dialog open={discountDialog} onOpenChange={setDiscountDialog} title="Diskon manajer" description={manager ? undefined : "Kasir memerlukan PIN manajer untuk memberi diskon."}>
         <label>Potongan<Money value={discountValue} onChange={setDiscountValue} /></label>
@@ -426,11 +445,11 @@ export default function Pos() {
           <>
             <div className="payment-total"><span>Total tagihan</span><strong>{rupiah(checkout.totals.total)}</strong></div>
             <div className="segmented">
-              {(cashless ? (["card", "qris"] as const) : (["cash", "qris", "card"] as const)).map((m) => (
+              {([...(cash ? (["cash"] as const) : []), "card", "qris"] as const).map((m) => (
                 <button key={m} onClick={() => setMethod(m)} className={method === m ? "active" : ""}>{m === "cash" ? "Tunai" : m === "qris" ? <><QrCode size={16} /> QRIS</> : <><CreditCard size={16} /> Kartu</>}</button>
               ))}
             </div>
-            {cashless ? (
+            {viaEdc ? (
               <>
                 <span className="small muted" style={{ display: "block", marginTop: 14 }}>Mesin EDC</span>
                 <div className="segmented">
@@ -457,11 +476,11 @@ export default function Pos() {
                 <label className="check-row"><input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />Saya sudah memeriksa penerimaan di akun merchant.</label>
               </>
             )}
-            <Button className="full btn-accent" loading={busy} disabled={busy || (cashless ? !edc : method === "cash" ? Number(received) < checkout.totals.total : !verified)} onClick={() => void pay()}><Check size={18} /> {cashless ? `Konfirmasi: ${method === "qris" ? "QRIS " : ""}dibayar di EDC ${edc}` : "Catat pembayaran"}</Button>
+            <Button className="full btn-accent" loading={busy} disabled={busy || (viaEdc ? !edc : method === "cash" ? Number(received) < checkout.totals.total : !verified)} onClick={() => void pay()}><Check size={18} /> {viaEdc ? `Konfirmasi: ${method === "qris" ? "QRIS " : ""}dibayar di EDC ${edc}` : "Catat pembayaran"}</Button>
           </>
         )}
       </Dialog>
-      {receipt && <Receipt order={receipt} auto={cashless} onClose={() => setReceipt(undefined)} />}
+      {receipt && <Receipt order={receipt} auto={edcMode} onClose={() => setReceipt(undefined)} />}
     </div>
   );
 }

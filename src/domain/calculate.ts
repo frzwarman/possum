@@ -18,6 +18,9 @@ export function complimentDiscount<L extends Priced>(lines:L[],kind:Compliment['
  return free+Math.floor(food/2)
 }
 export const orderTotals=(o:{lines:Priced[];discount:number;mode:string},settings:Pick<Settings,'taxBps'|'serviceBps'>)=>totals(o.lines,o.discount,o.mode==='compliment'?{taxBps:0,serviceBps:0}:settings)
+// Which payment paths a store has: cash in a drawer, EDC machines for card and QRIS, or both. A cashless store
+// with no machines listed still uses the pilot's three.
+export function tills(s?:Pick<Settings,'cashless'|'edcs'>){const cash=!s?.cashless,edcs=s?.edcs?.length?s.edcs:cash?[]:['BCA','BRI','Mandiri'];return {cash,edcs,edc:edcs.length>0}}
 // Compliments are not sales: they show in the compliment budget instead.
 export const isSale=(o:Pick<Order,'mode'>)=>o.mode!=='compliment'
 // Cashless close: per EDC, what Takar recorded (paid orders on that machine) against the total on its settlement slip.

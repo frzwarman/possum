@@ -1,7 +1,7 @@
 import { useMemo,useState } from 'react'
 import { Download,ArrowUpRight,Wallet,ReceiptText,TrendingUp,AlertCircle,Printer,Percent,Trash2,Scale } from 'lucide-react'
 import { useApp } from '../../app/context'
-import { JAKARTA,businessDay,expectedCash,isSale,rupiah,stamp,when } from '../../domain/calculate'
+import { JAKARTA,businessDay,expectedCash,isSale,tills,rupiah,stamp,when } from '../../domain/calculate'
 import { CloseShift } from './CloseShift'
 import { Button } from '../../components/ui/button'
 import { Money } from '../../components/ui/money'
@@ -13,6 +13,8 @@ import { ApprovalDialog,type ApprovalRequest } from '../../app/Approval'
 import type { Approval } from '../../domain/types'
 export default function Reports(){
  const {orders,settings,shift,shifts,cash,commands,act,manager,busy,outbox,lastSync,user,movements,costs,stockItems}=useApp()
+ // A store with EDC machines closes on the EDC screen (with the drawer too when it takes cash); a cash-only store keeps the drawer panel.
+ const till=tills(settings)
  const day=(iso:string)=>businessDay(iso,settings?.timezone,settings?.cutoff),today=day(new Date().toISOString())
  const [from,setFrom]=useState(today);const [to,setTo]=useState(today);const [closing,setClosing]=useState(false);const [counted,setCounted]=useState('');const [cashDialog,setCashDialog]=useState(false);const [amount,setAmount]=useState('');const [direction,setDirection]=useState('out');const [reason,setReason]=useState('');const [remote,setRemote]=useState<Record<string,number>|null>(null);const [ask,setAsk]=useState<ApprovalRequest>()
  const inRange=(at:string)=>{const d=day(at);return d>=from&&d<=to}
@@ -44,7 +46,7 @@ export default function Reports(){
   const w=window.open('','_blank');if(!w)return;const esc=(s:string)=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]!)
   w.document.write(`<!doctype html><title>Laporan ${from} – ${to}</title><style>body{font-family:system-ui;padding:32px;color:#222}h1{font-size:22px}table{border-collapse:collapse;width:100%;max-width:640px}td{padding:8px 4px;border-bottom:1px solid #ddd}td:last-child{text-align:right;font-weight:600}</style><h1>${esc(settings?.name||'')} · Laporan ${from} – ${to}</h1><table>${rows.map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')}</table><h2>Menu terlaris</h2><table>${best.map(b=>`<tr><td>${esc(b.name)}</td><td>${b.qty} porsi · ${rupiah(b.total)}</td></tr>`).join('')}</table><p>Dicetak ${when(Date.now(),settings?.timezone)} oleh ${esc(user.name)}.</p>`);w.document.close();w.focus();w.print()}
  return <section className="page-content">
-  <div className="page-heading"><div><p className="eyebrow">Gambaran hari Anda</p><h1>{boss?'Laporan & kas':settings?.cashless?'Tutup sif':'Sif & kas'}</h1><p className="muted">{boss?'Angka yang bisa ditelusuri, sampai ke pesanan.':settings?.cashless?'Transaksi hari ini, hitung stok, lalu cocokkan settlement tiap EDC.':'Modal laci, kas masuk dan keluar, dan tutup sif Anda.'}</p></div>
+  <div className="page-heading"><div><p className="eyebrow">Gambaran hari Anda</p><h1>{boss?'Laporan & kas':till.edc?'Tutup sif':'Sif & kas'}</h1><p className="muted">{boss?'Angka yang bisa ditelusuri, sampai ke pesanan.':till.edc?`Transaksi hari ini, hitung stok, lalu cocokkan ${till.cash?'laci dan ':''}settlement tiap EDC.`:'Modal laci, kas masuk dan keluar, dan tutup sif Anda.'}</p></div>
    {boss&&<div className="button-row"><Button variant="secondary" onClick={reportExport}><Download size={17}/> Ekspor CSV</Button><Button variant="secondary" onClick={printReport}><Printer size={17}/> Cetak / PDF</Button></div>}</div>
   {boss&&<>
    <div className="category-tabs">{([['day','Hari ini'],['week','Minggu ini'],['month','Bulan ini']] as const).map(([id,label])=><button key={id} onClick={()=>preset(id)}>{label}</button>)}</div>
@@ -63,13 +65,13 @@ export default function Reports(){
     <article className="metric"><span><Wallet size={18}/> Nilai stok</span><strong>{rupiah(stockItems.reduce((n,s)=>n+Math.max(0,movements.filter(m=>m.stockId===s.id).reduce((q,m)=>q+m.qty,0))*(costs.get(s.id)??0),0))}</strong><small>stok saat ini, harga terakhir</small></article>
    </div>
   </>}
-  {settings?.cashless&&<CloseShift/>}
+  {till.edc&&<CloseShift/>}
   <div className="report-columns">
-   {!settings?.cashless&&<article className="panel"><div className="panel-heading"><h2>Laci kas</h2><span className="badge">{shift?'Sif aktif':'Tidak ada sif aktif'}</span></div>
+   {till.cash&&<article className="panel"><div className="panel-heading"><h2>Laci kas</h2><span className="badge">{shift?'Sif aktif':'Tidak ada sif aktif'}</span></div>
     {shift?<><p className="small muted">Dibuka {when(shift.openedAt,settings?.timezone)} oleh {shift.cashier}</p><div className="bill-row"><span>Modal kas awal</span><strong>{rupiah(shift.opening)}</strong></div>
      {/* A cashier counts blind: with sales and the expected total on screen the count tends to match them. */}
      {boss&&<><div className="bill-row"><span>Penjualan tunai bersih</span><strong>{rupiah(orders.filter(o=>o.shiftId===shift.id&&o.payment?.method==='cash'&&o.status!=='refunded').reduce((n,o)=>n+o.totals.total,0))}</strong></div><div className="bill-row"><span>Kas masuk / keluar</span><strong>{rupiah(cash.filter(c=>c.shiftId===shift.id).reduce((n,c)=>n+c.amount,0))}</strong></div><div className="bill-total"><span>Kas yang seharusnya</span><strong>{rupiah(expected)}</strong></div></>}
-     {shift.actor===user.id||manager?<div className="button-row"><Button variant="secondary" onClick={()=>setCashDialog(true)}>Catat kas masuk / keluar</Button><Button onClick={()=>setClosing(true)}>Tutup sif</Button></div>:<p className="callout">Laci dipegang {shift.cashier}; hanya dia (atau manajer) yang bisa mencatat kas dan menutup sif.</p>}</>
+     {shift.actor===user.id||manager?<div className="button-row"><Button variant="secondary" onClick={()=>setCashDialog(true)}>Catat kas masuk / keluar</Button>{!till.edc&&<Button onClick={()=>setClosing(true)}>Tutup sif</Button>}</div>:<p className="callout">Laci dipegang {shift.cashier}; hanya dia (atau manajer) yang bisa mencatat kas dan menutup sif.</p>}</>
     :<p className="muted">Buka sif dari kasir untuk mencatat modal dan penerimaan tunai.</p>}
     <div className="history-list">{shifts.filter(s=>s.status==='closed').slice(-3).reverse().map(s=><div key={s.id}><span>{when(s.closedAt!,settings?.timezone,{dateStyle:'medium'})}<small className="muted"> · {s.cashier}</small><br/>Dihitung {rupiah(s.counted||0)}</span>{boss&&<strong>Selisih {rupiah(s.variance||0)}{s.varianceApprovedBy?` · ${s.varianceApprovedBy}`:''}</strong>}</div>)}</div>
    </article>}

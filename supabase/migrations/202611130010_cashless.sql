@@ -53,7 +53,7 @@ declare
  doc:=p->'settings';
  if length(doc->>'name') not between 1 and 100 or length(doc->>'appName') not between 1 and 30 or (doc->>'cutoff')::int not between 0 and 23 or (doc->>'taxBps')::int not between 0 and 10000 or (doc->>'serviceBps')::int not between 0 and 10000 or (doc->>'receiptWidth')::int not in (58,80) or (doc->>'printableWidth')::int not between 32 and (doc->>'receiptWidth')::int-4 or not exists(select 1 from pg_timezone_names where name=doc->>'timezone')
  or coalesce((doc->'stations'->>'kitchen')::int,15) not between 1 and 600 or coalesce((doc->'stations'->>'bar')::int,8) not between 1 and 600 or coalesce((doc->>'varianceLimit')::bigint,0) not between 0 and 1000000000 or coalesce((doc->>'lowAt')::int,5) not between 0 and 999
- or (doc ? 'cashless' and jsonb_typeof(doc->'cashless')<>'boolean') or coalesce((doc->>'complimentBudget')::bigint,0) not between 0 and 1000000000
+ or (doc ? 'cashless' and jsonb_typeof(doc->'cashless')<>'boolean') or coalesce((doc->>'complimentBudget')::bigint,0) not between 0 and 1000000000 or coalesce((doc->>'lockMinutes')::int,2) not between 0 and 120
  or (doc ? 'edcs' and (case when jsonb_typeof(doc->'edcs')='array' then jsonb_array_length(doc->'edcs')>10 or exists(select 1 from jsonb_array_elements(doc->'edcs') e where jsonb_typeof(e.value)<>'string' or length(trim(e.value#>>'{}')) not between 1 and 30) else true end)) then raise exception 'Invalid restaurant settings';end if;
  perform (doc->>'goLive')::date;perform public.validate_recipe(rid,doc->'packaging');update public.restaurants set settings=doc,settings_at=now() where id=rid;
  elsif k='catalog.publish' then
@@ -106,7 +106,7 @@ declare
  doc:=p->'order';if not (doc ?& array['id','shiftId','restaurantId','actor','cashier','revision','status','mode','label','discount','discountReason','settings','receiptId','prep','createdAt','lines','totals']) then raise exception 'Missing order fields';end if;oid:=(doc->>'id')::uuid;
  select * into o from public.orders where restaurant_id=rid and id=oid for update;
  if coalesce(o.revision,0)<>(p->>'expectedRevision')::int or o.status is not null and o.status<>'open' then raise exception 'Order revision/state conflict';end if;
- if (doc->>'shiftId')::uuid<>s.id or doc->>'restaurantId'<>rid::text or doc->>'actor'<>actor::text or doc->>'cashier'<>s.cashier or (doc->>'revision')::int<>coalesce(o.revision,0)+1 or doc->>'status'<>'open' or doc->>'mode' not in ('dinein','takeaway','compliment') or length(doc->>'label')>100 then raise exception 'Invalid order';end if;
+ if (doc->>'shiftId')::uuid<>s.id or doc->>'restaurantId'<>rid::text or doc->>'actor'<>actor::text or doc->>'cashier'<>s.cashier or (doc->>'revision')::int<>coalesce(o.revision,0)+1 or doc->>'status'<>'open' or doc->>'mode' not in ('dinein','takeaway','compliment') or length(doc->>'label')>100 or (doc ? 'name' and coalesce(length(trim(doc->>'name')),0) not between 1 and 60) then raise exception 'Invalid order';end if;
  -- Compliment: a staff meal or the owner's family, named; priced by rule below, so it needs no manager's PIN.
  if (doc->>'mode'='compliment')<>(doc ? 'compliment') or (doc ? 'compliment' and (coalesce(doc->'compliment'->>'kind','') not in ('staff','family') or coalesce(length(trim(doc->'compliment'->>'who')),0) not between 1 and 60)) then raise exception 'Invalid compliment';end if;
  if o.id is null then
@@ -225,7 +225,7 @@ declare
  if (p->>'method'='none' and amount<>0) or (p->>'method'<>'none' and amount=0 and doc->>'mode'='compliment') then raise exception 'Invalid payment method';end if;
  if p->>'method'='cash' and coalesce((restaurant.settings->>'cashless')::boolean,false) then raise exception 'Cashless outlet';end if;
  if (p ? 'edc' and p->>'method' not in ('qris','card')) or coalesce(length(p->>'edc'),0)>30 or coalesce(length(p->>'approvalCode'),0)>30
- or (p->>'method' in ('qris','card') and coalesce((restaurant.settings->>'cashless')::boolean,false) and coalesce(length(trim(p->>'edc')),0)=0) then raise exception 'EDC required';end if;
+ or (p->>'method' in ('qris','card') and (coalesce((restaurant.settings->>'cashless')::boolean,false) or jsonb_array_length(coalesce(restaurant.settings->'edcs','[]'))>0) and coalesce(length(trim(p->>'edc')),0)=0) then raise exception 'EDC required';end if;
  cost:=case when p->>'method'='cash' then (p->>'tendered')::bigint else amount end;
  if cost<amount then raise exception 'Insufficient tender';end if;
  insert into public.payments values(rid,oid,opid,p->>'method',amount,cost,cost-amount,true,at,now(),actor,nullif(trim(p->>'edc'),''),nullif(trim(p->>'approvalCode'),''));
@@ -287,8 +287,10 @@ declare
   select coalesce(a.edc,b.edc) as edc,coalesce(b.expected,0)::bigint as expected,coalesce(a.slip,0) as slip from
   (select x.value->>'edc' as edc,(x.value->>'slip')::bigint as slip from jsonb_array_elements(p->'settlements') x) a
   full join (select ord.snapshot->'payment'->>'edc' as edc,sum((ord.snapshot->'totals'->>'total')::bigint) as expected from public.orders ord where ord.restaurant_id=rid and ord.shift_id=s.id and ord.status='paid' and ord.snapshot->'payment' ? 'edc' group by 1) b on a.edc=b.edc) e;
- select coalesce(sum((x.value->>'expected')::bigint),0),coalesce(sum(abs((x.value->>'slip')::bigint-(x.value->>'expected')::bigint)),0) into expected_value,qty from jsonb_array_elements(settled) x;
- if (select coalesce(sum((x.value->>'slip')::bigint),0) from jsonb_array_elements(settled) x)<>(p->>'counted')::bigint then raise exception 'Settlement total mismatch';end if;
+ -- counted = the drawer's cash plus every slip; a store that takes cash and EDC closes both at once.
+ select (p->>'counted')::bigint-coalesce(sum((x.value->>'slip')::bigint),0),coalesce(sum((x.value->>'expected')::bigint),0),coalesce(sum(abs((x.value->>'slip')::bigint-(x.value->>'expected')::bigint)),0) into balance,cost,qty from jsonb_array_elements(settled) x;
+ if balance<0 then raise exception 'Settlement total mismatch';end if;
+ qty:=qty+abs(balance-expected_value);expected_value:=expected_value+cost;
  else qty:=abs((p->>'counted')::bigint-expected_value);end if;
  amount:=(p->>'counted')::bigint-expected_value;
  -- POS-8: a cashier's gap over the limit needs a manager's PIN for exactly that amount (cashless: the sum of each EDC's gap); managers answer for their own.

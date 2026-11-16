@@ -479,6 +479,20 @@ describe('the cashier keeps stock between orders',()=>{
 })
 // Cashless pilot PRD (2026-11-13): EDC payments, compliments, voiding one made line, EDC settlement at close.
 describe('cashless: EDC, compliments, line voids and the settlement',()=>{
+ it('a store with cash and EDC takes both, and closes the drawer and every slip at once',async()=>{
+  const {db,commands}=await seed(identity({role:'cashier',demo:true}))
+  await db.settings.put({...(await db.settings.get('settings'))!,edcs:['BCA']})
+  await commands.openShift(100000);await tick()
+  const a=await commands.save(draft([tea()]));await tick();await commands.prepare(a.id);await tick()
+  await expect(commands.pay(a.id,'card',0,true)).rejects.toThrow('Pilih mesin EDC')
+  await commands.pay(a.id,'card',0,true,{edc:'BCA'});await tick()
+  const b=await commands.save(draft([tea()]));await tick();await commands.prepare(b.id);await tick()
+  await commands.pay(b.id,'cash',10000,true);await tick()
+  // Drawer 6.000 short and the slip 6.000 over: the PIN covers 12.000, not a net zero.
+  await expect(commands.closeShift(100000,undefined,{BCA:12000})).rejects.toThrow('Perlu persetujuan manajer')
+  const closed=await commands.closeShift(100000,await commands.approve('demo-owner',DEMO_PIN,'variance',{amount:12000}),{BCA:12000})
+  expect([closed.counted,closed.expected,closed.variance]).toEqual([112000,112000,0])
+ })
  async function cashless(role:'manager'|'cashier'='manager'){const s=await seed(identity({role,demo:true}));await s.db.settings.put({...(await s.db.settings.get('settings'))!,cashless:true,edcs:['BCA','BRI','Mandiri'],taxBps:1000});await s.commands.openShift(0);await tick();return s}
  async function made(commands:Commands,lines=[line(),tea()],over={}){const o=await commands.save(draft(lines,over));await tick();await commands.prepare(o.id);await tick();return o}
  it('takes card or QRIS on a named EDC with an optional approval code, and refuses cash',async()=>{

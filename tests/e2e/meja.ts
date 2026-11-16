@@ -30,7 +30,7 @@ export const cart=(page:Page)=>page.locator('.desktop-cart')
 export async function sell(page:Page,{tendered}:{tendered?:string}={}){
  await cart(page).getByRole('button',{name:/Ke stasiun/}).click()
  await expect(cart(page).getByText(/Dikirim/)).toBeVisible()
- await cart(page).getByRole('button',{name:/Lanjut pembayaran/}).click()
+ await cart(page).getByRole('button',{name:/^Bayar Rp/}).click()
  const pay=page.getByRole('dialog',{name:'Terima pembayaran'})
  if(tendered)await pay.getByLabel(/Uang diterima/).fill(tendered)
  await pay.getByRole('button',{name:/Catat pembayaran/}).click()

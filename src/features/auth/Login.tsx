@@ -42,7 +42,7 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
    const {data,error:e}=await supabase.auth.signInWithPassword({email,password});if(e)throw new Error(remember?'PIN salah atau akun tidak aktif':e.message)
    const user=await bootstrap(data.user!.id,deviceId)
    // CTL-4: the PIN's hash stays on this device so the lock screen can check it offline.
-   // Owners and managers never leave a PIN hash on a shared device: their lock screen signs them out instead.
+   // Owners and managers never leave a PIN hash on a shared device: their lock screen asks the server instead.
    try{if(remember&&!['owner','manager'].includes(user.role))localStorage.setItem('takar-pin-hash',await pinHash(remember,user.id));else localStorage.removeItem('takar-pin-hash')}catch{/* private mode */}
    onLogin(user)}
   catch(e){setError(e instanceof Error?e.message:'Login gagal');setPin('')}finally{setLoading(false)}}

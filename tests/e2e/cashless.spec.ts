@@ -6,7 +6,7 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   await go(page, 'Lainnya')
   await page.getByRole('button', { name: 'Restoran' }).click()
   await page.getByLabel(/Tablet dapur & bar/).uncheck()
-  await page.getByLabel(/Tanpa tunai/).check()
+  await page.getByLabel(/Terima tunai/).uncheck()
   await page.getByLabel(/Mesin EDC/).fill('BCA, BRI')
   await page.getByLabel(/Anggaran compliment/).fill('3000000')
   await page.getByRole('button', { name: 'Simpan pengaturan' }).click()
@@ -20,7 +20,7 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   // A card sale on EDC BRI with the approval code; the receipt prints without a tap.
   await addItem(page, 'Nasi goreng kampung')
   await addItem(page, 'Es teh manis')
-  await cart(page).getByRole('button', { name: /Lanjut pembayaran/ }).click()
+  await cart(page).getByRole('button', { name: /^Bayar Rp/ }).click()
   const pay = page.getByRole('dialog', { name: 'Terima pembayaran' })
   await expect(pay.getByRole('button', { name: 'Tunai' })).toHaveCount(0)
   await pay.getByRole('button', { name: 'EDC BRI' }).click()

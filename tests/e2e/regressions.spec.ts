@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 import { defaultSettings, sampleMenu, stock } from '../../src/domain/sample'
 
 const discount = async (page: Page, amount: string) => {
+  await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
   await cart(page).getByRole('button', { name: 'Tambah diskon' }).click()
   const dialog = page.getByRole('dialog', { name: 'Diskon manajer' })
   await dialog.getByLabel('Potongan').fill(amount)
@@ -47,11 +48,14 @@ test('the next table can be rung up while the first is still eating, without ove
   await addItem(page, 'Es teh manis')
   await cart(page).getByRole('button', { name: /Ke stasiun/ }).click()
   await expect(cart(page).getByText(/Dikirim/)).toBeVisible()
+  await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
   await cart(page).getByRole('button', { name: 'Mulai pesanan baru' }).click()
-  await expect(cart(page).getByText('Pesanan baru · 0 item')).toBeVisible()
+  await expect(cart(page).getByRole('heading', { name: 'Pesanan baru' })).toBeVisible()
+  await expect(cart(page).getByText('Mulai dari satu menu')).toBeVisible()
   await cart(page).getByLabel(/Nomor pager/).fill('Meja 2')
   await addItem(page, 'Air mineral')
-  await cart(page).getByRole('button', { name: /Simpan/ }).click()
+  await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
+  await cart(page).getByRole('button', { name: 'Simpan pesanan' }).click()
   await expect(cart(page).getByText('Pesanan tersimpan')).toBeVisible()
   await go(page, 'Pesanan')
   await expect(page.locator('.order-card').filter({ hasText: 'Meja 1' })).toContainText('Es teh manis')
@@ -72,8 +76,10 @@ test('a cart whose order was voided from Pesanan can still start a new order', a
   await page.getByRole('button', { name: /Konfirmasi pembatalan/ }).click()
   await expect(page.getByText('Koreksi tersimpan di perangkat')).toBeVisible()
   await go(page, 'Kasir')
+  await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
   await cart(page).getByRole('button', { name: 'Mulai pesanan baru' }).click()
-  await expect(cart(page).getByText('Pesanan baru · 0 item')).toBeVisible()
+  await expect(cart(page).getByRole('heading', { name: 'Pesanan baru' })).toBeVisible()
+  await expect(cart(page).getByText('Mulai dari satu menu')).toBeVisible()
 })
 
 test('a half-typed void on one order does not carry over to the next order opened', async ({ page }) => {
@@ -82,9 +88,12 @@ test('a half-typed void on one order does not carry over to the next order opene
   for (const table of ['Meja A', 'Meja B']) {
     await cart(page).getByLabel(/Nomor pager/).fill(table)
     await addItem(page, 'Es teh manis')
-    await cart(page).getByRole('button', { name: /Simpan/ }).click()
-    await cart(page).getByRole('button', { name: 'Mulai pesanan baru' }).click()
-    await expect(cart(page).getByText('Pesanan baru · 0 item')).toBeVisible()
+    await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
+  await cart(page).getByRole('button', { name: 'Simpan pesanan' }).click()
+    await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
+  await cart(page).getByRole('button', { name: 'Mulai pesanan baru' }).click()
+    await expect(cart(page).getByRole('heading', { name: 'Pesanan baru' })).toBeVisible()
+  await expect(cart(page).getByText('Mulai dari satu menu')).toBeVisible()
   }
   await go(page, 'Pesanan')
   await page.locator('.order-card').filter({ hasText: 'Meja A' }).getByRole('button', { name: 'Detail' }).click()

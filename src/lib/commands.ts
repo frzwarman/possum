@@ -1,4 +1,4 @@
-import { MAX_MONEY, change, complimentDiscount, consumption, expectedCash, itemStation, menuType, money, orderTotals, settlementGap, settlements, paidValue, prepState, receivedQty, receivedValue, rupiah, totals, unitCosts } from '../domain/calculate'
+import { MAX_MONEY, change, complimentDiscount, tills, consumption, expectedCash, itemStation, menuType, money, orderTotals, settlementGap, settlements, paidValue, prepState, receivedQty, receivedValue, rupiah, totals, unitCosts } from '../domain/calculate'
 import { can, type Action } from '../domain/permissions'
 import type { Approval, ApprovalAction, CountSession, Draft, Identity, Ingredient, Line, MenuItem, Operation, OpKind, Order, Outlet, Payment, PurchaseLine, PurchaseOrder, SalesLine, SalesOrder, Settings, Shift, Station, StockItem, Supplier, Transfer } from '../domain/types'
 import { MejaDB, uid } from './db'
@@ -85,6 +85,8 @@ export class Commands {
   if(draft.orderId&&!old)throw new Error('Pesanan tidak ditemukan')
   if(old&&(old.status!=='open'||old.revision!==draft.revision))throw new Error('Pesanan sudah berubah. Buka ulang dari Pesanan.')
   // A compliment prices itself by its rule, so it needs no manager's PIN; a manager's discount does.
+  // The guest's name is optional; the pager number is how the order is called.
+  const name=draft.name?.trim()||undefined;if(name&&name.length>60)throw new Error('Nama maksimal 60 karakter')
   const comp=draft.mode==='compliment'?draft.compliment:undefined;if(draft.mode==='compliment'&&(!comp||!['staff','family'].includes(comp.kind)||!comp.who.trim()||comp.who.length>60))throw new Error('Pilih untuk siapa compliment ini')
   const menu=comp?await this.db.menu.toArray():[],drink=(l:Line)=>{const m=menu.find(x=>x.id===l.itemId);return m?menuType(m)==='beverage':l.station==='bar'}
   const discount=comp?complimentDiscount(draft.lines,comp.kind,drink):draft.discount,discountReason=comp?`${comp.kind==='staff'?'Staff meal':'Keluarga pemilik'} · ${comp.who.trim()}`:draft.discountReason
@@ -95,7 +97,7 @@ export class Commands {
   // A station may have marked a sent line ready meanwhile: that flag is the server's, not the till's.
   const lines=draft.lines.map(l=>{const was=old?.lines.find(x=>x.id===l.id);return was?.readyAt?{...l,readyAt:was.readyAt}:l})
   for(const l of draft.lines){if(!Number.isInteger(l.qty)||l.qty<1||l.qty>999)throw new Error('Jumlah menu 1–999');money(l.price)}
-  const order:Order={id:old?.id||uid(),restaurantId:this.user.restaurantId,shiftId:shift.id,actor:this.user.id,cashier:this.user.name,revision:(old?.revision||0)+1,receiptId:old?.receiptId||`MJ-${op.id.toUpperCase()}`,label:draft.label,mode:draft.mode,...(comp&&{compliment:{kind:comp.kind,who:comp.who.trim()}}),lines,status:'open',prep:prepState(lines),discount,discountReason,...(approved.by&&{discountApprovedBy:approved.by}),settings,totals:orderTotals({lines,discount,mode:draft.mode},settings),createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
+  const order:Order={id:old?.id||uid(),restaurantId:this.user.restaurantId,shiftId:shift.id,actor:this.user.id,cashier:this.user.name,revision:(old?.revision||0)+1,receiptId:old?.receiptId||`MJ-${op.id.toUpperCase()}`,label:draft.label,...(name&&{name}),mode:draft.mode,...(comp&&{compliment:{kind:comp.kind,who:comp.who.trim()}}),lines,status:'open',prep:prepState(lines),discount,discountReason,...(approved.by&&{discountApprovedBy:approved.by}),settings,totals:orderTotals({lines,discount,mode:draft.mode},settings),createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
   op.payload={order,expectedRevision:old?.revision||0,...approved.payload};await this.db.orders.put(order);await this.db.drafts.delete('current');return order
  })}
  async prepare(id:string){return this.run('order.prepare',{id},async op=>{await this.shift();const o=await this.openOrder(id);const lines=o.lines.filter(l=>!l.prepared&&!l.cancelled);if(!lines.length)throw new Error('Tidak ada tambahan baru untuk disiapkan');op.payload={id,expectedRevision:o.revision,lineIds:lines.map(l=>l.id)}
@@ -112,10 +114,10 @@ export class Commands {
  async pay(id:string,method:'cash'|'qris'|'card'|'none',tendered:number,verified:boolean,{edc,approvalCode}:{edc?:string;approvalCode?:string}={}){edc=edc?.trim()||undefined;approvalCode=approvalCode?.trim()||undefined
   if((edc&&edc.length>30)||(approvalCode&&approvalCode.length>30))throw new Error('Nama EDC dan kode approval maksimal 30 karakter')
   return this.run('payment.record',{id,method,tendered,verified,...(edc&&{edc}),...(approvalCode&&{approvalCode})},async op=>{await this.shift({late:method==='cash'});const o=await this.openOrder(id);if(o.lines.some(l=>!l.prepared&&!l.cancelled))throw new Error('Kirim ke dapur sebelum pembayaran')
-  const cashless=Boolean((await this.db.settings.get('settings'))?.cashless)
+  const till=tills(await this.db.settings.get('settings'))
   if(method==='none'?o.totals.total!==0:o.totals.total===0&&o.mode==='compliment')throw new Error(method==='none'?'Tanpa pembayaran hanya untuk total Rp0':'Compliment Rp0 disimpan tanpa pembayaran')
-  if(method==='cash'&&cashless)throw new Error('Outlet ini tidak menerima tunai')
-  if((method==='card'||method==='qris')&&cashless&&!edc)throw new Error('Pilih mesin EDC')
+  if(method==='cash'&&!till.cash)throw new Error('Outlet ini tidak menerima tunai')
+  if((method==='card'||method==='qris')&&till.edc&&!edc)throw new Error('Pilih mesin EDC')
   if((method==='card'||method==='qris')&&(!verified||(!edc&&!navigator.onLine)))throw new Error(edc?'Konfirmasi setelah EDC mencetak Approved atau Paid':'Periksa pembayaran pada aplikasi merchant saat online')
   const t=method==='cash'?money(tendered):o.totals.total;const c=change(o.totals.total,t);op.payload={...op.payload,expectedRevision:o.revision};o.payment={method,tendered:t,change:c,verified:true,at:op.occurredAt,...(edc&&{edc}),...(approvalCode&&{approvalCode})};o.status='paid';o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o);return o})}
  // A made line taken off an open or paid order: manager's PIN, reason kept on the line, totals recomputed.
@@ -136,13 +138,14 @@ export class Commands {
  await this.db.movements.add({id:op.id,stockId,kind,qty:delta,reason,actor:this.user.id,at:op.occurredAt,recordId:op.id,cost,...(photo&&{photo})});if(fromDrawer){const s=await this.shift();await this.db.cash.add({id:op.id,shiftId:s.id,amount:-cost,reason:`Pembelian: ${reason}`,at:op.occurredAt,actor:this.user.id,recordId:op.id});op.payload.shiftId=s.id}return delta})}
  async cashMove(amount:number,reason:string,approval?:Approval){if(!Number.isSafeInteger(amount)||!amount||Math.abs(amount)>1e9||!reason.trim())throw new Error('Jumlah/alasan tidak valid');const ok=amount<0?this.approver('cashout',approval,{amount:-amount}):{payload:{}};return this.run('shift.cash',{amount,reason,...ok.payload},async op=>{const s=await this.shift();op.payload.shiftId=s.id;await this.db.cash.add({id:op.id,shiftId:s.id,amount,reason,actor:this.user.id,at:op.occurredAt,...('by' in ok&&{approvedBy:ok.by})})})}
  // POS-8: a gap over the limit needs a manager's PIN for exactly that gap; managers answer for their own.
- // Cash: the counted drawer against the expected cash. Cashless (slips given): each EDC's settlement slip against
- // what Takar recorded on that machine; the gap that needs a PIN is the sum of each machine's gap.
+ // counted = the cash in the drawer (0 for a cashless store). With slips, each EDC's settlement slip is matched against
+ // what Takar recorded on that machine. The gap that needs a PIN is the cash gap plus each machine's gap.
  async closeShift(counted:number,approval?:Approval,slips?:Record<string,number>){money(counted);for(const v of Object.values(slips??{}))money(v);if(slips&&Object.keys(slips).some(e=>!e.trim()||e.length>30))throw new Error('Nama EDC 1–30 karakter')
   return this.run('shift.close',{counted},async op=>{const s=await this.shift({late:true,others:true});const orders=await this.db.orders.where('shiftId').equals(s.id).toArray();if(orders.some(o=>o.status==='open'))throw new Error('Selesaikan atau batalkan pesanan belum dibayar')
   const settings=await this.db.settings.get('settings'),list=slips&&settlements(s.id,orders,slips,settings?.edcs)
-  if(list)counted=list.reduce((n,x)=>n+x.slip,0)
-  const expected=list?list.reduce((n,x)=>n+x.expected,0):expectedCash(s,orders,await this.db.cash.toArray()),variance=counted-expected,gap=list?settlementGap(list):Math.abs(variance)
+  const cash=expectedCash(s,orders,await this.db.cash.toArray()),gap=Math.abs(counted-cash)+(list?settlementGap(list):0)
+  if(list){counted+=list.reduce((n,x)=>n+x.slip,0)}
+  const expected=cash+(list?list.reduce((n,x)=>n+x.expected,0):0),variance=counted-expected
   const limit=settings?.varianceLimit??10000,ok=gap>limit?this.approver('variance',approval,{amount:gap}):{by:undefined,payload:{}}
   Object.assign(s,{status:'closed',counted,expected,variance,closedAt:op.occurredAt,...(list&&{settlements:list}),...(ok.by&&!can(this.user.role,'approve')&&{varianceApprovedBy:ok.by})});op.payload={counted,id:s.id,...(list&&{settlements:list.map(({edc,slip})=>({edc,slip}))}),...ok.payload};await this.db.shifts.put(s);return s})}
  async publish(menu:MenuItem[],stock:StockItem[],approval?:Approval){this.need('catalog',true)

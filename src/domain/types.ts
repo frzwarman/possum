@@ -27,8 +27,11 @@ export interface Settings {
  stations?: { kitchen: number; bar: number }; varianceLimit?: number; lowAt?: number
  // Pilot: no bar or kitchen tablets yet, the cashier tells them and stock moves at payment. Switch on for a bigger outlet.
  stationTablets?: boolean
- // Ziggy is cashless: card or QRIS on one of these EDC machines, no float, the close matches each EDC's settlement slip.
+ // cashless = the store takes no cash (no float, no drawer count). edcs = the EDC machines card and QRIS go through;
+ // each one's settlement slip is matched at close. A store may take cash, use EDCs, or both.
  cashless?: boolean; edcs?: string[]
+ // A shared till or station tablet locks after this many idle minutes (default 2, 0 = never).
+ lockMinutes?: number
  // Staff meals and the owner's family: what they may take free each month, in rupiah. 0 or unset = no budget.
  complimentBudget?: number
 }
@@ -79,7 +82,7 @@ export type OrderMode = 'dinein' | 'takeaway' | 'compliment'
 export interface Compliment { kind: 'staff' | 'family'; who: string }
 export interface OrderPayment { method: 'cash' | 'qris' | 'card' | 'none'; tendered: number; change: number; verified: boolean; at: string; edc?: string; approvalCode?: string }
 export interface Order {
- id: string; restaurantId: string; shiftId: string; actor: string; cashier: string; revision: number; receiptId: string; label: string; mode: OrderMode; compliment?: Compliment
+ id: string; restaurantId: string; shiftId: string; actor: string; cashier: string; revision: number; receiptId: string; label: string; name?: string; mode: OrderMode; compliment?: Compliment
  lines: Line[]; status: 'open' | 'paid' | 'void' | 'refunded'; prep: 'new' | 'preparing' | 'ready'; discount: number; discountReason: string; settings: Settings; totals: Totals
  createdAt: string; updatedAt: string
  payment?: OrderPayment
@@ -106,4 +109,4 @@ export type OpKind =
  | 'salesorder.save' | 'salesorder.pay' | 'salesorder.deliver' | 'salesorder.cancel' | 'transfer.send' | 'transfer.receive' | 'transfer.cancel' | 'count.record' | 'count.submit'
 export interface Operation { id: string; kind: OpKind; actor: string; restaurantId: string; deviceId: string; occurredAt: string; payload: Record<string, unknown>; state: 'pending' | 'synced' | 'rejected'; attempts: number; nextAttempt: number; error?: string; receivedAt?: string }
 export interface PrintAttempt { id: string; orderId: string; kind: 'receipt' | 'kitchen' | 'test'; at: string; status: 'requested' | 'confirmed'; reprint: boolean; lineIds: string[] }
-export interface Draft { id: string; orderId?: string; revision: number; label: string; mode: OrderMode; compliment?: Compliment; lines: Line[]; discount: number; discountReason: string; discountApproval?: Approval }
+export interface Draft { id: string; orderId?: string; revision: number; label: string; name?: string; mode: OrderMode; compliment?: Compliment; lines: Line[]; discount: number; discountReason: string; discountApproval?: Approval }

@@ -194,6 +194,18 @@ Server contract: `supabase/migrations/202611130010_cashless.sql`.
     approval code on each card; void an item in the detail. The Figma table-and-side-panel layout is not copied yet.
     Left out: "Pending EDC" as its own status (an unpaid order is the pending one), and all WhatsApp screens
     (C6b, C11b, C11c, C12, P1, P2), which the PRD prices as an add-on after the pilot.
+40. **Cart as in Figma C2.** One pay button ("Bayar Rp…") under the bill; keeping a tab open, a manager's discount
+    and the next order sit in the cart's ⋯ menu. The same item with the same options and note, not yet sent, adds to
+    its line's quantity. Pager and an optional guest name (`order.name`, ≤60 chars, checked by 0010) sit side by side;
+    the name is searchable on Orders and the close. − at quantity 1 removes the line (no trash icon).
+41. **Cash and EDC are independent** (supersedes the switch in 31). *Terima tunai* (`cashless:false`) gives the float,
+    Tunai on the payment sheet and a blind drawer count; *Mesin EDC* (`edcs`) gives card and QRIS through a named
+    machine (required by the server whenever machines are listed) and a settlement slip per machine. A store may have
+    either or both (`tills()`). The close sends `counted` = drawer + every slip; the PIN gap is the drawer's gap plus
+    each machine's. A store with neither EDC nor cash is refused in Settings.
+42. **Idle lock** is `settings.lockMinutes` (default 2, 0 = never, max 120). Staff unlock offline against the PIN hash
+    kept at sign-in; owners and managers (no hash on a shared device) unlock with their PIN or password checked by the
+    server, no longer by being signed out.
 
 ## Left to the builder
 
