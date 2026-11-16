@@ -561,3 +561,14 @@ p.small>svg:first-child{margin-top:.15em}
 /* The demo controls span the email card's full width, like the fields above them. */
 .login-card .signin-demo{width:100%}
 .signin-demo>p.small{margin-top:10px}
+/* Store logo: Settings preview, sidebar badge, till rail, receipt head (printed black and white). */
+.logo-field{display:flex;gap:16px;align-items:flex-start;margin:8px 0 4px}
+.logo-field>div{flex:1;min-width:0;display:grid;gap:6px}
+.logo-preview{width:72px;height:72px;flex:0 0 72px;display:grid;place-items:center;border:1px dashed var(--border-strong);border-radius:14px;background:var(--bg-subtle);color:var(--text-secondary);overflow:hidden}
+.logo-preview img,.restaurant-icon img{width:100%;height:100%;object-fit:contain}
+.logo-field label.btn{margin:0;flex-direction:row;cursor:pointer}
+.restaurant-icon:has(img){background:var(--surface);overflow:hidden}
+.rail-logo{width:44px;height:44px;object-fit:contain;border-radius:12px}
+.receipt-logo{display:block;max-width:120px;max-height:72px;margin:0 auto 10px;object-fit:contain;filter:grayscale(1)}
+/* PIN fields are plain text (no password-manager popups on a shared till); the digits still show as dots. */
+.pin-field,.pin-input{-webkit-text-security:disc}

@@ -15,7 +15,11 @@ function canvasToDataUrl(canvas: HTMLCanvasElement, quality: number): string {
   return canvas.toDataURL("image/webp", quality);
 }
 
-export async function compressMenuPhoto(file: File): Promise<string> {
+// Menu photos: 420 px on a filled background. Logos: 256 px, transparency kept so the receipt stays white.
+export const compressMenuPhoto = (file: File) => compressImage(file, 420, "#f2f1e9");
+export const compressLogo = (file: File) => compressImage(file, 256);
+
+async function compressImage(file: File, maxSide: number, background?: string): Promise<string> {
   if (!INPUT_TYPES.has(file.type)) {
     throw new Error(
       "Gunakan foto JPG, PNG, atau WebP. Ubah foto HEIC di galeri terlebih dahulu.",
@@ -33,20 +37,21 @@ export async function compressMenuPhoto(file: File): Promise<string> {
     );
   }
 
-  const maxSide = 420;
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   const width = Math.max(1, Math.round(bitmap.width * scale));
   const height = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const context = canvas.getContext("2d", { alpha: false });
+  const context = canvas.getContext("2d", { alpha: !background });
   if (!context) {
     bitmap.close();
     throw new Error("Perangkat tidak dapat memproses foto.");
   }
-  context.fillStyle = "#f2f1e9";
-  context.fillRect(0, 0, width, height);
+  if (background) {
+    context.fillStyle = background;
+    context.fillRect(0, 0, width, height);
+  }
   context.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
 

@@ -1013,6 +1013,20 @@ await test("A store that takes cash and EDC: cash needs no machine, card does, a
   await login(owner);
   await send(op("settings.update", { settings: current }));
 });
+await test("Only an owner or manager sets the store logo, and only a small WebP", async () => {
+  const logo = "data:image/webp;base64,UklGRg==";
+  await login(cashier);
+  await assert.rejects(db.query("select public.set_logo($1)", [logo]), /Manager required/);
+  await login(owner);
+  await assert.rejects(db.query("select public.set_logo($1)", ["data:image/svg+xml;base64,PHN2Zz4="]), /check constraint/);
+  await db.query("select public.set_logo($1)", [logo]);
+  assert.deepEqual((await db.query("select logo, logo_at is not null as stamped from public.restaurants where id=$1", [rid])).rows, [{ logo, stamped: true }]);
+  await login(cashier);
+  assert.equal((await db.query("select logo from public.restaurants where id=$1", [rid])).rows[0].logo, logo);
+  await login(owner);
+  await db.query("select public.set_logo('')");
+  assert.equal((await read("select logo from public.restaurants where id=$1", [rid])).rows[0].logo, null);
+});
 // Independent database restoration, never a live environment.
 await db.exec("reset role");
 const paymentsBefore = (await db.query("select count(*)::int n from public.payments")).rows[0].n;
@@ -1051,7 +1065,7 @@ for (const table of [...new Set(columns.map((c) => c.table_name))]) {
   types += "  }; Insert: never; Update: never; Relationships: [] }\n";
 }
 types +=
-  "}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }\n";
+  "}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }\n";
 await writeFile("src/lib/database.types.ts", types);
 await restored.close();
 await db.close();

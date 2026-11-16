@@ -12,6 +12,7 @@ import {
   LogOut,
   Check,
   Upload,
+  Store,
   AlertTriangle,
   Database,
   UserCog,
@@ -35,7 +36,7 @@ import { convert, describeDelta, itemStation, menuType, quantity, rupiah, typeLa
 import { can } from "../../domain/permissions";
 import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { supabase } from "../../lib/supabase";
-import { compressMenuPhoto } from "../../lib/menu-photo";
+import { compressLogo, compressMenuPhoto } from "../../lib/menu-photo";
 import { bootstrap, pinHash } from "../auth/Login";
 import { roleTitle } from "../../domain/permissions";
 const schema = z.object({
@@ -82,6 +83,7 @@ export default function SettingsPage() {
     menu,
     stockItems,
     db,
+    logo,
     commands,
     user,
     manager,
@@ -282,6 +284,18 @@ export default function SettingsPage() {
       setError(String(e));
     }
   }
+  // The store's logo: shrunk on this device, saved on the server (owner or manager), kept here for offline receipts.
+  async function setLogo(file?: File) {
+    await act(async () => {
+      const image = file ? await compressLogo(file) : "";
+      if (!user.demo) {
+        const { error } = await supabase!.rpc("set_logo", { image });
+        if (error) throw new Error(error.message.includes("Manager required") ? "Hanya pemilik atau manajer yang dapat mengganti logo" : error.message);
+      }
+      if (image) await db.meta.put({ id: "logo", value: image });
+      else await db.meta.delete("logo");
+    }, file ? "Logo tersimpan. Tampil di struk dan sidebar." : "Logo dihapus");
+  }
   async function choosePhoto(file: File) {
     if (!item) return;
     setPhotoBusy(true);
@@ -331,6 +345,20 @@ export default function SettingsPage() {
         <div className="settings-columns">
           <form className="panel" onSubmit={form.handleSubmit(saveSettings)}>
             <h2>Identitas restoran</h2>
+            <div className="logo-field">
+              <span className="logo-preview">{logo ? <img src={logo} alt="Logo restoran" /> : <Store size={22} />}</span>
+              <div>
+                <strong>Logo</strong>
+                <p className="small muted">Tampil di atas struk (dicetak hitam-putih) dan di sidebar. PNG dengan latar transparan paling rapi.</p>
+                <div className="button-row">
+                  <label className="btn btn-secondary btn-sm">
+                    <Upload size={15} /> {logo ? "Ganti logo" : "Unggah logo"}
+                    <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void setLogo(f); }} />
+                  </label>
+                  {logo && <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void setLogo()}>Hapus logo</Button>}
+                </div>
+              </div>
+            </div>
             <div className="form-grid">
               <label>
                 Nama aplikasi
@@ -1485,9 +1513,12 @@ export default function SettingsPage() {
         <label>
           PIN baru (6 angka)
           <input
-            type="password"
+            type="text"
+            className="pin-field"
             inputMode="numeric"
-            autoComplete="new-password"
+            autoComplete="off"
+            data-1p-ignore="true"
+            data-lpignore="true"
             maxLength={6}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
@@ -1496,9 +1527,12 @@ export default function SettingsPage() {
         <label>
           Ulangi PIN
           <input
-            type="password"
+            type="text"
+            className="pin-field"
             inputMode="numeric"
-            autoComplete="new-password"
+            autoComplete="off"
+            data-1p-ignore="true"
+            data-lpignore="true"
             maxLength={6}
             value={pinAgain}
             onChange={(e) => setPinAgain(e.target.value.replace(/\D/g, ""))}

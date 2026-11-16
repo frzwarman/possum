@@ -1,4 +1,4 @@
-import { test, expect, demo, openShift, addItem, cart, go, balance } from './meja'
+import { test, expect, demo, openShift, addItem, cart, go, balance, sell } from './meja'
 // Pilot PRD: no bar or kitchen tablets yet. The cashier tells them, stock moves when the order is paid,
 // the cashier keeps stock between orders, and the till never opens the manager screens during a shift.
 test('without station tablets, paying sends the order and moves stock in one tap', async ({ page }) => {
@@ -48,4 +48,20 @@ test('the cashier has a Stock tab: low and sold-out menu, waste, batches and cou
   await dialog.getByRole('button', { name: 'Jatuh' }).click()
   await dialog.getByRole('button', { name: 'Simpan pergerakan' }).click()
   await expect(page.getByText('Pergerakan stok tersimpan')).toBeVisible()
+})
+
+test('the owner uploads the store logo; it shows in the sidebar and on the receipt', async ({ page }) => {
+  // A 1x1 PNG: the device shrinks it to WebP and keeps it for offline receipts.
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
+  await demo(page)
+  await go(page, 'Lainnya')
+  await page.getByRole('button', { name: 'Restoran' }).click()
+  await page.locator('.logo-field input[type=file]').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: png })
+  await expect(page.getByText('Logo tersimpan')).toBeVisible()
+  await expect(page.locator('.restaurant-icon img')).toHaveAttribute('src', /^data:image\/webp;base64,/)
+  await go(page, 'Kasir')
+  await openShift(page)
+  await addItem(page, 'Es teh manis')
+  await sell(page)
+  await expect(page.getByRole('dialog', { name: 'Pembayaran tercatat' }).locator('.receipt-logo')).toBeVisible()
 })

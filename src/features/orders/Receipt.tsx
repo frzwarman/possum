@@ -15,7 +15,7 @@ export function Receipt({order,onClose,kitchen=false,reprint=false,station,auto=
  const s=order.settings
  // A station ticket carries only that station's lines; the full kitchen ticket carries all of them.
  const mine=order.lines.filter(l=>!l.cancelled&&(!station||(l.station??'kitchen')===station))
- const {db,act,busy,setNotice}=useApp();const [attempt,setAttempt]=useState<string>();const [fallback,setFallback]=useState('');const [printedLines,setPrintedLines]=useState<string[]>([]);const [copy,setCopy]=useState(false)
+ const {db,act,busy,setNotice,logo}=useApp();const [attempt,setAttempt]=useState<string>();const [fallback,setFallback]=useState('');const [printedLines,setPrintedLines]=useState<string[]>([]);const [copy,setCopy]=useState(false)
  const text=receiptText(order,reprint)
  // A kitchen ticket is a copy only when every line was on an earlier kitchen ticket. Marking the
  // first one SALINAN, next to "do not prepare a copy twice", tells the kitchen to skip it.
@@ -23,7 +23,7 @@ export function Receipt({order,onClose,kitchen=false,reprint=false,station,auto=
  const printed=useRef(false);useEffect(()=>{if(auto&&!printed.current){printed.current=true;void print()}},[auto])// eslint-disable-line react-hooks/exhaustive-deps
  async function share(){try{if(navigator.share)await navigator.share({text});else{await navigator.clipboard.writeText(text);setNotice('Teks struk disalin')}}catch{setFallback(text)}}
  return <Dialog open onOpenChange={onClose} title={kitchen?'Tiket dapur':reprint?'Salinan struk':'Pembayaran tercatat'} description="Pratinjau cetak. Hasil kertas perlu diperiksa oleh operator."><div id="print-area" className="receipt-paper" style={{'--paper-width':`${order.settings.receiptWidth}mm`,'--printable-width':`${order.settings.printableWidth}mm`} as React.CSSProperties}>{kitchen?<><h2>{order.status==='void'?'PEMBATALAN':station==='bar'?'BAR':'DAPUR'} {copy?'— SALINAN':''}</h2><h2>{order.label||order.receiptId.slice(-8)}</h2><p>{modeLabel(order)} · {new Date(order.updatedAt).toLocaleTimeString('id-ID',{timeZone:order.settings.timezone})}</p>{mine.map(l=><div className="kitchen-line" key={l.id}><strong>{l.qty}× {l.name}</strong>{printedLines.includes(l.id)&&<b> [BARU]</b>}<p>{l.modifiers.map(m=>m.name).join(', ')}</p><b>{l.note}</b></div>)}{order.voidReason&&<p>Alasan: {order.voidReason}</p>}<p>Periksa tambahan terhadap tiket sebelumnya. Jangan menyiapkan salinan dua kali.</p></>:<div className="receipt">
-  <header className="receipt-head"><h2>{s.name}</h2>{s.address&&<p>{s.address}</p>}{s.phone&&<p>Telp. {s.phone}</p>}</header>
+  <header className="receipt-head">{logo&&<img className="receipt-logo" src={logo} alt=""/>}<h2>{s.name}</h2>{s.address&&<p>{s.address}</p>}{s.phone&&<p>Telp. {s.phone}</p>}</header>
   {order.mode==='compliment'&&<p className="receipt-kind">Compliment</p>}
   {(reprint||order.status!=='paid')&&<p className="receipt-kind">{reprint?'Salinan struk':order.status==='refunded'?'Dana dikembalikan':order.status==='void'?'Pesanan dibatalkan':'Belum dibayar'}</p>}
   {/* The pager box is what the guest looks at: big number, one line on what it does. */}

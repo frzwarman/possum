@@ -40,5 +40,16 @@ export async function synchronize(db:MejaDB,user:Identity,transport:Transport=se
  }
  // A failed pull (offline, old server) waits for the next tick; it is noted, never thrown at the operator.
  try{await pull(db,user,puller)}catch(e){await db.meta.put({id:'pullError',value:`${new Date().toISOString()} ${e instanceof Error?e.message:String(e)}`})}
+ if(puller===serverPull)await refreshLogo(db,user).catch(()=>{/* the logo waits for the next tick */})
  })
+}
+// The store's logo lives on the restaurant row, not in the pull: ask when it last changed (a few bytes), download it
+// only when that differs from the copy on this device. The copy keeps the receipt and sidebar right offline.
+async function refreshLogo(db:MejaDB,user:Identity){
+ if(!supabase)return
+ const {data,error}=await supabase.from('restaurants').select('logo_at').eq('id',user.restaurantId).maybeSingle();if(error||!data)return
+ const at=(data as {logo_at:string|null}).logo_at??'';if(at===((await db.meta.get('logoAt'))?.value??''))return
+ const {data:row,error:e}=await supabase.from('restaurants').select('logo').eq('id',user.restaurantId).maybeSingle();if(e||!row)return
+ const logo=(row as {logo:string|null}).logo
+ await db.transaction('rw',db.meta,async()=>{if(logo)await db.meta.put({id:'logo',value:logo});else await db.meta.delete('logo');await db.meta.put({id:'logoAt',value:at})})
 }
