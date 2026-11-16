@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 const db = new PGlite({ extensions: { pgcrypto } });
 let passed = 0;
 await db.exec(
-  `create schema auth;create schema extensions;create role anon;create role authenticated;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`,
+  `create schema auth;create schema extensions;create role anon;create role authenticated;create role service_role;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`,
 );
 for (const file of (await readdir("supabase/migrations")).sort()) {
   try {
@@ -1044,6 +1044,85 @@ await test("Only an owner or manager sets the store logo, and only a small WebP"
   await db.query("select public.set_logo('')");
   assert.equal((await read("select logo from public.restaurants where id=$1", [rid])).rows[0].logo, null);
 });
+// Telegram: the edge function calls these as the service role; nobody else may.
+async function asService(sql, params) {
+  const me = actor;
+  await db.exec("reset role");
+  await db.exec("set role service_role");
+  try {
+    return await db.query(sql, params);
+  } finally {
+    await login(me);
+  }
+}
+const one = async (sql, params) => Object.values((await asService(sql, params)).rows[0])[0];
+const ask = async (action, orderId, amount, what) => (await db.query("select public.request_approval($1,$2,$3,$4) as id", [action, orderId, amount, what])).rows[0].id;
+const status = async (id) => (await db.query("select public.approval_request($1) as r", [id])).rows[0].r;
+await test("Managers link Telegram with a one-time code; cashiers cannot, and only the service role reaches the bot functions", async () => {
+  await login(cashier);
+  await assert.rejects(db.query("select public.telegram_code()"), /Manager required/);
+  await assert.rejects(db.query("select public.telegram_link('x',1,1)"), /permission denied/);
+  await login(owner);
+  const code = (await db.query("select public.telegram_code() as c")).rows[0].c;
+  assert.match(code, /^[0-9a-f]{24}$/);
+  assert.equal((await db.query("select public.telegram_status() as s")).rows[0].s, false);
+  assert.deepEqual(await one("select public.telegram_link('nope',111,222)"), { error: "code" });
+  assert.deepEqual(await one("select public.telegram_link($1,111,222)", [code]), { name: "Owner", restaurant: "Warung Uji" });
+  assert.deepEqual(await one("select public.telegram_link($1,111,222)", [code]), { error: "code" });
+  assert.equal((await db.query("select public.telegram_status() as s")).rows[0].s, true);
+});
+await test("A Telegram answer becomes the same one-use approval a PIN gives; the first answer wins", async () => {
+  await login(cashier);
+  const orderId = randomUUID();
+  const id = await ask("void", orderId, null, "Batalkan pesanan A-1043");
+  assert.deepEqual(await status(id), { status: "pending", id: null, by: null });
+  assert.deepEqual(await one("select public.telegram_request($1)", [id]), { action: "void", amount: null, what: "Batalkan pesanan A-1043", by: "Kasir", chats: [222] });
+  assert.deepEqual(await one("select public.decide_approval($1,999,true)", [id]), { error: "role" });
+  assert.deepEqual(await one("select public.decide_approval($1,111,true)", [id]), { status: "approved", by: "Owner" });
+  assert.deepEqual(await one("select public.decide_approval($1,111,false)", [id]), { status: "approved", by: "Owner", already: true });
+  const answer = await status(id);
+  assert.equal(answer.status, "approved");
+  assert.deepEqual((await read("select approver,requested_by,action,order_id,amount from public.approvals where id=$1", [answer.id])).rows, [{ approver: owner, requested_by: cashier, action: "void", order_id: orderId, amount: null }]);
+  // apply_operation consumes it through use_approval, exactly like a PIN approval: once.
+  const use = () => read("select public.use_approval($1,$2,'void',$3,null,$4,now(),$5) as by", [rid, cashier, orderId, randomUUID(), answer.id]);
+  assert.equal((await use()).rows[0].by, "Owner");
+  await assert.rejects(use(), /Manager approval required/);
+  await login(outsider);
+  await assert.rejects(db.query("select public.approval_request($1)", [id]), /not found|No active/);
+});
+await test("Telegram requests can be rejected, expire after five minutes, and stay capped at three open", async () => {
+  await login(cashier);
+  const rejected = await ask("discount", null, 5000, "Diskon langganan");
+  assert.deepEqual(await one("select public.decide_approval($1,111,false)", [rejected]), { status: "rejected", by: "Owner" });
+  assert.equal((await status(rejected)).status, "rejected");
+  const late = await ask("cashout", null, 20000, "Kas keluar beli es");
+  await read("update public.approval_requests set created_at=now()-interval '6 minutes' where id=$1", [late]);
+  assert.equal((await status(late)).status, "expired");
+  assert.deepEqual(await one("select public.decide_approval($1,111,true)", [late]), { status: "expired" });
+  assert.equal(await one("select public.telegram_request($1)", [late]), null);
+  await assert.rejects(ask("teleport", null, null, "x"), /Unknown approval action/);
+  await assert.rejects(ask("void", null, null, "  "), /1-300 characters/);
+  for (let i = 0; i < 3; i++) await ask("void", randomUUID(), null, `Batalkan ${i}`);
+  await assert.rejects(ask("void", randomUUID(), null, "Batalkan 4"), /Too many open/);
+});
+await test("The morning report and cash-gap alerts go to linked managers, once", async () => {
+  await login(owner);
+  const yesterday = new Date(Date.now() + 3 * 3600000 - 86400000).toISOString().slice(0, 10); // Jakarta (UTC+7) minus the 04:00 cutoff
+  const report = await one("select public.telegram_report()");
+  assert.equal(report.length, 1);
+  assert.equal(report[0].restaurant, "Warung Uji");
+  assert.deepEqual(report[0].chats, [222]);
+  assert.equal(report[0].report.from, yesterday);
+  assert.equal(typeof report[0].report.sales, "number");
+  await read("update public.shifts set received_at=now(),variance=-500000 where id=(select id from public.shifts where restaurant_id=$1 and closed_at is not null order by closed_at limit 1)", [rid]);
+  const alerts = await one("select public.telegram_alerts()");
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].alerts[0].variance, -500000);
+  assert.deepEqual(await one("select public.telegram_alerts()"), []);
+  await db.query("select public.telegram_unlink()");
+  assert.equal((await db.query("select public.telegram_status() as s")).rows[0].s, false);
+  assert.deepEqual(await one("select public.telegram_report()"), []);
+});
 // Independent database restoration, never a live environment.
 await db.exec("reset role");
 const paymentsBefore = (await db.query("select count(*)::int n from public.payments")).rows[0].n;
@@ -1082,7 +1161,7 @@ for (const table of [...new Set(columns.map((c) => c.table_name))]) {
   types += "  }; Insert: never; Update: never; Relationships: [] }\n";
 }
 types +=
-  "}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }\n";
+  "}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined }; request_approval: { Args: { action: string; order_id?: string; amount?: number; what: string }; Returns: string }; approval_request: { Args: { request: string }; Returns: Json }; telegram_code: { Args: Record<string, never>; Returns: string }; telegram_status: { Args: Record<string, never>; Returns: boolean }; telegram_unlink: { Args: Record<string, never>; Returns: undefined } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }\n";
 await writeFile("src/lib/database.types.ts", types);
 await restored.close();
 await db.close();

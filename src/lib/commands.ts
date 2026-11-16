@@ -3,7 +3,7 @@ import { can, type Action } from '../domain/permissions'
 import type { Approval, ApprovalAction, CountSession, Draft, Identity, Ingredient, Line, MenuItem, Operation, OpKind, Order, Outlet, Payment, PurchaseLine, PurchaseOrder, SalesLine, SalesOrder, Settings, Shift, Station, StockItem, Supplier, Transfer } from '../domain/types'
 import { MejaDB, uid } from './db'
 import { validateMenuPhotoData } from './menu-photo'
-import { supabase } from './supabase'
+import { supabase, telegramBot } from './supabase'
 // The demo has no server: its approvers and their PIN live here, and the hint shows the PIN.
 export const DEMO_PIN='123456'
 export const demoApprovers=[{id:'demo-owner',name:'Pemilik Demo'},{id:'demo-manager',name:'Manajer Demo'}]
@@ -72,6 +72,22 @@ export class Commands {
   else{const {data,error}=await supabase!.rpc('approve',{approver,pin,action,order_id:orderId??null,amount:amount??null});if(error)throw error;if(data.error)throw new Error(refusal[data.error]||'Persetujuan ditolak');id=data.id;by=data.by}
   return {id,by,action,amount,orderId,at:Date.now()}
  }
+ // Telegram: the request reaches every linked owner and manager; the first answer wins within 5 minutes,
+ // and an approval comes back as the same one-use approval the PIN gives.
+ async askTelegram(action:ApprovalAction,what:string,{amount,orderId}:{amount?:number;orderId?:string}={}){
+  this.online();if(this.user.demo||!telegramBot)throw new Error('Telegram belum diatur')
+  const {data,error}=await supabase!.functions.invoke('telegram',{body:{action,what,amount,orderId}})
+  if(error){const said=await (error as {context?:Response}).context?.json().then((b:{error?:string})=>b.error,()=>undefined)
+   throw new Error(said?.includes('Too many')?'Masih ada 3 permintaan menunggu. Tunggu jawabannya atau 5 menit.':'Permintaan lewat Telegram gagal dikirim')}
+  return data as {id:string;sent:number}
+ }
+ async telegramAnswer(request:string,action:ApprovalAction,{amount,orderId}:{amount?:number;orderId?:string}={}):Promise<{status:'pending'|'rejected'|'expired';by?:string}|{status:'approved';approval:Approval}>{
+  const {data,error}=await supabase!.rpc('approval_request',{request});if(error)throw error
+  return data.status==='approved'?{status:'approved',approval:{id:data.id,by:data.by,action,amount,orderId,at:Date.now()}}:data
+ }
+ async telegramLink(){this.need('approve',true);const {data,error}=await supabase!.rpc('telegram_code');if(error)throw error;return `https://t.me/${telegramBot}?start=${data}`}
+ async telegramLinked(){const {data,error}=await supabase!.rpc('telegram_status');if(error)throw error;return data as boolean}
+ async telegramUnlink(){this.online();const {error}=await supabase!.rpc('telegram_unlink');if(error)throw error}
  async setPin(pin:string){this.need('approve',true);if(this.user.demo)throw new Error(`Demo memakai PIN ${DEMO_PIN}`);if(!/^\d{6}$/.test(pin))throw new Error('PIN harus 6 angka')
   const {error}=await supabase!.rpc('set_approval_pin',{pin});if(error)throw new Error(error.message.includes('trivial')?'PIN terlalu mudah ditebak: hindari angka kembar dan urutan seperti 123456':error.message)}
  // The 12-hour authorization stops new work, not finishing it: void, cash payment and close still go

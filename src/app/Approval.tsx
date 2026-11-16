@@ -5,6 +5,7 @@ import { Dialog } from "../components/ui/dialog";
 import { Select } from "../components/ui/select";
 import { Button } from "../components/ui/button";
 import { PinPad } from "../components/ui/pinpad";
+import { TelegramApproval } from "./TelegramApproval";
 import { DEMO_PIN } from "../lib/commands";
 import type { Approval, ApprovalAction } from "../domain/types";
 export interface ApprovalRequest {
@@ -89,6 +90,7 @@ export function ApprovalDialog({
       >
         Setujui
       </Button>
+      {request && <TelegramApproval request={request} onApproved={onApproved} />}
     </Dialog>
   );
 }

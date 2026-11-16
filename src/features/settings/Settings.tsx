@@ -39,6 +39,7 @@ import { supabase } from "../../lib/supabase";
 import { compressLogo, compressMenuPhoto, menuPicture } from "../../lib/menu-photo";
 import { bootstrap, pinHash } from "../auth/Login";
 import { roleTitle } from "../../domain/permissions";
+import { TelegramLink } from "./TelegramLink";
 const schema = z.object({
   appName: z.string().min(1).max(30),
   name: z.string().min(1).max(100),
@@ -999,6 +1000,7 @@ export default function SettingsPage() {
               <KeyRound size={16} /> PIN persetujuan
             </Button>
           )}
+          {manager && !user.demo && <TelegramLink />}
           {user.role === "owner" && (
             <Button asChild variant="secondary" size="sm">
               <a href="/admin">

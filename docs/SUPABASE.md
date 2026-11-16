@@ -112,3 +112,73 @@ device from the settings screen while online, then sign in on the cashier
 device and open a shift. The local PGlite checks in `pnpm test:db` do not prove
 that a hosted project is configured correctly; do one real sign-in and one
 small cash sale before service.
+
+## 6. Telegram for owners and managers (optional, free)
+
+One bot sends three things to linked owners and managers: approval requests from
+the till (Setujui / Tolak), the morning report at 07:00 WIB for the business day
+that just ended, and an alert when a shift closes with a cash gap over the limit.
+An approval from Telegram is the same one-use approval as a PIN at the till.
+Telegram's Bot API is free; everything else runs inside the Supabase project.
+
+1. In Telegram, open **@BotFather**, send `/newbot`, pick a name and a username
+   ending in `bot` (for example `takar_ziggy_bot`), and copy the token.
+2. Make two random secrets, one for Telegram and one for the scheduled jobs:
+
+   ```sh
+   openssl rand -hex 24
+   openssl rand -hex 24
+   ```
+
+3. Store the secrets on the project and deploy the function (`supabase/config.toml`
+   already turns off the gateway JWT check for it; the function checks its own
+   secrets):
+
+   ```sh
+   supabase secrets set TELEGRAM_BOT_TOKEN=<token> TELEGRAM_WEBHOOK_SECRET=<secret-1> CRON_SECRET=<secret-2>
+   supabase functions deploy telegram --no-verify-jwt
+   ```
+
+4. Point the bot at the function:
+
+   ```sh
+   curl -s "https://api.telegram.org/bot<token>/setWebhook" \
+     -d url=https://<project-ref>.supabase.co/functions/v1/telegram \
+     -d secret_token=<secret-1> \
+     -d 'allowed_updates=["message","callback_query"]'
+   ```
+
+5. Turn on the **pg_cron** and **pg_net** extensions (Dashboard → Database →
+   Extensions), then run once in the SQL editor. pg_cron runs in UTC, so
+   `0 0 * * *` is 07:00 WIB; alerts are checked every five minutes.
+
+   ```sql
+   select vault.create_secret('https://<project-ref>.supabase.co/functions/v1/telegram', 'telegram_url');
+   select vault.create_secret('<secret-2>', 'telegram_cron_secret');
+   select cron.schedule('telegram-report', '0 0 * * *', $$
+     select net.http_post(
+       url := (select decrypted_secret from vault.decrypted_secrets where name = 'telegram_url'),
+       headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-secret',
+         (select decrypted_secret from vault.decrypted_secrets where name = 'telegram_cron_secret')),
+       body := '{"job":"report"}'::jsonb) $$);
+   select cron.schedule('telegram-alerts', '*/5 * * * *', $$
+     select net.http_post(
+       url := (select decrypted_secret from vault.decrypted_secrets where name = 'telegram_url'),
+       headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-secret',
+         (select decrypted_secret from vault.decrypted_secrets where name = 'telegram_cron_secret')),
+       body := '{"job":"alerts"}'::jsonb) $$);
+   ```
+
+6. Add the bot's username (without `@`) to the frontend environment and rebuild;
+   without it the Telegram buttons stay hidden:
+
+   ```dotenv
+   VITE_TELEGRAM_BOT=takar_ziggy_bot
+   ```
+
+7. Each owner and manager signs in, opens the account area at the bottom of
+   *Lainnya*, taps **Telegram → Hubungkan**, and presses **Start** in the bot. The
+   link code is valid for 15 minutes and works once. From then on the till's
+   approval dialog shows **Minta lewat Telegram**; a request stays open for five
+   minutes, the first manager to answer decides it, and the PIN at the till keeps
+   working as before.

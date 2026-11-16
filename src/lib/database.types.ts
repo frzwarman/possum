@@ -12,6 +12,20 @@ export interface Database { public: { Tables: {
     pin_hash: string
     updated_at: string
   }; Insert: never; Update: never; Relationships: [] }
+  approval_requests: { Row: {
+    id: string
+    restaurant_id: string
+    requested_by: string
+    action: string
+    order_id: string | null
+    amount: number | null
+    what: string
+    status: string
+    approval_id: string | null
+    decided_by: string | null
+    created_at: string
+    decided_at: string | null
+  }; Insert: never; Update: never; Relationships: [] }
   approvals: { Row: {
     id: string
     restaurant_id: string
@@ -245,6 +259,23 @@ export interface Database { public: { Tables: {
     received_at: string
     result: Json
   }; Insert: never; Update: never; Relationships: [] }
+  telegram_alert_cursor: { Row: {
+    restaurant_id: string
+    checked_until: string
+  }; Insert: never; Update: never; Relationships: [] }
+  telegram_codes: { Row: {
+    code: string
+    restaurant_id: string
+    user_id: string
+    expires_at: string
+  }; Insert: never; Update: never; Relationships: [] }
+  telegram_links: { Row: {
+    restaurant_id: string
+    user_id: string
+    telegram_id: number
+    chat_id: number
+    linked_at: string
+  }; Insert: never; Update: never; Relationships: [] }
   transfers: { Row: {
     id: string
     from_restaurant: string
@@ -254,4 +285,4 @@ export interface Database { public: { Tables: {
     created_at: string
     updated_at: string
   }; Insert: never; Update: never; Relationships: [] }
-}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }
+}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined }; request_approval: { Args: { action: string; order_id?: string; amount?: number; what: string }; Returns: string }; approval_request: { Args: { request: string }; Returns: Json }; telegram_code: { Args: Record<string, never>; Returns: string }; telegram_status: { Args: Record<string, never>; Returns: boolean }; telegram_unlink: { Args: Record<string, never>; Returns: undefined } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }
