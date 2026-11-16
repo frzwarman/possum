@@ -48,3 +48,6 @@
  .approval-dialog .pin-pad>button{min-height:48px}
  .approval-actions{margin-top:12px}
 }
+/* "Minta lewat Telegram": the other way to a yes, a quiet outline button as wide as the pad, under its actions. */
+.telegram-ask{width:100%;max-width:280px;min-height:48px;margin-top:12px;font-size:14px;font-weight:500}
+.telegram-note{max-width:280px;margin-top:8px;text-align:center}

@@ -6,7 +6,9 @@ async function demoAs(page: Page, role: 'Pemilik · super admin' | 'Manajer · a
   await page.getByRole('combobox', { name: 'Coba sebagai' }).click()
   await page.getByRole('option', { name: role }).click()
   await page.getByRole('button', { name: 'Jelajahi demo lokal' }).click()
-  await expect(page.getByRole('heading', { name: 'Kasir', level: 1 })).toBeVisible()
+  // A cashier starts on Sif to open the shift; owners and managers start on the till.
+  if (role === 'Kasir') await expect(page.getByRole('button', { name: 'Buka sif sekarang' })).toBeVisible()
+  else await expect(page.getByRole('heading', { name: 'Kasir', level: 1 })).toBeVisible()
 }
 async function approveWith(page: Page, approver: string, pin = '123456') {
   const dialog = page.getByRole('dialog', { name: 'Persetujuan manajer' })
@@ -59,6 +61,7 @@ test('a cashier sees the till and stock work: no sales figures, and counts the d
 
 test("a cashier's discount and void wait for a manager's PIN, and the approver is recorded", async ({ page }) => {
   await demoAs(page, 'Kasir')
+  await go(page, 'Kasir')
   await openShift(page)
   await cart(page).getByLabel(/Nomor pager/).fill('Meja 4')
   await addItem(page, 'Es teh manis')

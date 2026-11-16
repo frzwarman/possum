@@ -64,11 +64,11 @@ export function TelegramApproval({
   }
   return (
     <>
-      <Button variant="secondary" className="full" loading={busy || Boolean(asked)} disabled={busy || Boolean(asked)} onClick={() => void ask()}>
+      <Button variant="secondary" className="telegram-ask" loading={busy || Boolean(asked)} disabled={busy || Boolean(asked)} onClick={() => void ask()}>
         <Send size={17} /> {asked ? `Menunggu jawaban di Telegram (${asked.sent} manajer)` : "Minta lewat Telegram"}
       </Button>
       {note && (
-        <p className="small muted" role="status">
+        <p className="small muted telegram-note" role="status">
           {note}
         </p>
       )}

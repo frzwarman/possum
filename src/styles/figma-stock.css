@@ -38,8 +38,9 @@
 /* The count card as drawn on C7: a two-line title beside a large faded icon (two lines kept for short titles, so the
    icon never sits behind the text), the dark button under the text. */
 .stock-side .cta-card{padding:22px 20px 18px;gap:10px}
-.stock-side .cta-card h2{max-width:60%;min-height:56px;font-size:20px;font-weight:500;line-height:28px}
-.stock-side .cta-card>svg{right:auto;left:52%;top:12px;width:80px;height:80px;stroke-width:.8}
+.stock-side .cta-card h2{max-width:calc(100% - 120px);min-height:56px;font-size:20px;font-weight:500;line-height:28px}
+/* Anchored right, beside the title at any card width (at 52% it ran into the title on a wide card). */
+.stock-side .cta-card>svg{right:20px;top:12px;width:80px;height:80px;stroke-width:.8}
 .stock-side .cta-card .cta-button{margin-top:2px;padding:6px 12px;line-height:20px}
 /* Daftar prep sits where C7 draws "Tell Toper": same title, rows and spacing. */
 .prep-panel{padding:29px 20px 20px}
