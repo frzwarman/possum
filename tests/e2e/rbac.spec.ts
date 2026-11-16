@@ -33,7 +33,7 @@ test('a cashier sees the till and stock work: no sales figures, and counts the d
   await page.keyboard.press('Escape')
   await go(page, 'Sif')
   await expect(page.getByRole('heading', { name: 'Sif & kas' })).toBeVisible()
-  await expect(page.getByText(/Penjualan tercatat|Kas yang seharusnya|Penjualan tunai bersih/)).toHaveCount(0)
+  await expect(page.getByText(/Penjualan per hari|Kas yang seharusnya|Penjualan tunai bersih/)).toHaveCount(0)
   // Cash out of the drawer needs a manager's PIN.
   await page.getByRole('button', { name: 'Catat kas masuk / keluar' }).click()
   const cash = page.getByRole('dialog', { name: 'Mutasi laci kas' })
@@ -49,8 +49,9 @@ test('a cashier sees the till and stock work: no sales figures, and counts the d
   await closing.getByLabel(/Uang tunai yang dihitung/).fill('204000')
   await closing.getByRole('button', { name: 'Konfirmasi tutup sif' }).click()
   await expect(closing).toBeHidden()
-  await expect(page.locator('.history-list')).toContainText(/Dihitung Rp\s*204\.000/)
-  await expect(page.locator('.history-list')).not.toContainText('Selisih')
+  // The till's Sif page now starts the next shift, and shows how the last one closed (counted, never expected).
+  await expect(page.locator('.last-shift')).toContainText(/uang tunai dihitung Rp\s*204\.000/)
+  await expect(page.locator('main')).not.toContainText('Selisih')
   // Pilot: the cashier's Stock tab is the real inventory page, with waste as the only movement they record.
   await page.goto('/inventory')
   await expect(page.getByRole('heading', { name: 'Stok', level: 1 })).toBeVisible()
@@ -76,8 +77,8 @@ test("a cashier's discount and void wait for a manager's PIN, and the approver i
   await cart(page).getByRole('button', { name: /Ke stasiun/ }).click()
   await expect(cart(page).getByText(/Dikirim/)).toBeVisible()
   await go(page, 'Pesanan')
-  await page.locator('.order-card').filter({ hasText: 'Meja 4' }).getByRole('button', { name: 'Detail' }).click()
-  const detail = page.getByRole('dialog', { name: 'Meja 4' })
+  await page.locator('.order-row').filter({ hasText: 'Meja 4' }).click()
+  const detail = page.locator('.order-detail')
   await expect(detail).toContainText('Diskon Rp1.000: Langganan · disetujui Pemilik Demo')
   await detail.getByRole('button', { name: 'Batalkan pesanan' }).click()
   await detail.getByLabel('Alasan wajib').fill('Pelanggan pergi')
@@ -85,8 +86,8 @@ test("a cashier's discount and void wait for a manager's PIN, and the approver i
   await approveWith(page, 'Manajer Demo')
   await expect(page.getByText('Koreksi tersimpan di perangkat')).toBeVisible()
   await page.getByRole('button', { name: 'Semua' }).click()
-  await page.locator('.order-card').filter({ hasText: 'Meja 4' }).getByRole('button', { name: 'Detail' }).click()
-  await expect(page.getByRole('dialog', { name: 'Meja 4' })).toContainText('Dibatalkan: Pelanggan pergi · disetujui Manajer Demo')
+  await page.locator('.order-row').filter({ hasText: 'Meja 4' }).click()
+  await expect(page.locator('.order-detail')).toContainText('Dibatalkan: Pelanggan pergi · disetujui Manajer Demo')
 })
 
 test('the owner sees every correction with who asked and who approved it', async ({ page }) => {
@@ -108,7 +109,7 @@ test('the owner sees every correction with who asked and who approved it', async
   await page.getByRole('button', { name: 'Tutup sif' }).click()
   await page.getByRole('dialog', { name: 'Tutup sif' }).getByLabel(/Uang tunai yang dihitung/).fill('205000')
   await page.getByRole('dialog', { name: 'Tutup sif' }).getByRole('button', { name: 'Konfirmasi tutup sif' }).click()
-  await expect(page.getByRole('heading', { name: 'Laporan & kas' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Laporan', exact: true })).toBeVisible()
   const audit = page.locator('.panel').filter({ hasText: 'Koreksi & persetujuan' })
   await expect(audit).toContainText('Diskon Rp1.000 · Meja 8')
   await expect(audit).toContainText('Teman pemilik · kasir Pemilik Demo · disetujui Pemilik Demo')

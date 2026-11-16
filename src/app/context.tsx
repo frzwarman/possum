@@ -1,7 +1,7 @@
 import { createContext,useContext,useEffect,useMemo,useState,type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { Identity,MenuItem,Outlet,Station } from '../domain/types'
-import { databaseFor,uid } from '../lib/db'
+import { databaseFor,uid,type MejaDB } from '../lib/db'
 import { Commands } from '../lib/commands'
 import { defaultSettings,demoOutlet,demoTransfer,sampleMenu,stock } from '../domain/sample'
 import { availability,unitCosts } from '../domain/calculate'
@@ -37,4 +37,11 @@ function useModel(user:Identity){
 const Context=createContext<ReturnType<typeof useModel>|null>(null)
 export function AppProvider({user,children}:{user:Identity;children:ReactNode}){const value=useModel(user);return <Context.Provider value={value}>{children}</Context.Provider>}
 export function useApp(){const ctx=useContext(Context);if(!ctx)throw new Error('AppProvider required');return ctx}
-export async function logout(){await supabase?.auth.signOut();localStorage.removeItem('meja-identity');location.assign('/')}
+// What signing out on this device would strand: this person's open shift (nobody else can sell until it closes),
+// a new order still in the cart, and operations only this person's session can send. The demo has no server.
+export async function signOutBlockers(db:MejaDB,user:Identity){
+ if(user.demo)return {shift:false,cart:false,unsent:0}
+ const s=await db.shifts.where('status').equals('open').first(),d=await db.drafts.get('current')
+ return {shift:Boolean(s&&s.actor===user.id),cart:Boolean(d&&!d.orderId&&d.lines.some(l=>!l.cancelled)),unsent:await db.outbox.where('state').anyOf('pending','rejected').count()}
+}
+export async function logout(){await supabase?.auth.signOut();localStorage.removeItem('meja-identity');localStorage.removeItem('takar-locked');location.assign('/')}

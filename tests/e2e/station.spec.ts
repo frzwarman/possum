@@ -3,7 +3,8 @@ import { test, expect, demo, openShift, addItem, cart, go } from './meja'
 test('the bar sees the drink, the kitchen the food, and the order is ready once both have served', async ({ page }) => {
   await demo(page)
   await openShift(page)
-  await expect(cart(page).getByLabel(/Nomor pager/)).toHaveValue('Pager 1')
+  // The Pager field shows the number; the order (and the ticket below) keeps "Pager 1".
+  await expect(cart(page).getByLabel(/Nomor pager/)).toHaveValue('1')
   await addItem(page, 'Nasi goreng kampung')
   await addItem(page, 'Es teh manis')
   await cart(page).getByRole('button', { name: /Ke stasiun/ }).click()
@@ -19,13 +20,15 @@ test('the bar sees the drink, the kitchen the food, and the order is ready once 
   await ticket.getByRole('button', { name: 'Siap' }).click()
   await expect(page.locator('.ticket')).toHaveCount(0)
   await go(page, 'Pesanan')
-  await expect(page.locator('.order-card').filter({ hasText: 'Pager 1' })).toContainText('Sedang disiapkan')
+  await page.locator('.order-row').filter({ hasText: 'Pager 1' }).click()
+  await expect(page.locator('.order-detail')).toContainText('Sedang disiapkan')
   await go(page, 'Stasiun')
   await page.getByRole('button', { name: 'Dapur' }).click()
   await expect(page.locator('.ticket')).toContainText('Nasi goreng kampung')
   await page.locator('.ticket').getByRole('button', { name: 'Siap' }).click()
   await go(page, 'Pesanan')
-  await expect(page.locator('.order-card').filter({ hasText: 'Pager 1' })).toContainText('Siap disajikan')
+  await page.locator('.order-row').filter({ hasText: 'Pager 1' }).click()
+  await expect(page.locator('.order-detail')).toContainText('Siap disajikan')
 })
 test('crew log waste from the station in three taps', async ({ page }) => {
   await demo(page)

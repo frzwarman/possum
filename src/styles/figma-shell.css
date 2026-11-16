@@ -1,0 +1,109 @@
+/* Figma pass 3 (review): shell overrides; loaded after styles.css and the other figma-*.css files. */
+
+/* Sign-in, pick your name (C0a): 40px mark, 14px corner line, 232x229 people cards, 12px note. */
+.signin-top{min-height:40px}
+.signin-top .login-brand{gap:8px;font-size:35px;line-height:40px;letter-spacing:-1px}
+.signin-top .login-brand .brand-mark{width:40px;height:40px}
+.signin-top>span{font-size:14px}
+.signin-pick h1{font-size:24px;line-height:32px;letter-spacing:-.5px}
+.signin-pick>p.muted{font-size:16px;line-height:24px;margin-bottom:27px}
+.signin-people{width:100%;margin-bottom:32px}
+.signin-person{gap:0}
+.signin-person .avatar{font-weight:500;margin-bottom:14px}
+.signin-person strong{font-size:16px;line-height:20px;font-weight:500}
+.signin-person small{font-size:12px;line-height:18px;margin-top:10px}
+.signin-chip{margin-top:8px;padding:4px 12px;line-height:18px}
+.signin-pick>p.small{font-size:12px;line-height:18px;margin:0}
+.signin-links .text-button{font-size:13px}
+.signin-foot{margin-top:24px}
+@media(min-width:701px){
+ .signin-person{width:232px;min-height:229px;padding:26px 16px 23px;border-radius:22px}
+ .signin-person .avatar{font-size:31px}
+ /* The email and demo links are extras the frame does not draw: they hang under the note, and the same space on
+    top keeps title, cards and note centred between the logo and the footer, where the frame has them. */
+ .signin-pick{padding-top:47px}
+ .signin-pick>p.muted{margin-top:1px}
+ .signin-foot{margin-top:0}
+}
+@media(max-width:700px){.signin-person .avatar{font-size:25px;margin-bottom:10px}}
+
+/* Sign-in, your PIN (C0b): 731x443 card, 96px avatar, 56px back button, 88x60 keys, 14px dots. */
+.signin-who{gap:0;padding-bottom:4px}
+.signin-who .avatar{font-size:34px;font-weight:500;margin-bottom:10px}
+.signin-who h2{font-size:24px;line-height:32px;letter-spacing:-.5px}
+.signin-who .muted{font-size:14px;line-height:20px;margin:12px 0 0}
+.signin-who .btn{margin-top:24px;min-height:56px;padding:0 26px;gap:12px;font-size:15px}
+.signin-who .error{margin:12px 0 0}
+@media(min-width:701px){
+ .signin-card{max-width:732px;padding:42px 48px 38px;border-radius:28px}
+ .signin-who .btn{margin-top:43px}
+}
+.signin-pin{gap:12px}
+.signin-pin>strong{font-size:16px;line-height:24px}
+.signin-pin .pin-pad-wrap,.lock-card .pin-pad-wrap{width:100%;gap:16px}
+.signin-pin .pin-dots,.lock-card .pin-dots{gap:12px}
+.signin-pin .pin-dots>i,.lock-card .pin-dots>i{width:14px;height:14px}
+.signin-pin .pin-pad,.lock-card .pin-pad{max-width:280px}
+.signin-pin .pin-pad>button,.lock-card .pin-pad>button{min-height:60px;border-radius:12px;font-size:22px}
+.signin-pin .pin-pad>button.ghost,.lock-card .pin-pad>button.ghost{background:var(--bg-subtle)}
+.signin-pin .pin-pad>button.ghost:hover,.lock-card .pin-pad>button.ghost:hover{background:var(--bg-muted)}
+.signin-pin .pin-pad-wrap>.small{line-height:18px}
+
+/* Locked (C0c): the till stays visible under a light slate veil; a 420px white card, the PIN pad, an outline
+   "Ganti pengguna" and the idle rule under it. It sits a little below centre, as drawn. */
+.lock-screen{background:rgba(51,55,70,.53);backdrop-filter:none;overflow-y:auto}
+@media(min-width:701px) and (min-height:720px){.lock-screen{padding-top:57px}}
+.lock-card{max-width:420px;border-radius:28px;background:var(--surface);gap:0}
+@media(min-width:701px){.lock-card{padding:32px 36px 30px}}
+.lock-card .avatar{width:72px;height:72px;font-size:28px;font-weight:500}
+.lock-card h2{margin-top:14px;font-size:20px;line-height:28px;font-weight:600;letter-spacing:-.3px}
+.lock-card>p.muted{margin-top:15px;font-size:14px;line-height:20px}
+.lock-card form{margin-top:13px}
+.lock-card form>label{margin:0}
+.lock-card .lock-submit{margin-top:14px;min-height:52px}
+.lock-card .error{margin:12px 0 0}
+.lock-card .close-missing{width:100%;text-align:left}
+.lock-card .lock-switch{margin-top:14px;min-height:56px;font-weight:500}
+.lock-foot{margin-top:14px;font-size:12px;line-height:18px;color:var(--text-secondary)}
+
+/* Thin strokes like the Figma's Hugeicons on the rail and the sidebar; initials 13px. */
+.sidebar .nav-link svg,.restaurant-switch>svg,.rail-lock svg{stroke-width:1.5}
+.sidebar .profile .avatar{font-size:13px;font-weight:600}
+
+/* Till rail (C2, C7, C11): 22px icons (the Hugeicons fill more of their box than Lucide), 12px labels; the foot is avatar, first name and the lock (40x22: its tap target runs
+   18px down into the padding, so it never covers the name above). */
+@media(min-width:701px){
+ .sidebar.rail .nav-link{font-size:12px;line-height:16px;gap:5px}
+ .sidebar.rail .nav-link svg{width:22px;height:22px}
+ .sidebar.rail .sidebar-bottom{gap:0}
+ .sidebar.rail .profile{gap:5px}
+ .sidebar.rail .rail-name{font-size:12px;line-height:16px;margin-top:0}
+ .sidebar.rail .rail-lock{width:40px;height:22px}
+ .sidebar.rail .rail-lock::after{content:'';position:absolute;inset:0 0 -18px}
+ .sidebar.rail .rail-sync{margin-bottom:6px}
+}
+
+/* Manager sidebar (M1-M8): 32px mark and 28px wordmark at 16/24, a 62px store card, 20px icons, labels at 60px,
+   and the person at the foot: 36px avatar, name 14/20 over role 12/16. */
+@media(min-width:951px){
+ .sidebar:not(.rail) .brand{padding:0;gap:8px;font-size:28px;line-height:32px;letter-spacing:-.8px}
+ .sidebar:not(.rail) .restaurant-switch{margin:20px 0 18px;padding:12px;gap:12px}
+ .sidebar:not(.rail) .nav-link{gap:12px}
+ .sidebar:not(.rail) .nav-link svg{width:20px;height:20px}
+}
+.sidebar:not(.rail) .restaurant-switch strong{line-height:20px}
+.sidebar:not(.rail) .restaurant-switch small{line-height:16px;margin-top:0}
+.sidebar:not(.rail) .profile{padding:0;gap:12px}
+.sidebar:not(.rail) .profile .avatar{width:36px;height:36px;flex:0 0 36px;font-size:13px}
+.sidebar:not(.rail) .profile strong{line-height:20px}
+.sidebar:not(.rail) .profile small{line-height:16px;margin-top:0}
+/* The back office has more pages than the frame draws: the list scrolls, and its last 24px fade so a cut item reads
+   as "more below" instead of a sliver sitting on the person. */
+.sidebar:not(.rail)>nav{padding-bottom:24px;scroll-padding-bottom:24px;mask-image:linear-gradient(#000 calc(100% - 24px),transparent)}
+/* Collapsed sidebar (portrait tablet) reads like the till rail: 22px icons, 12px labels that wrap ("Tim & perangkat")
+   instead of being cut. */
+@media(min-width:701px) and (max-width:950px){
+ .sidebar:not(.rail) .nav-link{width:80px;min-height:60px;padding:8px 2px;gap:5px;font-size:12px;line-height:15px;border-radius:12px}
+ .sidebar:not(.rail) .nav-link svg{width:22px;height:22px}
+ .sidebar:not(.rail) .nav-link>span{white-space:normal;text-wrap:balance;max-width:100%}
+}

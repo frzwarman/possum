@@ -6,7 +6,7 @@ const identity=(role:string)=>JSON.stringify({id:'demo-user',name:'Demo',role,re
 test('owner sees the device panel and can move the till device', async({page})=>{
  await demo(page)
  await page.getByRole('link',{name:'Lainnya'}).click()
- await page.getByRole('button',{name:'Printer & perangkat'}).click()
+ await page.getByRole('button',{name:'Tim & perangkat'}).click()
  await expect(page.getByRole('heading',{name:'Penyimpanan perangkat'})).toBeVisible()
  await expect(page.getByText(/Pemilik dapat memindahkan kasir utama/)).toBeVisible()
 })
@@ -14,7 +14,7 @@ for(const role of ['manager','cashier'])
  test(`${role} sees storage but cannot move the till device`, async({page})=>{
   await page.addInitScript(value=>localStorage.setItem('meja-identity',value as string),identity(role))
   await page.goto('/settings')
-  await page.getByRole('button',{name:'Printer & perangkat'}).click()
+  await page.getByRole('button',{name:'Tim & perangkat'}).click()
   await expect(page.getByRole('heading',{name:'Penyimpanan perangkat'})).toBeVisible()
   await expect(page.getByRole('button',{name:/Minta penyimpanan persisten/})).toBeVisible()
   await expect(page.getByRole('button',{name:/kasir utama/})).toHaveCount(0)

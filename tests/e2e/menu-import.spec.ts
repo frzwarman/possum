@@ -14,7 +14,7 @@ test('a CSV import with photos can be removed again, except an item that was sol
   await expect(page.locator('.admin-row').filter({ hasText: 'TEST ' })).toHaveCount(5)
   // A photo for one item, from the matching file.
   await row('TEST Matcha Latte Dingin').getByRole('button', { name: 'Edit' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Edit menu' })
+  const dialog = page.getByRole('region', { name: 'Edit menu' })
   await dialog.locator('input[type=file]').setInputFiles(`${dir}/TEST Matcha Latte Dingin.jpg`)
   await expect(dialog.locator('img[alt="Pratinjau foto menu"]')).toHaveAttribute('src', /^data:image\/webp;base64,/)
   await dialog.getByRole('button', { name: 'Simpan versi menu' }).click()

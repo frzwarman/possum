@@ -21,7 +21,8 @@ export async function addItem(page:Page,name:string,{eggs=false,note=''}={}){
  // An item with no add-ons skips the dialog and lands in the cart on one tap.
  if(!await dialog.waitFor({state:'visible',timeout:1500}).then(()=>true,()=>false))return
  if(eggs)await dialog.getByRole('checkbox',{name:/Tambah telur/}).check()
- if(note)await dialog.getByLabel(/Catatan persiapan/).fill(note)
+ // The prep note opens from the dialog footer (Figma C3 has no note field).
+ if(note){await dialog.getByRole('button',{name:'Tambah catatan'}).click();await dialog.getByLabel(/Catatan persiapan/).fill(note)}
  await dialog.getByRole('button',{name:/Tambah ke pesanan/}).click()
  await expect(dialog).toBeHidden()
 }
@@ -46,5 +47,4 @@ export async function go(page:Page,label:string){
  await page.locator('main').getByRole('link',{name}).first().click()
 }
 export const drawer=(page:Page)=>page.locator('.panel').filter({hasText:'Laci kas'}).locator('.bill-total')
-export const sales=(page:Page)=>page.locator('.metric').filter({hasText:'Penjualan tercatat'}).locator('strong')
 export const balance=(page:Page,name:string)=>page.locator('.stock-row').filter({hasText:name}).locator('.stock-quantity strong')

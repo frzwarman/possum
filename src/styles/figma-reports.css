@@ -1,0 +1,69 @@
+/* Figma pass 2, reports screens. Loaded after styles.css (main.tsx), so equal-specificity rules here win. */
+/* Laporan (Figma M4): period select, print and a dark Ekspor in the heading; a 300px right column beside three tiles,
+   sales per day and the best sellers. Corrections, payment methods and the report basis follow below. */
+.reports-page .page-heading{flex-wrap:wrap;margin-bottom:24px}
+.report-actions{display:flex;align-items:center;gap:12px}
+.report-actions .field{margin:0}
+.report-actions .select-trigger{min-height:44px;padding:0 14px 0 16px;gap:12px;border:0;border-radius:12px;background:var(--surface);font-size:14px;font-weight:500;color:var(--ink)}
+.report-actions .select-trigger>svg{width:16px;height:16px;color:var(--ink)}
+@media(min-width:701px){.report-actions .select-menu{left:auto;right:0;min-width:180px}}
+.report-actions .dark-button{min-height:44px;padding:0 16px;border-radius:12px;font-size:15px}
+.reports-page .report-filter{gap:12px;margin:-6px 0 18px}
+.reports-page .report-filter label{margin:0}
+.reports-page .report-filter input{min-height:44px;border-radius:12px}
+.report-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start;margin-bottom:24px}
+.report-main,.report-side{display:grid;gap:24px;min-width:0}
+.report-main .metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:0}
+.report-grid .panel{margin:0;padding:24px}
+.report-grid .legend{font-size:12px}
+/* Sales per day: Today's bar chart, wider bars, dashed rules, labels on the rules and a little lower day names. */
+.day-chart{height:160px;gap:18px}
+.day-chart .hour-axis{padding-bottom:32px;text-align:left}
+.day-chart .hour-plot{position:relative;background:none;border:0}
+.day-chart .hour-plot::before{--grid:color-mix(in srgb,var(--border-strong) 65%,#fff);content:'';position:absolute;inset:0 0 32px;background:linear-gradient(var(--grid) 0 0) 0 0/100% 1px no-repeat,linear-gradient(var(--grid) 0 0) 0 25%/100% 1px no-repeat,linear-gradient(var(--grid) 0 0) 0 50%/100% 1px no-repeat,linear-gradient(var(--grid) 0 0) 0 75%/100% 1px no-repeat,linear-gradient(var(--grid) 0 0) 0 100%/100% 1px no-repeat;mask:repeating-linear-gradient(to right,#000 0 3px,transparent 3px 7px)}
+.day-chart .hour-col{position:relative}
+.day-chart .hour-bars{gap:4px}
+.day-chart .hour-bars i{width:min(20px,40%)}
+.day-chart .hour-col>span{height:32px;padding-top:7px;line-height:24px;white-space:nowrap}
+/* Best sellers: no rule under the headers, 56px rows with the menu photo. */
+.top-items th{padding:0 8px 8px;font-size:12px;border-bottom:0}
+.top-items td{padding:10px 8px}
+.top-items th:last-child,.top-items td:last-child{padding-right:0}
+.top-items th:nth-child(2){width:90px}.top-items th:nth-child(3){width:150px}.top-items th:nth-child(4){width:100px}
+.top-item{display:flex;align-items:center;gap:12px}
+.top-item img{width:36px;height:36px;flex:0 0 36px;border-radius:8px;object-fit:cover;background:var(--bg-subtle)}
+.top-item strong{font-weight:500}
+.top-items td.pos{color:var(--good-fg)}.top-items td.neg{color:var(--critical-fg)}
+/* Right column: the teal card says what counts found; gaps on grey rows; cash gaps in the warning colour. */
+.report-cta{gap:10px;padding:20px;border-radius:20px}
+.report-cta h2{max-width:none;font-size:14px;line-height:20px;font-weight:500}
+.report-cta>strong{font-size:32px;line-height:40px;font-weight:700;letter-spacing:-.6px;color:#fff}
+.report-cta .cta-button{position:relative;margin-top:0;padding:7px 12px}
+/* Touch: the button keeps its drawn 31px but gets a 41px hit area. */
+.report-cta .cta-button::after{content:'';position:absolute;inset:-5px -2px}
+.report-side .panel-heading{margin-bottom:12px}
+.gap-list{display:grid;gap:10px}
+.gap-row{display:flex;align-items:center;gap:10px;min-height:56px;padding:8px 12px;border-radius:12px;background:var(--bg-subtle)}
+.gap-row>span:nth-child(2){flex:1;display:grid;gap:1px;min-width:0}
+.gap-row>span:nth-child(2) strong{font-size:14px;line-height:18px;font-weight:500}
+.gap-row small{font-size:12px;color:var(--text-secondary)}
+.gap-row>strong{font-size:14px;font-weight:600;white-space:nowrap}
+.gap-row>strong.neg{color:var(--critical-fg)}.gap-row>strong.pos{color:var(--good-fg)}
+.report-line{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:14px;line-height:20px;color:var(--text-secondary)}
+.report-line strong{font-weight:500;color:var(--text);white-space:nowrap}
+.report-line strong.warn{color:var(--warning-fg)}
+.report-side .panel>.report-line+.report-line{margin-top:8px}
+.report-foot{display:grid;gap:6px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+/* The older panels below, in the same system. */
+.reports-page .report-columns{gap:24px;align-items:start;margin-top:24px}
+.reports-page .report-columns>.panel{margin:0;padding:24px}
+.reports-page .audit-list{display:grid;gap:8px}
+.reports-page .audit-list>div{padding:10px 12px;border:0;border-radius:12px;background:var(--bg-subtle);font-size:13px;line-height:20px}
+.reports-page .payment-row{padding:12px 0;font-size:14px}
+.reports-page .payment-row strong{font-weight:600}
+.reports-page .report-columns .bill-row>span:last-child{color:var(--text)}
+.reports-page .report-completeness{margin:0 0 10px;font-size:13px;color:var(--text)}
+.reports-page .report-completeness>svg{flex:0 0 auto;margin-top:2px;color:var(--warning-fg)}
+.reports-page .report-columns .panel>p.muted+p.muted{margin-top:8px}
+@media(max-width:1190px){.report-grid{grid-template-columns:1fr}.report-side{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}}
+@media(max-width:700px){.report-main .metrics{grid-template-columns:1fr}.report-actions{width:100%}.report-actions .field{flex:1}}

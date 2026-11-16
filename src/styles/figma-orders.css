@@ -1,0 +1,166 @@
+/* Figma pass 2, orders screens. Loaded after styles.css (main.tsx), so equal-specificity rules here win. */
+/* The Figma sets figures proportionally: the app's global tabular "1" has a foot that the frames never show. */
+.orders-page,.order-dialog,.receipt{font-variant-numeric:proportional-nums}
+
+/* Orders (Figma C11): search beside the title, filter pills with the sort on one row, then the table and the chosen
+   order side by side, both panels reaching the bottom of the screen; the table scrolls inside its panel. */
+/* C11 draws this title smaller than the other till pages (24 px semibold), the date line 2 px under it. */
+.orders-page .page-heading{margin-bottom:12px;align-items:center}
+.orders-page .page-heading h1{font-size:24px;line-height:32px;font-weight:600;letter-spacing:-.2px}
+.orders-page .page-heading .muted{margin-top:2px}
+.orders-page .page-heading>.search-box{flex:0 1 420px;height:48px;padding:0 16px;gap:12px;border:0;border-radius:12px}
+.orders-page .page-heading>.search-box input{font-size:14px;color:var(--text)}
+.orders-page .page-heading>.search-box input::placeholder{color:var(--text-secondary)}
+/* Once the search no longer fits beside the title (tablet portrait), it takes the whole row under it. */
+.orders-page{container:orders-page/inline-size}
+@container orders-page (max-width:717px){.orders-page .page-heading>.search-box{flex-basis:100%}}
+/* The sort stays on the pills' row while it fits, else it drops to its own line (tablet portrait, phone).
+   Pills and the sort draw 34 px tall as on C11 inside a 40 px touch target: a 3 px transparent border around the
+   visible pill (background-clip), with the focus ring drawn on the visible edge. */
+.orders-filters{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:13px}
+.orders-filters .category-tabs{flex:0 1 auto;min-width:0;max-width:calc(100% + 6px);margin:0 -3px;padding:0;gap:2px}
+.orders-filters .category-tabs>button,.orders-filters .filter-select .select-trigger{min-height:40px;border:3px solid transparent;background-clip:padding-box;font-size:13px;font-weight:600}
+.orders-filters .category-tabs>button{padding:0 14px;gap:6px}
+.orders-filters .category-tabs>button.active{border-color:transparent}
+.orders-filters .category-tabs>button:focus-visible,.orders-filters .filter-select .select-trigger:focus-visible{outline-offset:-3px}
+.orders-filters .category-tabs>button span{font-size:12px;font-weight:500;color:var(--text-secondary)}
+.orders-filters .category-tabs>button.active span{color:var(--on-ink)}
+.orders-filters .filter-select{flex:0 0 auto;min-width:0;margin:0 -3px 0 auto}
+.orders-filters .filter-select .select-trigger{padding:0 12px;gap:8px}
+.orders-filters .filter-select .select-trigger>svg{width:14px;height:14px;color:var(--text)}
+.orders-filters .filter-select .select-menu{right:0;left:auto}
+.orders-columns{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:stretch}
+.orders-columns:not(:has(>.order-detail)){grid-template-columns:minmax(0,1fr)}
+.orders-columns>.panel{margin:0;border:0;border-radius:20px}
+.orders-list{padding:8px;container-type:inline-size}
+.orders-list>.empty-state{min-height:360px}
+
+/* Sizes fitted to the Figma text runs: 14 px cells, 12 px muted second lines and headers, 13 px semibold numbers. */
+.orders-table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px;line-height:20px}
+.orders-table th{padding:8px 12px 7px;font-size:12px;line-height:17px;font-weight:400;color:var(--text-secondary);text-align:left;white-space:nowrap}
+/* Column widths of the C11 table (771 px at 1280 wide): 84, 60, 134, 116, 119, 101, and Status takes the rest. */
+.orders-table th:nth-child(1){width:10.9%}
+.orders-table th:nth-child(2){width:7.8%}
+.orders-table th:nth-child(3){width:17.4%}
+.orders-table th:nth-child(4){width:15%}
+.orders-table th:nth-child(5){width:15.4%}
+.orders-table th:nth-child(6){width:13.1%}
+.orders-table td{padding:10px 12px;vertical-align:middle;white-space:nowrap}
+/* "Keluarga pemilik" wraps inside its column instead of pushing every column to the right. */
+.orders-table td.col-type{white-space:normal}
+.orders-table td small{display:block;font-size:12px;line-height:18px;color:var(--text-secondary)}
+.order-row{cursor:pointer}
+.order-row:hover td{background:var(--bg-subtle)}
+.order-row.selected td{background:var(--lime-subtle)}
+.order-row td:first-child{border-radius:12px 0 0 12px}
+.order-row td:last-child{border-radius:0 12px 12px 0}
+.order-row .col-no button{padding:0;border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:inherit;text-align:left}
+.order-row .col-total{font-size:13px;font-weight:600}
+.order-row .col-total.line-voided{font-weight:400}
+.order-status{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;line-height:18px;white-space:nowrap;background:var(--bg-muted);color:var(--text-secondary)}
+.order-status.good{background:var(--good-bg);color:var(--good-fg)}
+.order-status.warning{background:var(--warning-bg);color:var(--warning-fg)}
+.order-status.critical{background:var(--critical-bg);color:var(--critical-fg)}
+.order-status.lavender{background:var(--lavender);color:var(--text)}
+/* A narrow table drops the order type first: the detail still says it. */
+@container (max-width:730px){.orders-table .col-type{display:none}}
+
+/* The chosen order: head, lines and payment scroll; the actions stay at the bottom. */
+.order-detail{display:flex;flex-direction:column;padding:21px 20px 20px;min-width:0}
+.detail-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.detail-head>div{min-width:0}
+.detail-head h2{font-size:16px;line-height:22px;font-weight:500;letter-spacing:-.1px}
+.detail-sub{margin-top:3px;font-size:12px;line-height:17px;color:var(--text-secondary)}
+.detail-body{display:flex;flex-direction:column;gap:11px;flex:1 1 auto;min-height:0;overflow-y:auto;margin-top:10px;padding-top:13px;border-top:1px solid var(--border)}
+.detail-line{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:14px;line-height:20px}
+.detail-line>div{min-width:0}
+.detail-line small{display:block;font-size:12px;line-height:17px;color:var(--text-secondary)}
+/* Prices sit 2 px above the item name, as drawn: a shorter line box at the top of the row. */
+.detail-line>strong,.detail-total strong{font-size:13px;line-height:16px;font-weight:600;white-space:nowrap}
+.detail-line.cancelled>div>span,.detail-line.cancelled>strong{text-decoration:line-through;color:var(--text-disabled)}
+.detail-total{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-top:12px;border-top:1px solid var(--border);font-size:14px;line-height:20px}
+.detail-note{font-size:12px;line-height:17px;color:var(--text-secondary)}
+.detail-box{padding:12px 14px 11px;border-radius:12px;background:var(--bg-subtle);font-size:13px;line-height:18px;font-weight:500}
+.detail-box small{display:block;margin-top:1px;font-size:12px;line-height:17px;font-weight:400;color:var(--text-secondary)}
+.detail-box.critical{background:var(--critical-bg);color:var(--critical-fg);font-size:12px;line-height:17px}
+.detail-id{font-size:11px;line-height:16px;color:var(--text-disabled);word-break:break-all}
+.detail-more{display:flex;flex-wrap:wrap;gap:4px 8px;margin-top:12px}
+.detail-more .btn{min-height:40px;padding:0 10px;border:0;background:none;font-size:13px;font-weight:500;color:var(--text-secondary)}
+.detail-more .btn:hover:not(:disabled){background:var(--bg-subtle);color:var(--text)}
+.detail-more .danger-link{color:var(--critical-fg)}
+.detail-actions{display:grid;gap:12px;margin-top:8px}
+.detail-actions .btn{min-height:56px;border-radius:14px;font-size:15px;font-weight:500}
+.detail-actions.pair{grid-template-columns:auto 1fr}
+.detail-form{display:flex;flex-direction:column;margin-top:12px}
+.detail-form .callout{margin:0;padding:10px 12px;font-size:12px;line-height:17px}
+.detail-form>label{margin:12px 0 0}
+.detail-form textarea{min-height:64px}
+/* While a correction is open the panel scrolls as one, and the payment box steps aside for the form. */
+.order-detail:has(.detail-form){overflow-y:auto}
+.order-detail:has(.detail-form) .detail-body{flex:none;overflow:visible}
+.order-detail:has(.detail-form) .detail-box:not(.critical),.order-detail:has(.detail-form) .detail-id{display:none}
+.detail-line.pick{position:relative;flex-direction:row;margin:0 -10px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;font-size:14px;font-weight:400;color:var(--text);cursor:pointer}
+.detail-line.pick input{position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;opacity:0;cursor:pointer}
+.detail-line.pick.on{border-color:var(--ink);background:var(--lime-subtle)}
+.detail-line.pick:has(input:focus-visible){outline:2px solid var(--ink);outline-offset:2px}
+
+/* Till and laptop: the page fills the screen below the shell; the table scrolls inside its panel. */
+@media(min-width:701px){
+ .orders-page.page-content{padding:24px}
+ .workspace>main>.orders-page{display:flex;flex-direction:column;flex:1 1 0;min-height:520px}
+ .orders-columns{flex:1 1 0;min-height:0}
+ .orders-list{overflow:auto}
+ .order-detail{overflow:hidden}
+}
+/* Tablet portrait and phone: the detail is a dialog (Orders.tsx), so it needs no panel of its own. */
+.order-dialog .order-detail{padding:0}
+.order-dialog .detail-body{overflow:visible}
+@media(max-width:700px){
+ .orders-page .page-heading>.search-box{flex:1 1 100%}
+ .orders-list{padding:4px}
+ /* Phone: each order is a stacked row: number, time and status; who and the total; how it was paid. */
+ .orders-table,.orders-table tbody{display:block}
+ .orders-table thead{display:none}
+ .order-row{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"no time status" "for for total" "pay pay pay";gap:4px 10px;align-items:center;padding:12px;border-radius:12px}
+ .order-row+.order-row{box-shadow:0 -1px 0 var(--border)}
+ .order-row td{display:block;padding:0;background:none!important;border-radius:0!important}
+ .order-row.selected{background:var(--lime-subtle)}
+ .order-row .col-no{grid-area:no}
+ .order-row .col-time{grid-area:time;color:var(--text-secondary);font-size:14px}
+ .order-row .col-status{grid-area:status;justify-self:end}
+ .order-row .col-for{grid-area:for;white-space:normal}
+ .order-row .col-for small{display:inline;margin-left:6px}
+ .order-row .col-total{grid-area:total;justify-self:end}
+ .order-row .col-pay{grid-area:pay;font-size:13px;color:var(--text-secondary)}
+ .order-row .col-pay small{display:inline;margin-left:6px}
+ .order-row .col-type{display:none}
+}
+
+/* Printed receipt (Figma C5, 360 px for 80 mm paper): the same proportions on screen, a bigger pager number,
+   the weekday in the paid date, and the total a step above the other sums. */
+.receipt-paper{width:min(100%,calc(var(--paper-width,80mm)*1.19))}
+.receipt-paper:has(.receipt){padding:28px 23px 24px}
+.receipt-logo{max-height:88px;margin-bottom:14px}
+.receipt-head{padding-bottom:11px}
+.receipt-head p{margin-top:1px}
+.receipt-head h2{font-weight:600}
+.receipt-pager{border-width:1.5px;border-radius:12px;padding:12px 19px 8px 16px;margin:0 0 15px}
+.receipt-pager strong{font-size:14px;font-weight:600}
+.receipt-pager small{font-size:12px}
+.receipt-pager b{font-size:32px;line-height:38px;font-weight:600;letter-spacing:-.8px}
+.receipt-meta{gap:2px 14px;margin-bottom:10px}
+.receipt-meta dd{font-weight:400}
+/* Name and price on the first row; the options get the full width under them, as on C5 (not squeezed beside the price). */
+.receipt-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 10px;align-items:start;padding:5px 0 4px}
+.receipt-name{display:contents}
+.receipt-name>small{grid-column:1/-1}
+.receipt-price{grid-row:1;grid-column:2}
+.receipt-name strong,.receipt-price{font-size:14px;font-weight:600}
+.receipt-name small{font-size:12px}
+.receipt-sums{margin-top:8px;padding-top:12px}
+.receipt-row,.receipt-row.receipt-strong,.receipt-row.receipt-strong>span:last-child{font-size:14px;line-height:20px}
+.receipt-total{margin:0;padding:4px 0 1px;font-size:16px}
+.receipt-total strong{font-size:16px}
+.receipt-foot{margin-top:9px;padding-top:15px}
+.receipt-thanks{font-size:12px;line-height:16px}
+.receipt-brand{margin-top:1px}

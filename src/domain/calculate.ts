@@ -182,3 +182,5 @@ export function countsDue(stock:StockItem[],movements:{stockId:string;qty:number
  const stale=(s:StockItem,days:number)=>(last.get(s.id)??0)<now-days*86_400_000
  return {weekly:top.filter(s=>stale(s,7)),monthly:stock.filter(s=>stale(s,30))}
 }
+// Chart axis: four equal steps from 0 to a round top just above the peak (finer than 1/2/5 so the tallest bar fills most of the plot).
+export function niceStep(peak:number){const raw=peak/4,p=10**Math.floor(Math.log10(raw)),n=raw/p;return [1,1.5,2,2.5,3,4,5,6,8,10].find(s=>s>=n)!*p}

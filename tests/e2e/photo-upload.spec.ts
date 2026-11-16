@@ -6,7 +6,7 @@ test('menu photo is optional, compressed on upload, and shown in the POS', async
   await page.getByRole('button', { name: 'Menu & resep' }).click()
   const first = page.getByRole('button', { name: 'Edit' }).first()
   await first.click()
-  const dialog = page.getByRole('dialog', { name: 'Edit menu' })
+  const dialog = page.getByRole('region', { name: 'Edit menu' })
   const tinyPng = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
     'base64',

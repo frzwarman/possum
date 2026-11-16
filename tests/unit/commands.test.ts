@@ -549,3 +549,18 @@ describe('removing menu items',()=>{
   await expect(cashier.commands.removeMenu(['es-teh'])).rejects.toThrow('Perlu akun manajer')
  })
 })
+import { signOutBlockers } from '../../src/app/context'
+describe('signing out never strands work',()=>{
+ it('names an own open shift, a new unsaved order and unsent operations; the demo strands nothing',async()=>{
+  const user=identity({role:'cashier'}),{db,commands}=await seed(user)
+  expect(await signOutBlockers(db,user)).toEqual({shift:false,cart:false,unsent:0})
+  await commands.openShift(0);await tick()
+  await db.drafts.put(draft([tea()]))
+  expect(await signOutBlockers(db,user)).toEqual({shift:true,cart:true,unsent:1})
+  // A saved order in the cart lives in Pesanan; only a new one would be left behind.
+  await db.drafts.put(draft([tea()],{orderId:'saved'}))
+  expect((await signOutBlockers(db,user)).cart).toBe(false)
+  const other=identity({role:'manager'});expect((await signOutBlockers(db,other)).shift).toBe(false)
+  expect(await signOutBlockers(db,{...user,demo:true})).toEqual({shift:false,cart:false,unsent:0})
+ })
+})

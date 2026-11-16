@@ -1,0 +1,125 @@
+/* Figma pass 2, counts screens. Loaded after styles.css (main.tsx), so equal-specificity rules here win. */
+
+/* Overview: three pastel tiles (no teal number tile), rows on grey like the other rebuilt pages. */
+.metrics.count-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+.count-columns{gap:20px}
+.count-columns .btn-accent{min-height:48px}
+.count-rows{display:grid;gap:8px;margin-top:10px}
+.count-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 10px 10px 14px;border-radius:12px;background:var(--bg-subtle)}
+.count-row>span{display:grid;gap:2px;min-width:0}
+.count-row strong{font-size:14px;font-weight:600}
+.count-row small{font-size:12px;color:var(--text-secondary)}
+.count-row .btn{flex:0 0 auto;min-height:40px}
+
+/* C10 count in progress: a white bar across the content area (back, title, progress and the actions spread
+   apart as on the Figma), the list on the left, one item with a keypad on the right. Sizes measured on the frame. */
+.workspace>main>.count-screen{width:100%;min-width:0}
+.count-screen{display:flex;flex-direction:column;background:var(--canvas)}
+.count-top{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:80px;padding:12px 24px;background:var(--surface)}
+.count-back{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:var(--bg-subtle);color:var(--ink)}
+.count-back:hover{background:var(--bg-muted)}
+.count-title{flex:0 1 auto;min-width:0}
+.count-title h1{font-size:24px;line-height:32px;font-weight:700;letter-spacing:-.5px}
+.count-title p{margin:0;font-size:12px;line-height:16px;color:var(--text-secondary)}
+.count-progress{display:grid;gap:6px;flex:0 0 200px;font-size:14px;line-height:20px;font-weight:500}
+.count-progress i{display:block;height:4px;border-radius:2px;background:var(--bg-muted);overflow:hidden}
+.count-progress b{display:block;height:100%;border-radius:inherit;background:var(--good-fg);transition:width .2s}
+.count-actions{display:flex;gap:10px;flex:0 0 auto}
+.count-actions .btn{min-height:44px;padding:0 16px;gap:10px;font-size:15px;font-weight:500}
+.count-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,418px);gap:20px;align-items:start;padding:20px 24px 24px}
+.count-list{grid-column:1;grid-row:1;display:grid;padding:8px;border-radius:16px;background:var(--surface)}
+.count-line{display:flex;align-items:center;gap:14px;width:100%;min-height:54px;padding:6px 12px;border:0;border-radius:10px;background:none;color:var(--text);text-align:left}
+.count-line:hover{background:var(--bg-subtle)}
+.count-line.current{background:var(--lime-subtle)}
+.count-line>svg{color:var(--text-secondary)}
+.count-line.current>svg{color:var(--ink)}
+.count-line.counted:not(.current)>svg{color:var(--good-fg)}
+.count-line>span:first-of-type{flex:1;display:grid;min-width:0}
+.count-line strong{font-size:14px;line-height:20px;font-weight:400}
+.count-line.current strong{font-weight:600}
+.count-line small{font-size:12px;line-height:16px;color:var(--text-secondary)}
+.count-line>span:last-child{font-size:14px;line-height:20px;font-weight:600;text-align:right}
+.count-line>span.pending{font-weight:400;color:var(--text-secondary)}
+.count-entry{grid-column:2;grid-row:1;position:sticky;top:16px;display:flex;flex-direction:column;gap:14px;padding:20px;border-radius:16px;background:var(--surface)}
+.count-entry h2{font-size:24px;line-height:32px;font-weight:700;letter-spacing:-.5px}
+.count-entry>p.muted{margin:0;font-size:14px;line-height:20px}
+.count-boxes{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.count-box{display:grid;gap:6px;margin:0;font-size:12px;line-height:16px;font-weight:400;color:var(--text-secondary)}
+.count-field{display:flex;align-items:center;gap:6px;height:56px;padding:0 14px;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface);cursor:text}
+.count-box.on .count-field{padding:0 13px;border:2px solid var(--ink)}
+.count-field input{flex:1;min-width:0;min-height:0;height:100%;padding:0;border:0;border-radius:0;background:none;font-size:24px;font-weight:600;font-variant-numeric:normal;color:var(--ink);box-shadow:none}
+.count-field input:focus,.count-field input:focus-visible{outline:none}
+.count-field input::placeholder{color:var(--text-disabled);font-weight:500}
+.count-field small{font-size:14px;color:var(--text-secondary)}
+.count-unit{display:inline-flex;align-items:center;gap:2px;min-height:36px;padding:0 6px;margin-right:-6px;border:0;border-radius:8px;background:none;font-size:14px;color:var(--text-secondary)}
+.count-unit:hover{background:var(--bg-subtle);color:var(--text)}
+.count-total{margin:0;font-size:14px;line-height:20px;font-weight:500;color:var(--text)}
+.count-total.negative{color:var(--critical-fg)}
+.count-keypad{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.count-keypad button{height:52px;border:0;border-radius:10px;background:var(--bg-subtle);color:var(--ink);font-size:20px;font-weight:500;font-variant-numeric:normal}
+.count-keypad button:hover{background:var(--bg-muted)}
+.count-keypad button:active{background:var(--border-strong)}
+.count-keypad button:last-child{font-size:15px}
+.count-entry .count-next{min-height:56px;gap:10px;font-size:15px;font-weight:600}
+.count-entry .count-next>svg{color:#fff}
+@media(max-width:1100px){.count-top{flex-wrap:wrap;row-gap:10px}.count-title{flex-basis:calc(100% - 60px)}.count-progress{flex:1 1 200px;order:3}.count-actions{order:4;margin-left:auto}}
+@media(max-width:900px){.count-body{grid-template-columns:minmax(0,1fr)}.count-entry{grid-column:1;position:static}.count-list{grid-row:2}}
+@media(max-width:700px){.count-top{padding:12px 16px}.count-body{padding:16px}.count-progress{flex-basis:100%}.count-actions{width:100%}.count-actions .btn:last-child{flex:1}.count-line{padding:6px 10px}.count-line>span:last-child{max-width:45%}}
+
+/* M2 count review: 12px breadcrumb, 32px title with its status chip, tiles, and a table with ruled rows whose
+   flagged lines carry an inset red band (the rules stay straight under it). */
+.count-review .crumb{position:relative;display:flex;width:max-content;min-height:0;margin:0 0 2px;font-size:12px;line-height:18px} /* block-level: an inline crumb sits on a 14px strut and pushes the title 3px down */
+.count-review .crumb::after{content:'';position:absolute;inset:-11px -8px} /* 40px tap area around the small crumb */
+.count-review .page-heading h1{font-size:32px;line-height:40px;font-weight:700;letter-spacing:-.64px}
+.count-review .title-row .dot-chip{padding:4px 8px;line-height:16px}
+.count-review .page-heading .button-row{flex-wrap:nowrap;gap:12px}
+.count-review .page-heading .btn{min-height:44px;padding:0 16px;gap:10px;font-size:15px;font-weight:500}
+.count-review .page-heading .btn-accent>svg{color:#fff}
+.count-review .metrics{margin-bottom:20px}
+.count-review-panel{padding:20px}
+.count-table{min-width:780px;border-collapse:separate;border-spacing:0;font-size:14px}
+.count-table th{height:32px;padding:0 8px;border:0;border-bottom:1px solid var(--border);font-size:12px;line-height:16px;font-weight:400;color:var(--text-secondary);background:none;vertical-align:middle}
+.count-table th:nth-child(n+2):not(:last-child){width:13%}
+.count-table th:last-child{width:21.5%}
+.count-table td{position:relative;z-index:0;height:41px;padding:0 8px;border:0;border-bottom:1px solid var(--border);vertical-align:middle}
+.count-table tbody tr:last-child td{border-bottom:0}
+.count-table td strong{font-weight:600}
+.count-table .num{text-align:right;white-space:nowrap}
+.count-table td.muted{font-size:14px;color:var(--text-secondary)}
+.count-table tr.flagged td::after{content:'';position:absolute;inset:2px 0;z-index:-1;background:var(--critical-bg)}
+.count-table tr.flagged td:first-child::after{border-radius:4px 0 0 4px}
+.count-table tr.flagged td:last-child::after{border-radius:0 4px 4px 0}
+.count-table tr.flagged td:nth-child(5),.count-table tr.flagged td:nth-child(6){color:var(--critical-fg)}
+.count-table small{font-size:12px}
+.count-reason{position:relative;display:inline-flex;align-items:center;width:100%;max-width:220px}
+.count-reason input{min-height:28px;height:28px;padding:0 30px 0 10px;border:1px solid var(--border-strong);border-radius:4px;background:var(--surface);font-size:14px;color:var(--text)}
+.count-reason input:placeholder-shown{border-color:var(--critical-fg)}
+.count-reason input::placeholder{color:var(--critical-fg)}
+/* Once a reason is in, it reads as plain text (Figma "Spillage not logged"); the box comes back on hover and focus. */
+.count-reason input:not(:placeholder-shown):not(:focus):not(:hover){border-color:transparent;background:transparent;padding:0}
+.count-reason:has(input:not(:placeholder-shown))>svg{color:var(--text-secondary)}
+.count-reason:has(input:not(:placeholder-shown):not(:focus):not(:hover))>svg{display:none}
+.count-reason input::-webkit-calendar-picker-indicator{opacity:0}
+.count-reason>svg{position:absolute;right:8px;pointer-events:none;color:var(--ink)}
+/* A name stays on one line up to 260px, so long names wrap instead of squeezing the reason column. */
+@media(min-width:901px){.count-table td:first-child strong{display:inline-block;width:max-content;max-width:260px}}
+@media(max-width:1100px){.count-review .page-heading{flex-wrap:wrap}}
+@media(max-width:700px){.metrics.count-metrics{grid-template-columns:minmax(0,1fr)}.count-review .page-heading h1{font-size:26px;line-height:32px}.count-review .page-heading .button-row{flex-wrap:wrap;width:100%}.count-review .page-heading .btn{flex:1 1 auto}}
+/* Tablet portrait and phone: each line becomes a card (name, then label/value pairs), so the review never scrolls sideways. */
+@media(max-width:900px){
+ .count-review-panel{padding:12px}
+ .count-review-panel .table-scroll{overflow:visible}
+ .count-table{display:block;min-width:0}
+ .count-table thead{display:none}
+ .count-table tbody{display:grid;gap:8px}
+ .count-table tr{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px 16px;padding:12px;border-radius:12px;background:var(--bg-subtle)}
+ .count-table tr.flagged{background:var(--critical-bg)}
+ .count-table tr.flagged td::after{content:none}
+ .count-table td,.count-table tr.flagged td{display:flex;align-items:baseline;justify-content:space-between;gap:8px;height:auto;padding:0;border:0;background:none;border-radius:0}
+ .count-table td::before{content:attr(data-label);font-size:12px;font-weight:400;color:var(--text-secondary)}
+ .count-table td:first-child,.count-table td:nth-child(6),.count-table td:last-child{grid-column:1/-1;width:auto}
+ .count-table td:first-child::before{content:none}
+  .count-table td:last-child{align-items:center}
+ .count-reason{max-width:none;flex:1}
+ .count-reason input{height:40px;min-height:40px}
+}
