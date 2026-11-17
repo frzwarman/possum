@@ -106,7 +106,7 @@ export function ApprovalDialog({
             className={kind ? undefined : "btn-accent"}
             loading={busy}
             disabled={busy || !who || pin.length !== 6}
-            onClick={() => void approve()}
+            onClick={() => approve()}
           >
             {!busy && <Check size={18} />}
             {kind?.label ?? "Setujui"}

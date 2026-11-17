@@ -48,7 +48,7 @@ export default function Station(){
     <p className="muted small">{o.mode==='dinein'?'Makan di sini':'Bungkus'} · {when(sentAt(o),settings?.timezone,{hour:'2-digit',minute:'2-digit'})}</p>
     <div>{o.lines.filter(l=>l.prepared&&!l.cancelled&&!l.readyAt&&mine(l)).map(l=><div className="ticket-line" key={l.id}><strong>{l.qty}× {l.name}</strong>{l.modifiers.length>0&&<small>{l.modifiers.map(m=>m.name).join(', ')}</small>}{l.note&&<small className="line-note">{l.note}</small>}</div>)}</div>
     <div className="button-row">
-     <Button className="full" disabled={busy} onClick={()=>void act(()=>commands.ready(o.id,station),'Tiket siap; kasir bisa memanggil pager')}><Check size={18}/> Siap</Button>
+     <Button className="full" disabled={busy} onClick={()=>act(()=>commands.ready(o.id,station),'Tiket siap; kasir bisa memanggil pager')}><Check size={18}/> Siap</Button>
      <Button variant="secondary" size="icon" aria-label="Cetak tiket" onClick={()=>setPrinting(o)}><Printer size={17}/></Button>
     </div>
    </article>)}
@@ -61,7 +61,7 @@ export default function Station(){
    </article>
    <article className="panel"><div className="panel-heading"><h2><Clock size={17}/> Segera kedaluwarsa</h2><span className="badge">{expiringPrep.length}</span></div>
     {expiringPrep.length?expiringPrep.map(e=><div className="bill-row" key={e.movement.id}><span>{e.item.name} · batch {when(e.movement.at,settings?.timezone,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}{e.expired?' · kedaluwarsa':` · sampai ${when(e.expiresAt,settings?.timezone,{hour:'2-digit',minute:'2-digit'})}`}</span>
-     <Button size="sm" variant="secondary" disabled={busy||balance(e.item.id)<=0} onClick={()=>void act(()=>commands.stockRecord(e.item.id,'waste',e.remaining,'Kedaluwarsa'),'Sisa batch dicatat terbuang')}>Buang sisa {quantity(e.remaining)} {e.item.unit}</Button></div>):<p className="muted">Tidak ada batch yang mendekati masa simpan.</p>}
+     <Button size="sm" variant="secondary" disabled={busy||balance(e.item.id)<=0} onClick={()=>act(()=>commands.stockRecord(e.item.id,'waste',e.remaining,'Kedaluwarsa'),'Sisa batch dicatat terbuang')}>Buang sisa {quantity(e.remaining)} {e.item.unit}</Button></div>):<p className="muted">Tidak ada batch yang mendekati masa simpan.</p>}
    </article>
   </div>
   {user.mode!=='station'&&!user.primary&&<p className="callout">Perangkat ini belum dipasangkan sebagai stasiun (Lainnya → Tim & perangkat), jadi tombol Siap dan catat buang belum bisa dipakai.</p>}
@@ -73,7 +73,7 @@ export default function Station(){
      <Select label="Satuan" value={waste.unit} onChange={v=>setWaste({...waste,unit:v})} options={(()=>{const s=item(waste.stockId);return s?[{value:s.unit,label:s.unit},...(s.unit==='g'?[{value:'kg',label:'kg'}]:s.unit==='ml'?[{value:'l',label:'liter'}]:[]),...(s.packs??[]).map(p=>({value:p.name,label:`${p.name} (${quantity(p.qty)} ${s.unit})`}))]:[{value:'',label:'Pilih bahan dulu'}]})()}/>
     </div>
     <div className="reason-chips">{REASONS.map(r=><button key={r} className={waste.reason===r?'active':''} onClick={()=>setWaste({...waste,reason:r})}>{r}</button>)}</div>
-    <Button className="full" loading={busy} disabled={busy||!waste.stockId||!waste.amount||!waste.reason} onClick={()=>void saveWaste()}><Trash2 size={17}/> Simpan</Button>
+    <Button className="full" loading={busy} disabled={busy||!waste.stockId||!waste.amount||!waste.reason} onClick={()=>saveWaste()}><Trash2 size={17}/> Simpan</Button>
    </>}
   </Dialog>
   {printing&&<Receipt order={printing} kitchen station={station} reprint onClose={()=>setPrinting(undefined)}/>}

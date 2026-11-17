@@ -4,6 +4,7 @@ import { useApp } from "../../app/context";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { telegramBot } from "../../lib/supabase";
+import { Spinner } from "../../components/ui/loading";
 // An owner or manager links their own Telegram once: Hubungkan opens the bot with a code valid for
 // 15 minutes, and Start in the bot finishes it. Approvals, the 07:00 report and alerts then arrive there.
 export function TelegramLink() {
@@ -46,11 +47,11 @@ export function TelegramLink() {
         description="Terima permintaan persetujuan, laporan pukul 07.00 dan peringatan selisih kas di Telegram."
       >
         {linked === undefined ? (
-          <p className="muted">Memeriksa…</p>
+          <p className="muted"><Spinner label="Memeriksa…" /></p>
         ) : linked ? (
           <>
             <p className="callout">Akun Anda sudah terhubung ke @{telegramBot}.</p>
-            <Button variant="secondary" className="full" loading={busy} onClick={() => void run(async () => (await commands.telegramUnlink(), setLinked(false)))}>
+            <Button variant="secondary" className="full" loading={busy} onClick={() => run(async () => (await commands.telegramUnlink(), setLinked(false)))}>
               Putuskan
             </Button>
           </>
@@ -62,12 +63,12 @@ export function TelegramLink() {
                 <Send size={17} /> Buka @{telegramBot}
               </a>
             </Button>
-            <Button variant="ghost" className="full" loading={busy} onClick={() => void refresh()}>
+            <Button variant="ghost" className="full" loading={busy} onClick={() => refresh()}>
               Saya sudah menekan Start
             </Button>
           </>
         ) : (
-          <Button className="full" loading={busy} onClick={() => void run(async () => setLink(await commands.telegramLink()))}>
+          <Button className="full" loading={busy} onClick={() => run(async () => setLink(await commands.telegramLink()))}>
             Hubungkan
           </Button>
         )}

@@ -4,6 +4,7 @@ import { createRootRoute,createRoute,createRouter,RouterProvider,Navigate } from
 import { AppProvider,useApp } from './app/context'
 import { can } from './domain/permissions'
 import { Shell } from './app/Shell'
+import { PageSkeleton } from './components/ui/loading'
 import Login from './features/auth/Login'
 import Pos from './features/pos/Pos'
 import type { Identity } from './domain/types'
@@ -36,7 +37,7 @@ const Station=lazy(()=>import('./features/station/Station'))
 const Counts=lazy(()=>import('./features/counts/Counts'))
 const Today=lazy(()=>import('./features/today/Today'))
 const Audit=lazy(()=>import('./features/audit/Audit'))
-const skeleton=<div className="page-content" role="status" aria-label="Memuat halaman"><div className="skeleton skeleton-line short"/><div className="skeleton skeleton-title"/><div className="panel">{[0,1,2,3].map(i=><div className="skeleton skeleton-row" key={i}/>)}</div></div>
+const skeleton=<PageSkeleton/>
 // A station tablet starts on its station; everyone else on the till.
 // The cashier tablet never opens the manager screens while a shift is open (pilot rule).
 function Office({children}:{children:ReactNode}){const {user,shift}=useApp();return user.primary&&shift?<Navigate to="/pos"/>:<>{children}</>}

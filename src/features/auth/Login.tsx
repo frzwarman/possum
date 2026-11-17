@@ -1,4 +1,5 @@
 import { useEffect,useState } from 'react'
+import { Spinner } from '../../components/ui/loading'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -71,7 +72,7 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
     <Button type="button" variant="secondary" onClick={()=>{setWho('');setPin('');setError('')}}><ArrowLeft size={18}/> Bukan Anda? Pilih nama</Button>
     {error&&<p role="alert" className="error">{error}</p>}</div>
    {/* The sixth digit signs in, as on the Figma; no extra button to find. */}
-   <div className="signin-pin"><strong>{loading?'Memeriksa…':'Masukkan PIN'}</strong><PinPad label="Masukkan PIN" value={pin} onChange={v=>{setPin(v);if(v.length===6&&member.login&&configured&&!loading)void signIn(member.login,v,v)}} hint="3 kali salah mengunci masuk selama 5 menit."/></div>
+   <div className="signin-pin"><strong>{loading?<Spinner label="Memeriksa…"/>:'Masukkan PIN'}</strong><PinPad label="Masukkan PIN" value={pin} onChange={v=>{setPin(v);if(v.length===6&&member.login&&configured&&!loading)void signIn(member.login,v,v)}} hint="3 kali salah mengunci masuk selama 5 menit."/></div>
   </form>}
   {!member&&<p className="signin-foot"><LockKeyhole size={18}/> Setiap orang masuk dengan PIN sendiri, jadi setiap penjualan dan pembatalan tercatat atas namanya.</p>}
  </main>

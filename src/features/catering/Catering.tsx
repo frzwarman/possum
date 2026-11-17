@@ -327,7 +327,7 @@ export default function Catering() {
               loading={busy}
               disabled={busy || !Number(paying.amount)}
               onClick={() =>
-                void act(async () => {
+                act(async () => {
                   await commands.paySalesOrder(paying.so.id, Number(paying.amount), source);
                   setPaying(undefined);
                 }, "Pembayaran pesanan tercatat")
@@ -345,7 +345,7 @@ export default function Catering() {
           loading={busy}
           disabled={busy}
           onClick={() =>
-            void act(async () => {
+            act(async () => {
               await commands.deliverSalesOrder(delivering!.id);
               setDelivering(undefined);
             }, "Pesanan terkirim; stok diperbarui")
@@ -376,7 +376,7 @@ export default function Catering() {
               loading={busy}
               disabled={busy || !cancelling.reason.trim()}
               onClick={() =>
-                void act(async () => {
+                act(async () => {
                   await commands.cancelSalesOrder(cancelling.so.id, cancelling.reason, Number(cancelling.refund || 0), source);
                   setCancelling(undefined);
                 }, "Pesanan dibatalkan")

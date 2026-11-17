@@ -210,3 +210,11 @@ a.team-row:hover{background:var(--bg-muted)}
 .admin-page .admin-stat strong{font-size:24px;font-weight:700}
 @media(max-width:700px){.admin-page .staff-row{grid-template-columns:36px minmax(0,1fr)}.admin-page .staff-controls{grid-template-columns:1fr 1fr}.menu-cost .metric{min-height:0}}
 .admin-page .admin-main>.panel{margin:0 0 20px}
+/* Import from the owner's own sheet: a unit toggle per bahan, a bahan picker per unmatched recipe name. */
+.import-row{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;margin:0}
+.import-row>span{min-width:0;overflow-wrap:anywhere}
+.import-row .segmented{min-width:0;flex:none}
+.import-row .segmented button{min-height:40px;padding:0 12px}
+.import-row input{flex:0 0 min(280px,55%);min-height:40px;padding:8px 12px}
+.import-links{display:grid;gap:8px;margin-bottom:16px}
+.import-links>h3,.import-links>p{margin:0}

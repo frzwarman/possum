@@ -29,6 +29,7 @@ import { useApp, logout, signOutBlockers } from "../../app/context";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
 import { Select } from "../../components/ui/select";
+import { SkeletonRows } from "../../components/ui/loading";
 import { Dialog } from "../../components/ui/dialog";
 import { csv, download, exportData, uid } from "../../lib/db";
 import {
@@ -36,6 +37,7 @@ import {
   menuImportSchema,
   stockImportSchema,
 } from "../../lib/import";
+import { readSheet, type SheetMenu } from "../../lib/sheet";
 import type { Ingredient, MenuItem, MenuType, OptionGroup, Pack, Role, Station, StockItem } from "../../domain/types";
 import { convert, describeDelta, itemStation, menuType, quantity, rupiah, typeLabel, when } from "../../domain/calculate";
 import { can, roleLabel } from "../../domain/permissions";
@@ -145,6 +147,16 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   const [importType, setImportType] = useState<"menu" | "stock">("menu");
   const [preview, setPreview] = useState<Record<string, string>[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  // A file from the owner's own sheet: what the reader says about it, and for a COGS tab each row's recipe.
+  const [sheet, setSheet] = useState<{ note: string; lines?: SheetMenu["lines"][] }>();
+  // A recipe name with no bahan of that name or "nama lain" → the bahan the owner picked for it ("" = leave it out).
+  const [links, setLinks] = useState<Record<string, string>>({});
+  const key = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+  const bahan = new Map(stockItems.flatMap((s) => [s.name, ...(s.aliases ?? [])].map((n) => [key(n), s] as const)));
+  const linked = (n: string) => bahan.get(key(n)) ?? bahan.get(key(links[key(n)] ?? ""));
+  const unknown = Object.values(links).filter((v) => v.trim() && !bahan.has(key(v)));
+  // Menus this import adds with no recipe line at all: a chef or admin needs a manager's PIN for those (MENU-7).
+  const bare = importType !== "menu" ? 0 : sheet?.lines ? sheet.lines.filter((ls) => !ls.some((l) => linked(l.name))).length : preview.length;
   const [recipeStock, setRecipeStock] = useState("");
   const [recipeQty, setRecipeQty] = useState("");
   const [signout, setSignout] = useState(false);
@@ -180,11 +192,13 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   const [openOpt, setOpenOpt] = useState<string>();
   // Figma M8: the team as the server lists it (the demo has its own two approvers), and the two "how to add" notes.
   const [members, setMembers] = useState<{ id: string; name: string; role: Role; active: boolean }[]>();
+  const [loadingMembers, setLoadingMembers] = useState(false);
   const [help, setHelp] = useState<"person" | "device">();
   useEffect(() => {
     if (tab !== "team" || user.demo || !supabase || !can(user.role, "team")) return;
     let live = true;
-    void supabase.from("memberships").select("user_id,name,role,active").order("name").then(({ data }) => { if (live && data) setMembers(data.map((m) => ({ id: m.user_id, name: m.name, role: m.role as Role, active: m.active }))); });
+    setLoadingMembers(true);
+    void supabase.from("memberships").select("user_id,name,role,active").order("name").then(({ data }) => { if (live && data) setMembers(data.map((m) => ({ id: m.user_id, name: m.name, role: m.role as Role, active: m.active }))); }, () => undefined).then(() => { if (live) setLoadingMembers(false); });
     return () => { live = false; };
   }, [tab, user.demo, user.role]);
   // Opening or leaving the editor starts its little forms afresh, at the top of the page.
@@ -257,7 +271,36 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   async function readFile(file: File) {
     try {
       if (file.size > 200000) throw new Error("CSV maksimal 200 KB");
-      const rows = parseCSV(await file.text());
+      const text = await file.text();
+      // The owner's own sheet (a market list or a COGS tab, downloaded as CSV) is read as laid out; anything else
+      // follows the template.
+      const found = readSheet(text, file.name);
+      const rows: Record<string, string>[] =
+        found?.kind === "menu" ? found.menus.map((m) => ({ name: m.name, category: m.category, type: m.type, price: String(m.price) })) : found ? found.rows : parseCSV(text);
+      setSheet(
+        found?.kind === "menu"
+          ? {
+              lines: found.menus.map((m) => m.lines),
+              note: [
+                'Resep ikut dari COGS; baris "Others" tidak dihitung.',
+                found.skipped.length ? `Tanpa harga jual, dilewati: ${found.skipped.join(", ")}.` : "",
+                stockItems.length ? "" : "Belum ada bahan: impor market list dulu supaya resep tersambung.",
+              ].filter(Boolean).join(" "),
+            }
+          : found && {
+              note: `Satuan ditebak dari nama dan kategori: periksa sekarang, sesudah impor tidak bisa diubah. ${found.skipped} baris tanpa isi kemasan (judul kategori atau bahan yang belum ada harganya) dilewati. Stok awal 0; isi lewat Hitung stok.`,
+            },
+      );
+      // A name of two words or more that all sit in exactly one bahan's name ("oat milk" → "Oat Milk 1L") is filled in.
+      const parts = (s: string) => key(s).split(/[^a-z0-9]+/).filter(Boolean);
+      const next: Record<string, string> = {};
+      if (found?.kind === "menu")
+        for (const n of found.menus.flatMap((m) => m.lines.map((l) => key(l.name))))
+          if (!bahan.has(n) && !(n in next)) {
+            const hits = parts(n).length > 1 ? stockItems.filter((s) => parts(n).every((w) => parts(s.name).includes(w))) : [];
+            next[n] = hits.length === 1 ? hits[0].name : "";
+          }
+      setLinks(next);
       // The columns say which template a file follows: a bahan file picked while "Menu" is selected switches over
       // instead of failing every row on a missing price.
       const head = Object.keys(rows[0] ?? {});
@@ -275,21 +318,14 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       });
       if (new Set(rows.map((r) => r.name.toLowerCase())).size !== rows.length)
         errs.push("Nama duplikat dalam impor");
-      if (
-        rows.some((r) =>
-          (type === "menu" ? menu : stockItems).some(
-            (m) => m.name.toLowerCase() === r.name.toLowerCase(),
-          ),
-        )
-      )
-        errs.push(
-          "Nama sudah ada. Edit menu/bahan yang ada; impor hanya menambah.",
-        );
+      const taken = rows.filter((r) => (type === "menu" ? menu : stockItems).some((m) => m.name.toLowerCase() === r.name.toLowerCase())).map((r) => r.name);
+      if (taken.length) errs.push(`Nama sudah ada: ${taken.join(", ")}. Edit menu/bahan yang ada; impor hanya menambah.`);
       setPreview(rows);
       setImportErrors(errs);
     } catch (e) {
       setImportErrors([String(e)]);
       setPreview([]);
+      setSheet(undefined);
     }
   }
   async function applyImport(approval?: import("../../domain/types").Approval) {
@@ -297,15 +333,21 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       if (importErrors.length || !preview.length)
         throw new Error("Perbaiki CSV dahulu");
       if (importType === "menu") {
-        const added = preview.map((r) => {
+        const added = preview.map((r, i) => {
           const parsed = menuImportSchema.parse(r);
+          // Two sheet lines that land on one bahan (Milk and Steam Milk → Fresh Milk) add up to one recipe line.
+          const recipe = new Map<string, number>();
+          for (const l of sheet?.lines?.[i] ?? []) {
+            const s = linked(l.name);
+            if (s) recipe.set(s.id, (recipe.get(s.id) ?? 0) + Math.round(l.qty * 1000));
+          }
           return {
             id: uid(),
             name: r.name,
             category: typeLabel[parsed.type],
             type: parsed.type,
             station: itemStation({ type: parsed.type, category: "" }),
-            tags: [],
+            tags: sheet?.lines && r.category ? [r.category.slice(0, 50)] : [],
             aliases: [],
             groups: [],
             lowAt: settings?.lowAt ?? 5,
@@ -315,23 +357,30 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             favorite: false,
             version: 1,
             modifiers: [],
-            recipe: [],
+            recipe: [...recipe].filter(([, qty]) => qty > 0).map(([stockId, qty]) => ({ stockId, qty })),
           };
         });
-        await commands.publish([...menu, ...added], stockItems, approval);
+        // Each name linked in the preview becomes that bahan's "nama lain", so the next COGS file finds it by itself.
+        const stock = stockItems.map((s) => {
+          const more = Object.entries(links).filter(([n, v]) => n.length <= 50 && bahan.get(key(v))?.id === s.id).map(([n]) => n);
+          return more.length ? { ...s, aliases: [...new Set([...(s.aliases ?? []), ...more])].slice(0, 20) } : s;
+        });
+        await commands.publish([...menu, ...added], stock, approval);
       } else {
+        // "0" and "10,5" are amounts the file may hold; convert() takes only a positive one.
+        const positive = (v: string) => Number(v.replace(",", ".")) > 0;
         const added = preview.map((r) => ({
           id: uid(),
           name: r.name,
           unit: r.unit as StockItem["unit"],
-          threshold: convert(r.threshold || "0", r.unit, r.unit) || 0,
+          threshold: positive(r.threshold) ? convert(r.threshold, r.unit, r.unit) : 0,
           area: r.area || "",
           aliases: [],
           packs: r.pack_name ? [{ name: r.pack_name, qty: convert(r.pack_qty, r.unit, r.unit) }] : [],
         }));
         await commands.publish(menu, [...stockItems, ...added]);
         for (let i = 0; i < added.length; i++)
-          if (Number(preview[i].quantity) > 0)
+          if (positive(preview[i].quantity))
             await commands.stockRecord(
               added[i].id,
               "opening",
@@ -340,6 +389,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             );
       }
       setPreview([]);
+      setSheet(undefined);
+      setLinks({});
     }, "Impor tersimpan. Periksa sinkronisasi sebelum impor berikutnya.");
   }
   function addRecipe() {
@@ -429,7 +480,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             </div>
             <div className="button-row">
               <button type="button" className="set-discard" onClick={() => edit()}>Buang perubahan</button>
-              <Button className="btn-accent" loading={busy} disabled={busy || !item.name} onClick={() => void saveItem()}>
+              <Button className="btn-accent" loading={busy} disabled={busy || !item.name} onClick={() => saveItem()}>
                 <Check size={20} /> Simpan versi menu
               </Button>
             </div>
@@ -811,7 +862,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                     <Upload size={15} /> {logo ? "Ganti logo" : "Unggah logo"}
                     <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void setLogo(f); }} />
                   </label>
-                  {logo && <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void setLogo()}>Hapus logo</Button>}
+                  {logo && <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setLogo()}>Hapus logo</Button>}
                 </div>
               </div>
             </div>
@@ -1071,7 +1122,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
         <article className="panel">
           <h2>Impor dengan pratinjau</h2>
           <p className="muted">
-            Tambahkan data dari template. Tidak mengubah data yang sudah ada.
+            Tambahkan data dari template, atau langsung dari sheet market list dan COGS (unduh tab-nya sebagai CSV). Tidak mengubah data yang sudah ada.
           </p>
           <Select
             label="Jenis data"
@@ -1080,6 +1131,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               setImportType(v as typeof importType);
               setPreview([]);
               setImportErrors([]);
+              setSheet(undefined);
+              setLinks({});
             }}
             options={[
               { value: "menu", label: "Menu" },
@@ -1110,15 +1163,57 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
           {preview.length > 0 && (
             <>
               <h3>{preview.length} baris diperiksa</h3>
+              {sheet && <p className="muted">{sheet.note}</p>}
               <div className="import-preview">
-                {preview.map((r, i) => (
-                  <div key={i}>{Object.values(r).join(" · ")}</div>
-                ))}
+                {preview.map((r, i) =>
+                  !sheet ? (
+                    <div key={i}>{Object.values(r).join(" · ")}</div>
+                  ) : sheet.lines ? (
+                    <div key={i}>
+                      {r.name} · {rupiah(Number(r.price))} · {r.category || typeLabel[r.type as MenuType]} · {sheet.lines[i].length} bahan
+                    </div>
+                  ) : (
+                    <div key={i} className="import-row">
+                      <span>
+                        {r.name}
+                        {r.pack_qty && <small className="muted"> · pak {r.pack_qty} {r.unit}</small>}
+                      </span>
+                      <div className="segmented" role="group" aria-label={`Satuan ${r.name}`}>
+                        {["g", "ml", "pcs"].map((u) => (
+                          <button key={u} type="button" className={r.unit === u ? "active" : ""} aria-pressed={r.unit === u} onClick={() => setPreview(preview.map((x, j) => (j === i ? { ...x, unit: u } : x)))}>
+                            {u}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ),
+                )}
               </div>
+              {sheet?.lines && Object.keys(links).length > 0 && (
+                <div className="import-links">
+                  <h3>{Object.keys(links).length} nama bahan di resep belum ada di Stok</h3>
+                  <p className="muted">Ketik lalu pilih bahan yang sama dari Stok; nama di resep disimpan sebagai nama lain bahan itu. Biarkan kosong untuk melewati baris resepnya.</p>
+                  <datalist id="import-bahan">
+                    {stockItems.map((s) => (
+                      <option key={s.id} value={s.name} />
+                    ))}
+                  </datalist>
+                  {Object.entries(links).map(([n, v]) => (
+                    <label key={n} className="import-row">
+                      <span>
+                        {n}
+                        <small className="muted"> · {sheet.lines!.filter((ls) => ls.some((l) => key(l.name) === n)).length} menu</small>
+                      </span>
+                      <input list="import-bahan" value={v} placeholder="Lewati" aria-invalid={Boolean(v.trim()) && !bahan.has(key(v))} onChange={(e) => setLinks({ ...links, [n]: e.target.value })} />
+                    </label>
+                  ))}
+                </div>
+              )}
+              {unknown.length > 0 && <p className="error">Tidak ada di Stok: {unknown.join(", ")}. Pilih dari daftar atau kosongkan.</p>}
               <Button
                 loading={busy}
-                disabled={busy || importErrors.length > 0}
-                onClick={() => (!manager && importType === "menu" ? setAsk({ action: "publish", what: `Impor ${preview.length} menu tanpa resep` }) : void applyImport())}
+                disabled={busy || importErrors.length > 0 || unknown.length > 0}
+                onClick={() => (!manager && bare ? setAsk({ action: "publish", what: bare < preview.length ? `Impor ${preview.length} menu, ${bare} tanpa resep` : `Impor ${preview.length} menu tanpa resep` }) : void applyImport())}
               >
                 Konfirmasi impor {preview.length} baris
               </Button>
@@ -1142,7 +1237,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               <Button
                 variant="secondary"
                 onClick={() =>
-                  void act(
+                  act(
                     async () => {
                       await db.outbox
                         .where("state")
@@ -1188,7 +1283,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                       <Button
                         variant="secondary"
                         onClick={() =>
-                          void act(async () => {
+                          act(async () => {
                             await db.outbox.update(o.id, {
                               state: "pending",
                               nextAttempt: 0,
@@ -1204,7 +1299,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                       <Button
                         variant="destructive"
                         onClick={() =>
-                          void act(async () => {
+                          act(async () => {
                             download("takar-pemulihan.json", JSON.stringify(await exportData(db, true), null, 2));
                             await db.outbox.delete(o.id);
                             await sync();
@@ -1227,7 +1322,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                 <Button
                   variant="secondary"
                   onClick={() =>
-                    void act(async () =>
+                    act(async () =>
                       download(
                         "meja-backup-lokal.json",
                         JSON.stringify(await exportData(db), null, 2),
@@ -1240,7 +1335,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                 <Button
                   variant="secondary"
                   onClick={() =>
-                    void act(async () =>
+                    act(async () =>
                       download(
                         "meja-pemulihan.json",
                         JSON.stringify(await exportData(db, true), null, 2),
@@ -1299,7 +1394,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                     );
                   })}
                 </div>
-                {!user.demo && !members && <p className="small muted">Daftar lengkap tampil saat perangkat online.</p>}
+                {!user.demo && !members && (loadingMembers ? <SkeletonRows label="Memuat anggota tim" /> : <p className="small muted">Daftar lengkap tampil saat perangkat online.</p>)}
               </article>
             )}
             <article className="panel">
@@ -1364,7 +1459,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                     className="full"
                     loading={busy}
                     onClick={() =>
-                      void act(async () => {
+                      act(async () => {
                         const { error } = await supabase!.rpc("enroll_device", { device_id: user.deviceId, mode });
                         if (error) throw error;
                         localStorage.setItem("meja-identity", JSON.stringify(await bootstrap(user.id, user.deviceId)));
@@ -1402,7 +1497,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             <Button
               variant="secondary"
               onClick={() =>
-                void act(async () => {
+                act(async () => {
                   const granted = await navigator.storage?.persist?.();
                   const estimate = await navigator.storage?.estimate?.();
                   setStorage(
@@ -1468,7 +1563,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               </a>
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => void openSignout()}>
+          <Button variant="ghost" size="sm" onClick={() => openSignout()}>
             <LogOut size={16} /> Keluar akun
           </Button>
         </div>
@@ -1669,7 +1764,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               className="full"
               disabled={!stock.name || busy}
               onClick={() =>
-                void act(async () => {
+                act(async () => {
                   await commands.publish(menu, [
                     ...stockItems.filter((s) => s.id !== stock.id),
                     stock,
@@ -1757,7 +1852,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
           loading={busy}
           disabled={busy || pin.length !== 6 || pin !== pinAgain}
           onClick={() =>
-            void act(async () => {
+            act(async () => {
               if (pinKind === "approve") await commands.setPin(pin);
               else {
                 if (/^(\d)\1{5}$/.test(pin) || ["123456", "654321", "012345", "123123"].includes(pin)) throw new Error("PIN terlalu mudah ditebak: hindari angka kembar dan urutan seperti 123456");
@@ -1795,7 +1890,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
           <Button variant="secondary" onClick={() => setSignout(false)}>
             Batal
           </Button>
-          <Button variant="destructive" disabled={!blockers || blockers.length > 0} onClick={() => void logout()}>
+          <Button variant="destructive" disabled={!blockers || blockers.length > 0} onClick={() => logout()}>
             Keluar akun
           </Button>
         </div>
@@ -1816,7 +1911,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
           className="full"
           loading={busy}
           onClick={() =>
-            void act(async () => {
+            act(async () => {
               const { error } = await supabase!.rpc("enroll_device", {
                 device_id: user.deviceId,
               });
@@ -1840,7 +1935,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
         </div>
         <Button
           onClick={() =>
-            void act(async () => {
+            act(async () => {
               await db.prints.add({
                 id: uid(),
                 orderId: "test",

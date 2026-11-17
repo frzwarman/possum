@@ -55,3 +55,53 @@ test('a bahan CSV picked while "Menu" is selected is read as bahan, with its ope
   await page.goto('/inventory')
   await expect(page.locator('main').getByText('Sirup hazelnut').first()).toBeVisible()
 })
+
+// docs/samples/sheet-import: Ziggy's own tabs (MARKET LIST BAR, COGS BEVERAGE) downloaded as CSV, imported as they are.
+test("the owner's market list becomes bahan and a COGS tab becomes menus with recipes", async ({ page }) => {
+  await demo(page)
+  await go(page, 'Lainnya')
+  await page.getByRole('button', { name: 'Impor CSV' }).click()
+  const file = page.locator('.upload-label input[type=file]')
+  await file.setInputFiles('docs/samples/sheet-import/market-list-bar.csv')
+  await expect(page.getByText('10 baris diperiksa')).toBeVisible()
+  await expect(page.getByText(/Satuan ditebak/)).toBeVisible()
+  // The guess reads HydroCoco as grams; it is coconut water, so the unit is changed before importing.
+  const hydro = page.getByRole('group', { name: 'Satuan HydroCoco' })
+  await expect(hydro.getByRole('button', { name: 'g', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await hydro.getByRole('button', { name: 'ml', exact: true }).click()
+  await expect(hydro.getByRole('button', { name: 'ml', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Konfirmasi impor 10 baris' }).click()
+  await expect(page.getByText(/Impor tersimpan/)).toBeVisible()
+
+  // "Oat Milk" finds the demo's Susu oat by its nama lain; the five names that match no bahan are linked here once.
+  await file.setInputFiles('docs/samples/sheet-import/cogs-beverage.csv')
+  await expect(page.getByText('4 baris diperiksa')).toBeVisible()
+  await expect(page.getByText(/Tanpa harga jual, dilewati: Cold Brew Bottle/)).toBeVisible()
+  await expect(page.getByText('5 nama bahan di resep belum ada di Stok')).toBeVisible()
+  const link = (name: string) => page.getByRole('combobox', { name: new RegExp(`^${name} ·`) })
+  await link('espresso blend').fill('Custome Blend Selective')
+  await link('chocolate powder').fill('Chocolate')
+  await link('milk').fill('Fresh Milk Diary 1L')
+  await link('steam milk').fill('Fresh Milk Diary 1L')
+  await link('gula aren').fill('Gula XYZ')
+  await expect(page.getByText('Tidak ada di Stok: Gula XYZ. Pilih dari daftar atau kosongkan.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Konfirmasi impor 4 baris' })).toBeDisabled()
+  await link('gula aren').fill('')
+  await page.getByRole('button', { name: 'Konfirmasi impor 4 baris' }).click()
+  await expect(page.getByText(/Impor tersimpan/)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Menu & resep' }).click()
+  const row = (name: string) => page.locator('.admin-row').filter({ has: page.locator('strong', { hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}$`) }) })
+  await expect(row('Americano')).toContainText('COFFEE')
+  await expect(row('Americano')).not.toContainText('Belum ada resep')
+  // Milk and Steam Milk both went to Fresh Milk: one recipe line of 112,5 + 20 ml.
+  await row('Chocolate (Milkshake)').getByRole('button', { name: 'Edit' }).click()
+  await expect(page.getByRole('region', { name: 'Edit menu' }).locator('tr').filter({ hasText: 'Fresh Milk Diary 1L' })).toContainText('132,5 ml')
+  await page.getByRole('region', { name: 'Edit menu' }).getByRole('button', { name: 'Buang perubahan' }).click()
+
+  // The links were saved as nama lain: picking the file again leaves only the name that was skipped.
+  await page.getByRole('button', { name: 'Impor CSV' }).click()
+  await file.setInputFiles('docs/samples/sheet-import/cogs-beverage.csv')
+  await expect(page.getByText('1 nama bahan di resep belum ada di Stok')).toBeVisible()
+  await expect(page.getByText(/Nama sudah ada: Americano, Vegan Latte/)).toBeVisible()
+})

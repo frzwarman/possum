@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { SkeletonRows } from '../../components/ui/loading'
 import { Navigate } from '@tanstack/react-router'
 import { ReceiptText, RefreshCw, ScrollText, Search } from 'lucide-react'
 import { useApp } from '../../app/context'
@@ -140,7 +141,7 @@ export default function Audit() {
    <div className="button-row">
     {!user.demo && <div className="pill-selects"><Select ariaLabel="Sumber" value={source} onChange={(x) => setSource(x as typeof source)} options={[{ value: 'server', label: 'Server (semua perangkat)' }, { value: 'local', label: 'Perangkat ini saja' }]} /></div>}
     <div className="pill-selects"><Select ariaLabel="Periode" value={period} onChange={(x) => { setCustom(x === 'custom'); if (x !== 'custom') { setFrom(back(+x)); setTo(today) } }} options={PERIODS} /></div>
-    <Button variant="secondary" size="icon" aria-label="Muat ulang" aria-busy={busy || undefined} disabled={busy} onClick={() => void load()}><RefreshCw size={18} className={busy ? 'spin' : undefined} /></Button>
+    <Button variant="secondary" size="icon" aria-label="Muat ulang" aria-busy={busy || undefined} disabled={busy} onClick={() => load()}><RefreshCw size={18} className={busy ? 'spin' : undefined} /></Button>
     <Button variant="secondary" onClick={exportCsv}><ReceiptText size={18} /> Ekspor ke Excel</Button>
    </div>
   </div>
@@ -157,7 +158,7 @@ export default function Audit() {
       return <Fragment key={r.id}><tr className={on ? 'on' : undefined} tabIndex={0} aria-selected={on} onClick={() => setPick(r.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPick(r.id) } }}>
        <td className="audit-time">{time(r.at)}</td><td><span className={`dot-chip ${x.tone}`}>{x.chip}</span></td><td>{x.detail}</td><td data-label="Oleh"><strong>{r.actorName}</strong></td><td data-label="Disetujui">{r.approvedBy ? <strong>{approved(r, ', PIN')}</strong> : '—'}</td></tr>
        {on && <tr className="audit-inline"><td colSpan={5}>{entry}</td></tr>}</Fragment> })}
-    </tbody></table></div> : <p className="muted">{busy ? 'Memuat…' : rows.length ? 'Tidak ada yang cocok dengan pencarian atau filter ini.' : 'Tidak ada catatan di rentang ini.'}</p>}
+    </tbody></table></div> : busy ? <SkeletonRows label="Memuat log audit" count={5} /> : <p className="muted">{rows.length ? 'Tidak ada yang cocok dengan pencarian atau filter ini.' : 'Tidak ada catatan di rentang ini.'}</p>}
     <p className="audit-note"><ScrollText size={14} /><span>{source === 'local' && outbox.length > 0 ? `${outbox.length} operasi belum tersinkron ikut ditampilkan. ` : ''}Catatan server ditulis sekali dan tidak pernah diubah; ekspor pemulihan di Lainnya memuat salinannya dari perangkat ini.</span></p>
    </article>
    <aside className="panel audit-detail">{entry || <p className="muted">Rincian catatan yang dipilih muncul di sini.</p>}</aside>

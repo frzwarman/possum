@@ -35,7 +35,7 @@ export default function Admin(){
  return <div className="admin-page"><header className="admin-bar"><span className="brand-mark"><ShieldCheck size={19}/></span>
   <div className="admin-bar-title"><strong>Area pemilik</strong><small>{me.name} · restoran {me.restaurant_id.slice(0,8)}</small></div>
   <a href="/" className="text-button"><Store size={14}/> Halaman kasir</a>
-  <Button variant="secondary" size="sm" disabled={busy} onClick={()=>void run(async()=>{await supabase!.auth.signOut();setMe(null);setStaff([])})}><LogOut size={16}/> Keluar</Button></header>
+  <Button variant="secondary" size="sm" disabled={busy} onClick={()=>run(async()=>{await supabase!.auth.signOut();setMe(null);setStaff([])})}><LogOut size={16}/> Keluar</Button></header>
  <main className="admin-main"><div className="page-heading"><div><p className="eyebrow">Kelola siapa yang boleh masuk</p><h1>Akun staf</h1><p className="muted">Peran dan izin masuk. Sandi dan email tidak pernah dibaca aplikasi.</p></div></div>
   <div className="admin-stats"><div className="admin-stat"><span>Total akun</span><strong>{staff.length}</strong></div><div className="admin-stat"><span>Aktif</span><strong>{staff.filter(s=>s.active).length}</strong></div><div className="admin-stat"><span>Nonaktif</span><strong>{staff.filter(s=>!s.active).length}</strong></div></div>
   <article className="panel"><div className="panel-heading"><h2>Daftar akun</h2><span className="badge">Perubahan langsung berlaku</span></div>

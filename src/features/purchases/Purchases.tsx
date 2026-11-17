@@ -258,7 +258,7 @@ export default function Purchases() {
             </label>
             <Select label="Pembayaran kiriman ini" value={source} onChange={(v) => setSource(v as Source)} options={sources(true)} />
             {pending > 0 && <p className="receive-alert">{pending} baris perlu dicek sebelum stok naik.</p>}
-            <Button className="btn-accent full receive-confirm" loading={busy} disabled={busy || pending > 0} onClick={() => void receive()}>
+            <Button className="btn-accent full receive-confirm" loading={busy} disabled={busy || pending > 0} onClick={() => receive()}>
               <Check size={20} /> Konfirmasi dan masukkan ke stok
             </Button>
           </aside>
@@ -509,7 +509,7 @@ export default function Purchases() {
               loading={busy}
               disabled={busy || !draft.supplier.trim() || !draft.lines.length}
               onClick={() =>
-                void act(async () => {
+                act(async () => {
                   const known = suppliers.find((s) => s.active && s.name.toLowerCase() === draft.supplier.trim().toLowerCase());
                   await commands.savePurchase({ ...draft, supplierId: known?.id });
                   setDraft(undefined);
@@ -539,7 +539,7 @@ export default function Purchases() {
               loading={busy}
               disabled={busy || source === "unpaid" || !Number(paying.amount)}
               onClick={() =>
-                void act(async () => {
+                act(async () => {
                   await commands.payPurchase(paying.po.id, Number(paying.amount), source as Payment["from"]);
                   setPaying(undefined);
                 }, "Pembayaran ke pemasok tercatat")
@@ -566,7 +566,7 @@ export default function Purchases() {
           loading={busy}
           disabled={busy || !reason.trim()}
           onClick={() =>
-            void act(async () => {
+            act(async () => {
               await commands.cancelPurchase(closing!.id, reason);
               setClosing(undefined);
             }, closing?.status === "partial" ? "Sisa PO ditutup" : "PO dibatalkan")
@@ -603,7 +603,7 @@ export default function Purchases() {
               loading={busy}
               disabled={busy || !supplier.name.trim()}
               onClick={() =>
-                void act(async () => {
+                act(async () => {
                   await commands.saveSupplier(supplier);
                   setSupplier(undefined);
                 }, "Pemasok tersimpan")

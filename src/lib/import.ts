@@ -1,16 +1,8 @@
 import { z } from 'zod'
 import { menuType } from '../domain/calculate'
+import { csvRows } from './sheet'
 export function parseCSV(input:string):Record<string,string>[] {
- const text=input.replace(/^﻿/,'');const rows:string[][]=[];let row:string[]=[];let cell='';let quoted=false
- // Indonesian Excel saves CSV with semicolons: whichever separator the header uses wins.
- const head=text.slice(0,text.indexOf('\n')<0?text.length:text.indexOf('\n')),sep=head.split(';').length>head.split(',').length?';':','
- for(let i=0;i<text.length;i++){const c=text[i]
-  if(c==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}
-  else if(c===sep&&!quoted){row.push(cell);cell=''}
-  else if(c==='\n'&&!quoted){row.push(cell.replace(/\r$/,''));if(row.some(Boolean))rows.push(row);row=[];cell=''}
-  else cell+=c}
- if(quoted)throw new Error('Tanda kutip CSV belum ditutup')
- row.push(cell.replace(/\r$/,''));if(row.some(Boolean))rows.push(row)
+ const rows=csvRows(input)
  const headers=rows.shift();if(!headers)throw new Error('CSV kosong')
  if(new Set(headers).size!==headers.length)throw new Error('Kolom CSV duplikat')
  if(rows.length>500)throw new Error('Maksimal 500 baris per impor')

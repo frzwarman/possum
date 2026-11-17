@@ -133,7 +133,7 @@ export default function Reports(){
      <div className="bill-row"><span>Rata-rata per pesanan</span><span>{rupiah(paid.length?Math.round(sales/paid.length):0)}</span></div><div className="bill-row"><span>Pembayaran bersih, setelah refund</span><span>{rupiah(sales-refunds)}</span></div><div className="bill-row"><span>Belum dibayar, {filtered.filter(o=>o.status==='open').length} pesanan terbuka</span><span>{rupiah(outstanding)}</span></div>
      <div className="bill-row"><span>Total diskon</span><span>{rupiah(discounts)}</span></div><div className="bill-row"><span>Pengembalian dana</span><span>{rupiah(refunds)}</span></div>
      <p className="small muted">Penjualan dan biaya bahan bukan laba bersih. Biaya operasional lain belum dihitung.</p></article>
-    <article className="panel"><div className="panel-heading"><h2>Dasar laporan</h2>{!user.demo&&<Button variant="secondary" size="sm" onClick={()=>void act(async()=>{const {data,error}=await supabase!.rpc('sales_report',{from_day:from,to_day:to});if(error)throw error;setRemote(data)},'Ringkasan server diperbarui')}>Ambil ringkasan server</Button>}</div>
+    <article className="panel"><div className="panel-heading"><h2>Dasar laporan</h2>{!user.demo&&<Button variant="secondary" size="sm" onClick={()=>act(async()=>{const {data,error}=await supabase!.rpc('sales_report',{from_day:from,to_day:to});if(error)throw error;setRemote(data)},'Ringkasan server diperbarui')}>Ambil ringkasan server</Button>}</div>
      <p className="report-completeness"><AlertCircle size={16}/>{user.demo?'Data demo lokal':pending?`Termasuk transaksi lokal; ${pending} operasi belum tersinkron`:'Riwayat lokal maksimal 500 pesanan; gunakan ringkasan server untuk angka lengkap'}. Sinkron terakhir: {lastSync?when(lastSync,settings?.timezone):'belum ada'}.</p>
      {remote&&<div className="callout">Server: {remote.transactions} transaksi · penjualan {rupiah(remote.sales)} · refund {rupiah(remote.refunds)} · tertagih {rupiah(remote.outstanding)}. Tidak termasuk operasi lokal yang belum tersinkron.</div>}
      <p className="muted">Hari usaha berganti pukul {String(settings?.cutoff??4).padStart(2,'0')}.00 ({settings?.timezone}). Penjualan dihitung saat pembayaran; pesanan terbuka berdasarkan waktu pesanan; refund pada hari refund.</p><p className="muted">Data operasional dimulai {settings?.goLive}. Ekspor CSV adalah laporan dari data yang tersedia di perangkat, bukan backup database lengkap.</p></article>
@@ -144,14 +144,14 @@ export default function Reports(){
    <label>Uang tunai yang dihitung<Money value={counted} onChange={setCounted}/></label>
    {boss&&<div className="bill-total"><span>Selisih</span><strong>{rupiah(Number(counted)-expected)}</strong></div>}
    <p className="callout">Selesaikan semua pesanan terbuka. Setelah menutup, ekspor backup lokal dan periksa sinkronisasi di Lainnya.</p>
-   <Button loading={busy} disabled={busy||counted===''} className="full btn-accent" onClick={()=>void close()}>Konfirmasi tutup sif</Button>
+   <Button loading={busy} disabled={busy||counted===''} className="full btn-accent" onClick={()=>close()}>Konfirmasi tutup sif</Button>
   </Dialog>
   <Dialog open={cashDialog} onOpenChange={setCashDialog} title="Mutasi laci kas">
    <Select label="Jenis" value={direction} onChange={setDirection} options={[{value:'out',label:'Kas keluar'},{value:'in',label:'Kas masuk'}]}/>
    <label>Jumlah<Money value={amount} onChange={setAmount}/></label>
    <label>Alasan<input value={reason} onChange={e=>setReason(e.target.value)}/></label>
    <p className="small muted">Pembelian yang sudah dicatat “dari laci kas” tidak perlu dicatat lagi.{!boss&&direction==='out'&&' Kas keluar memerlukan PIN manajer.'}</p>
-   <Button className="full" loading={busy} disabled={busy||!reason.trim()||!amount} onClick={()=>void moveCash()}>Simpan mutasi</Button>
+   <Button className="full" loading={busy} disabled={busy||!reason.trim()||!amount} onClick={()=>moveCash()}>Simpan mutasi</Button>
   </Dialog>
   <ApprovalDialog request={ask} onClose={()=>setAsk(undefined)} onApproved={a=>{setAsk(undefined);if(a.action==='variance')void close(a);else void moveCash(a)}}/>
  </section>

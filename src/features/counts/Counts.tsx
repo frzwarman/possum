@@ -85,7 +85,7 @@ export default function Counts(){
     <div className="count-title"><h1 id="count-title">Hitung: {session.area}</h1><p>{closing?'Hitung sebelum tutup, dimulai':'Dimulai'}{by?` ${by}`:''} {hhmm(session.startedAt)}.{closing?' Sif bisa ditutup setelah hitungan ini dikirim.':''}</p></div>
     <div className="count-progress"><span>{counted} dari {lines.length} dihitung</span><i role="progressbar" aria-label="Bahan dihitung" aria-valuemin={0} aria-valuemax={lines.length} aria-valuenow={counted}><b style={{width:`${counted/lines.length*100}%`}}/></i></div>
     <div className="count-actions"><Button variant="secondary" onClick={()=>setSession(undefined)}><Clock size={20}/> Jeda</Button>
-     <Button variant="secondary" loading={busy} disabled={busy||!counted} onClick={()=>void submit()}><Check size={20}/> Kirim untuk ditinjau</Button></div>
+     <Button variant="secondary" loading={busy} disabled={busy||!counted} onClick={()=>submit()}><Check size={20}/> Kirim untuk ditinjau</Button></div>
    </header>
    <div className="count-body">
     <article className="count-entry" ref={entry}>
@@ -97,7 +97,7 @@ export default function Counts(){
      <p className={`count-total${problem?' negative':''}`} aria-live="polite">{problem||(total===undefined?'Belum dihitung':`= ${quantity(total)} ${s.unit}`)}</p>
      <div className="count-keypad">{['1','2','3','4','5','6','7','8','9',',','0'].map(k=><button type="button" key={k} aria-label={k===','?'Koma':undefined} onClick={()=>press(k)}>{k}</button>)}<button type="button" onClick={()=>press('del')}>Hapus</button></div>
      {next?<Button className="btn-accent full count-next" onClick={()=>go(next)}><ChevronRight size={20}/> Berikutnya: {item(next.stockId)?.name}</Button>
-      :<Button className="btn-accent full count-next" loading={busy} disabled={busy||!counted} onClick={()=>void submit()}><Check size={20}/> Selesai menghitung</Button>}
+      :<Button className="btn-accent full count-next" loading={busy} disabled={busy||!counted} onClick={()=>submit()}><Check size={20}/> Selesai menghitung</Button>}
     </article>
     <div className="count-list">{lines.map((l,n)=>{const x=item(l.stockId)!,got=l.counted!==undefined;return <button type="button" key={l.stockId} className={`count-line${n===i?' current':''}${got?' counted':''}`} aria-current={n===i||undefined} onClick={()=>{go(l);entry.current?.scrollIntoView({block:'nearest',behavior:'smooth'})}}>
      {got&&n!==i?<Check size={16}/>:<ChevronRight size={16}/>}<span><strong>{x.name}</strong><small>{hint(x)}</small></span>
@@ -111,8 +111,8 @@ export default function Counts(){
   return <section className="page-content count-review" aria-labelledby="review-title">
    <div className="page-heading"><div><button type="button" className="crumb" onClick={()=>setReviewing(undefined)}>Hitung stok</button>
     <div className="title-row"><h1 id="review-title">{c.area}, {when(c.submittedAt??c.startedAt,tz,{weekday:'long',day:'numeric',month:'short'}).replace(',','')}</h1><span className={`dot-chip ${approved?'good':'warning'}`}>{approved?`Disetujui ${c.approvedBy??''}`.trim():'Menunggu persetujuan'}</span></div></div>
-    {!approved&&<div className="button-row">{flagged>0&&<Button variant="secondary" onClick={()=>void recount(c)}><RotateCw size={20}/> Hitung ulang yang ditandai</Button>}
-     <Button className="btn-accent" loading={busy} disabled={busy} onClick={()=>void approve(c)}>{manager?<><Check size={20}/> Setujui hitungan</>:<><Lock size={20}/> Setujui dengan PIN</>}</Button></div>}</div>
+    {!approved&&<div className="button-row">{flagged>0&&<Button variant="secondary" onClick={()=>recount(c)}><RotateCw size={20}/> Hitung ulang yang ditandai</Button>}
+     <Button className="btn-accent" loading={busy} disabled={busy} onClick={()=>approve(c)}>{manager?<><Check size={20}/> Setujui hitungan</>:<><Lock size={20}/> Setujui dengan PIN</>}</Button></div>}</div>
    <div className="metrics count-metrics">
     <article className="metric tone-lavender"><span><Coins size={16}/> Nilai selisih</span><strong>{priced?money(gap||0):'—'}</strong><small>{worth>0?`${(Math.abs(gap)/worth*100).toLocaleString('id-ID',{maximumFractionDigits:1})}% dari nilai stok`:'Harga beli belum tercatat'}</small></article>
     <article className="metric tone-sky"><span><ClipboardList size={16}/> Dihitung</span><strong>{rows.length} dari {walk}</strong><small>{[by,mins===undefined?'':mins<1?'kurang dari 1 menit':`${mins} menit`].filter(Boolean).join(', ')||c.area}</small></article>
@@ -139,7 +139,7 @@ export default function Counts(){
   <div className="report-columns count-columns">
    <article className="panel"><div className="panel-heading"><h2>Mulai hitungan</h2></div>
     <Select label="Area simpan" value={area} onChange={setArea} options={[{value:'',label:'Semua area'},...areas.map(a=>({value:a,label:a}))]}/>
-    <Button className="btn-accent" onClick={()=>void start()}><Play size={16}/> Mulai menghitung</Button>
+    <Button className="btn-accent" onClick={()=>start()}><Play size={16}/> Mulai menghitung</Button>
     {drafts.length>0&&<><h3 className="mt">Dijeda</h3><div className="count-rows">{drafts.map(c=><div className="count-row" key={c.id}><span><strong>{c.area}</strong><small>{when(c.startedAt,tz)} · {c.lines.filter(l=>l.counted!==undefined).length}/{c.lines.length} bahan</small></span><Button size="sm" variant="secondary" onClick={()=>resume(c)}>Lanjutkan</Button></div>)}</div></>}
     {due.weekly.length>0&&<p className="callout">Jatuh tempo minggu ini: {due.weekly.map(s=>s.name).slice(0,6).join(', ')}{due.weekly.length>6?` dan ${due.weekly.length-6} lagi`:''}.</p>}
    </article>

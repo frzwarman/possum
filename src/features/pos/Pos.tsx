@@ -337,12 +337,12 @@ export default function Pos() {
           notTill ? (
             <p className="callout small"><span>Penjualan hanya di perangkat kasir utama. <Link to="/settings" className="text-button">Atur di Lainnya</Link></span></p>
           ) : (
-            <Button className="full" onClick={() => void navigate({ to: "/sif/buka" })} disabled={!user.primary}><Wallet size={18} /> Buka sif untuk melayani</Button>
+            <Button className="full" onClick={() => navigate({ to: "/sif/buka" })} disabled={!user.primary}><Wallet size={18} /> Buka sif untuk melayani</Button>
           )
         ) : (
           <>
-            {tablets && <Button variant="secondary" className="full station-btn" disabled={busy || !count || draft.lines.every((l) => l.prepared)} onClick={() => void prepare()}><ChefHat size={16} /> Ke stasiun</Button>}
-            <Button className="full checkout-btn" disabled={busy || !count || (tablets && draft.lines.some((l) => !l.prepared && !l.cancelled))} onClick={() => void payStart()}>{comp && total.total === 0 ? "Simpan compliment" : `Bayar ${rupiah(total.total)}`}</Button>
+            {tablets && <Button variant="secondary" className="full station-btn" disabled={busy || !count || draft.lines.every((l) => l.prepared)} onClick={() => prepare()}><ChefHat size={16} /> Ke stasiun</Button>}
+            <Button className="full checkout-btn" disabled={busy || !count || (tablets && draft.lines.some((l) => !l.prepared && !l.cancelled))} onClick={() => payStart()}>{comp && total.total === 0 ? "Simpan compliment" : `Bayar ${rupiah(total.total)}`}</Button>
             {comp && <p className="small muted center">{comp.kind === "staff" ? `${comp.who || "Staf"} bayar 50% untuk makanan. Minuman gratis tapi tetap mengurangi stok dan masuk laporan compliment.` : "Tanpa pembayaran. Struk tercetak sebagai Compliment, stok tetap berkurang."}</p>}
             {tablets && count > 0 && draft.lines.some((l) => !l.prepared) && <p className="small muted center">Kirim ke stasiun sebelum menerima pembayaran.</p>}
             {!tablets && !comp && <p className="small muted center">Beri tahu bar dan dapur apa yang dibuat. Stok berkurang saat pesanan dibayar.</p>}
@@ -460,7 +460,7 @@ export default function Pos() {
             </div>
             <div className="option-footer">
               <div className="qty-stepper"><button type="button" aria-label="Kurangi jumlah" disabled={pick <= 1} onClick={() => setPick(pick - 1)}><Minus size={20} strokeWidth={1.6} /></button><span aria-live="polite">{pick}</span><button type="button" className="plus" aria-label="Tambah jumlah" disabled={pick >= 99} onClick={() => setPick(pick + 1)}><Plus size={20} strokeWidth={1.6} /></button></div>
-              <Button className="btn-accent" onClick={() => void addLine(selected, mods, note, pick)}>Tambah ke pesanan, {rupiah(optionPrice * pick)}</Button>
+              <Button className="btn-accent" onClick={() => addLine(selected, mods, note, pick)}>Tambah ke pesanan, {rupiah(optionPrice * pick)}</Button>
               {!noteOpen && <Button variant="ghost" className="note-toggle" onClick={() => setNoteOpen(true)}><NotebookPen size={18} /> Tambah catatan</Button>}
             </div>
           </>;
@@ -519,7 +519,7 @@ export default function Pos() {
                 <label className="check-row"><input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />Saya sudah memeriksa penerimaan di akun merchant.</label>
               </>
             )}
-            <Button className="full btn-accent pay-confirm" loading={busy} disabled={busy || (viaEdc ? !edc : method === "cash" ? Number(received) < checkout.totals.total : !verified)} onClick={() => void pay()}><Check size={20} /> {viaEdc ? `Konfirmasi: ${method === "qris" ? "QRIS " : ""}dibayar di EDC ${edc}` : "Catat pembayaran"}</Button>
+            <Button className="full btn-accent pay-confirm" loading={busy} disabled={busy || (viaEdc ? !edc : method === "cash" ? Number(received) < checkout.totals.total : !verified)} onClick={() => pay()}><Check size={20} /> {viaEdc ? `Konfirmasi: ${method === "qris" ? "QRIS " : ""}dibayar di EDC ${edc}` : "Catat pembayaran"}</Button>
           </>
         )}
       </Dialog>

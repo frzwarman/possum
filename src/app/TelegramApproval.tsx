@@ -64,7 +64,7 @@ export function TelegramApproval({
   }
   return (
     <>
-      <Button variant="secondary" className="telegram-ask" loading={busy || Boolean(asked)} disabled={busy || Boolean(asked)} onClick={() => void ask()}>
+      <Button variant="secondary" className="telegram-ask" loading={busy || Boolean(asked)} disabled={busy || Boolean(asked)} onClick={() => ask()}>
         <Send size={17} /> {asked ? `Menunggu jawaban di Telegram (${asked.sent} manajer)` : "Minta lewat Telegram"}
       </Button>
       {note && (

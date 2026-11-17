@@ -68,7 +68,7 @@ export default function Inventory(){
      <label className="check-row"><input type="checkbox" disabled={!shift||shift.actor!==user.id} checked={drawer} onChange={e=>setDrawer(e.target.checked)}/>Dibayar dari laci kas sif saya</label>
     </>}
     {confirm&&<p className="callout"><AlertTriangle size={18}/> {confirm==='high'?'Lebih dari 5× kiriman biasanya.':'Kurang dari ⅕ kiriman biasanya.'} Biasanya sekitar {quantity(deliveries(selected.id).slice(-5).sort((a,b)=>a-b)[Math.floor(Math.min(5,deliveries(selected.id).length)/2)]??0)} {selected.unit}. Tekan sekali lagi bila memang benar.</p>}
-    <Button loading={busy} disabled={busy||!amountText||!reason.trim()} className="full" onClick={()=>void save()}><ArrowDownLeft size={18}/> {confirm?'Ya, jumlahnya benar':'Simpan pergerakan'}</Button>
+    <Button loading={busy} disabled={busy||!amountText||!reason.trim()} className="full" onClick={()=>save()}><ArrowDownLeft size={18}/> {confirm?'Ya, jumlahnya benar':'Simpan pergerakan'}</Button>
    </>}
   </Dialog>
   <PrepDialog open={Boolean(prep)} item={prep?.item} batches={prep?.batches} onClose={()=>setPrep(undefined)}/>

@@ -76,7 +76,7 @@ export function CloseShift({heading=false}:{heading?:boolean}){
     {cash&&<div className="settle-row"><strong>Uang tunai di laci</strong><span className="match"/><small className="muted">Termasuk modal {rupiah(shift.opening)}</small><label className="slip-field"><span>Laci</span><Money aria-label="Uang tunai di laci" value={drawer} onChange={setDrawer}/></label></div>}
     <p className="settle-note"><AlertTriangle size={16}/>Selisih di atas {rupiah(limit)} perlu persetujuan manajer dengan PIN. Selisih {cash?'kas dan ':''}tiap EDC dijumlahkan, tidak saling menutup.</p>
     {!counted&&<p className="settle-note"><ClipboardList size={16}/><span>Hitung stok dulu sebelum menutup sif. <Link to="/counts" className="text-button">Ke Hitung stok</Link></span></p>}
-    <Button className="full btn-accent close-button" loading={busy} disabled={busy||missing.length>0} onClick={()=>void close()}><Lock size={17}/> Tutup sif</Button>
+    <Button className="full btn-accent close-button" loading={busy} disabled={busy||missing.length>0} onClick={()=>close()}><Lock size={17}/> Tutup sif</Button>
     {/* Say exactly what still blocks the close, instead of a grey button with no reason. */}
     {missing.length>0&&<div className="close-missing"><strong>Belum bisa ditutup:</strong><ul>{missing.map(m=><li key={m}>{m}</li>)}</ul></div>}
    </article>

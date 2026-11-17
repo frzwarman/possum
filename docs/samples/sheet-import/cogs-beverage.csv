@@ -1,0 +1,21 @@
+,,,List Ingredients Item & Price / Item (Budget),,,,,,,,
+,,,Item,Price,Unit,Price / Unit,,,,,
+,,,Tonic Water,6.500,250,26,,,,,
+,,,,,,,,,,,
+Cost of Goods Sold Beverage Menu based on Ingredients List,,,,,,,,,,,
+,,,,,,,,,,,
+Kategori,Nama Menu,Ingredients,Qty,Cost / Unit,Cost Total / Unit,Total Cost,Selling Price,Profit,Margin,Discount Employe 30%,Margin after disc
+COFFEE,Americano,Espresso Blend,40,208,8.333,9.333,Rp30.000,20.667,321%,Rp21.000,225%
+,,Others,1,1.000,1.000,,,,,,
+,Nama Menu,Ingredients,Qty,,,,,,,,
+,Vegan Latte,Espresso Blend,30,103,3.083,8.880,Rp40.000,31.120,450%,Rp28.000,315%
+,,Oat Milk,150,32,4.725,,,,,,
+,,Gula Aren,15,18,276,,,,,,
+NON COFFEE,Nama Menu,Ingredients,Qty,,,,,,,,
+,Chocolate,Chocolate Powder,25,230,5.750,9.083,Rp35.000,25.917,285%,Rp24.500,170%
+,,Milk,150,22,3.333,,,,,,
+Milkshake ,Nama Menu,Ingredients,Qty,,,,,,,,
+,Chocolate ,Chocolate Powder,30,230,6.900,9.900,Rp40.000,30.100,304%,Rp28.000,183%
+,,Milk,"112,5",22,2.500,,,,,,
+,,Steam Milk,20,22,440,,,,,,
+,Cold Brew Bottle,,,,,,Rp0,,,,

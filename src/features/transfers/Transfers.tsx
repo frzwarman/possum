@@ -61,7 +61,7 @@ export default function Transfers() {
           <p className="muted">Kirim bahan ke outlet lain dan terima kiriman dari mereka.</p>
         </div>
         <div className="button-row">
-          <Button variant="secondary" aria-label="Muat ulang transfer" disabled={busy} onClick={() => void act(() => commands.refreshTransfers(), "Daftar transfer diperbarui")}>
+          <Button variant="secondary" aria-label="Muat ulang transfer" disabled={busy} onClick={() => act(() => commands.refreshTransfers(), "Daftar transfer diperbarui")}>
             <RefreshCw size={16} />
           </Button>
           <Button disabled={!outlets.length} onClick={() => setDraft({ to: outlets[0]?.id ?? "", lines: [], note: "" })}>
@@ -182,7 +182,7 @@ export default function Transfers() {
               loading={busy}
               disabled={busy || !draft.to || !draft.lines.length}
               onClick={() =>
-                void act(async () => {
+                act(async () => {
                   await commands.sendTransfer(outlets.find((o) => o.id === draft.to)!, draft.lines, draft.note);
                   setDraft(undefined);
                   setTab("outgoing");
@@ -233,7 +233,7 @@ export default function Transfers() {
           loading={busy}
           disabled={busy || !reason.trim()}
           onClick={() =>
-            void act(async () => {
+            act(async () => {
               await commands.cancelTransfer(cancelling!.id, reason);
               setCancelling(undefined);
             }, "Transfer dibatalkan; stok kembali")
