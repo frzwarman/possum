@@ -14,6 +14,11 @@ It writes to the same Supabase database as the web app, through the same rules. 
 **What it does not do (yet):** receive against a purchase order, approve a count, record waste or batches, print
 labels, lock itself after idle minutes, or let Takar un-pair a lost phone. See [Known limits](#known-limits).
 
+**For staff:** the user guide, in Bahasa Indonesia with a picture of every screen, is
+[Panduan-Takar-Stok.pdf](Panduan-Takar-Stok.pdf). Its source is [panduan/index.html](panduan/index.html) and its
+pictures are in `panduan/shots/`. Both are regenerated from the running app by `scripts/panduan.mjs` (the two
+commands are at the top of that file), so the guide can be refreshed whenever a screen changes.
+
 ## How it fits with Takar
 
 | The phone does | Through | Who may |
