@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lookup, normalizeCode } from '../../src/stok/barcode'
+import { START, admit, lookup, normalizeCode, rearm } from '../../src/stok/barcode'
 import { ALL_AREAS, areas, countJob, setCounted, startCount } from '../../src/stok/count'
 import { deliveryJobs, flag, lineCost, lineQty, suggestedPrice, units } from '../../src/stok/delivery'
 import type { Delivery, PhoneStock } from '../../src/stok/types'
@@ -25,6 +25,30 @@ describe('barcode', () => {
     expect(lookup('1', { '1': { stockId: 'milk', pack: 'karton' } }, stock)).toEqual({ item: milk, pack: milk.packs![0] })
     expect(lookup('1', { '1': { stockId: 'milk', pack: 'dus' } }, stock)).toEqual({ item: milk, pack: undefined })
     expect(lookup('1', { '1': { stockId: 'gone', pack: '' } }, stock)).toBeUndefined()
+  })
+  it('reports a code once while the camera keeps seeing it, and again only after it has left the frame', () => {
+    // The camera reports the same code many times a second.
+    let g = admit(START, 'A', 1000)
+    expect(g.fire).toBe(true)
+    for (const t of [1100, 2000, 3400, 4800]) {
+      g = admit(g.gate, 'A', t)
+      expect(g.fire).toBe(false)
+    }
+    // Out of the frame for 1.5 seconds, then back: that is a new scan.
+    g = admit(g.gate, 'A', 6300)
+    expect(g.fire).toBe(true)
+    // Another product is always a new scan.
+    g = admit(g.gate, 'B', 6400)
+    expect(g.fire).toBe(true)
+  })
+  it('does not re-open the bahan just saved when the camera comes back still pointed at it', () => {
+    const scanned = admit(START, 'A', 1000).gate
+    // The entry was open for 20 seconds with the camera off; then the list, and the camera, come back.
+    const back = rearm(scanned, 21_000)
+    expect(admit(back, 'A', 21_100).fire).toBe(false)
+    expect(admit(back, 'B', 21_100).fire).toBe(true)
+    // Pointed away for a moment and back at the same product: the person means it.
+    expect(admit(back, 'A', 22_600).fire).toBe(true)
   })
 })
 

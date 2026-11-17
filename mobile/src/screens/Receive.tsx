@@ -269,13 +269,20 @@ function LineForm({ line, stock, listed, problem, onChange, onSave, onRemove }: 
 function NoteCamera({ onShot, onCancel }: { onShot: (uri: string) => void; onCancel: () => void }) {
   const [permission, request] = useCameraPermissions();
   const camera = useRef<CameraView>(null);
+  // The shutter waits for the camera: a picture asked for before the first frame fails.
+  const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
   const insets = useSafeAreaInsets();
   const shoot = async () => {
     setBusy(true);
+    setProblem('');
     try {
       const picture = await camera.current?.takePictureAsync({ quality: 0.7 });
       if (picture) onShot(picture.uri);
+    } catch {
+      // Say so and stay here, so the person can simply try again.
+      setProblem('Foto belum berhasil diambil. Coba sekali lagi.');
     } finally {
       setBusy(false);
     }
@@ -283,16 +290,21 @@ function NoteCamera({ onShot, onCancel }: { onShot: (uri: string) => void; onCan
   return (
     <View style={[local.camera, { paddingTop: insets.top }]}>
       {permission?.granted ? (
-        <CameraView ref={camera} style={kit.grow} facing="back" />
+        <CameraView ref={camera} style={kit.grow} facing="back" onCameraReady={() => setReady(true)} />
       ) : (
         <View style={[kit.grow, local.ask]}>
           <T style={{ color: color.onInk, textAlign: 'center' }}>Kamera dipakai untuk memotret nota kiriman.</T>
           {permission?.canAskAgain !== false ? <Button label="Izinkan kamera" kind="accent" onPress={() => void request()} /> : null}
         </View>
       )}
+      {problem ? (
+        <T accessibilityRole="alert" style={{ color: color.onInk, textAlign: 'center', paddingHorizontal: space.l, paddingTop: space.m }}>
+          {problem}
+        </T>
+      ) : null}
       <View style={[local.inline, local.cameraBar, { paddingBottom: Math.max(insets.bottom, space.l) }]}>
         <Button label="Batal" kind="secondary" style={kit.grow} onPress={onCancel} />
-        <Button label="Ambil foto" kind="accent" style={kit.grow} loading={busy} disabled={!permission?.granted} onPress={() => void shoot()} />
+        <Button label="Ambil foto" kind="accent" style={kit.grow} loading={busy} disabled={!permission?.granted || !ready} onPress={() => void shoot()} />
       </View>
     </View>
   );

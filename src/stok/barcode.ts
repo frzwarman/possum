@@ -12,6 +12,18 @@ export function normalizeCode(raw: string): string | undefined {
   return /^\d{12}$/.test(code) ? `0${code}` : code
 }
 
+// The camera reports a code many times a second, and it still sees the same code when the list comes back after
+// an entry. A code counts as a new scan only when it is a different code, or when it has been out of the frame
+// for `quiet` milliseconds. Every sighting moves seenAt, so a code that stays in view never fires twice.
+export interface ScanGate { code: string; seenAt: number }
+export const START: ScanGate = { code: '', seenAt: 0 }
+export function admit(gate: ScanGate, code: string, now: number, quiet = 1500): { fire: boolean; gate: ScanGate } {
+  return { fire: code !== gate.code || now - gate.seenAt >= quiet, gate: { code, seenAt: now } }
+}
+// The camera was off for a while (an entry or a sheet was open). Whatever it read last counts as still in view,
+// so the bahan just saved is not opened again the moment the list returns.
+export const rearm = (gate: ScanGate, now: number): ScanGate => ({ ...gate, seenAt: now })
+
 // The bahan a code belongs to and, when the code is printed on a pack that still exists, that pack.
 // A pack renamed or removed in Takar leaves the code pointing at the bahan in its base unit.
 export function lookup(code: string, links: Record<string, BarcodeLink>, stock: PhoneStock[]): { item: PhoneStock; pack?: Pack } | undefined {

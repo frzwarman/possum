@@ -1,24 +1,30 @@
 // The camera strip that reads barcodes. It only reports a code; what the code means is the screen's business.
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { BARCODE_TYPES, normalizeCode } from '../../../src/stok/barcode';
+import { BARCODE_TYPES, START, admit, normalizeCode, rearm } from '../../../src/stok/barcode';
 import { Button, T } from './kit';
 import { color, radius, space } from './theme';
+
+// What the camera read last. It outlives the strip itself, which is taken down while an entry is open: when the
+// list comes back the camera is usually still pointed at the product just counted, and must not open it again.
+let gate = START;
 
 export function Scanner({ onCode, active }: { onCode: (code: string) => void; active: boolean }) {
   const [permission, request] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
-  const last = useRef({ code: '', at: 0 });
   // One settings object for the life of the strip, so the camera is not reconfigured on every render.
   const settings = useMemo(() => ({ barcodeTypes: [...BARCODE_TYPES] }), []);
-  // The camera reports the same code many times a second: one report per code every 1.5 seconds is enough.
+  // Each time the camera comes (back) on, the last code counts as still in view.
+  useEffect(() => {
+    if (active) gate = rearm(gate, Date.now());
+  }, [active]);
   const scanned = (result: BarcodeScanningResult) => {
     const code = normalizeCode(result.data);
-    const now = Date.now();
-    if (!code || (code === last.current.code && now - last.current.at < 1500)) return;
-    last.current = { code, at: now };
-    onCode(code);
+    if (!code) return;
+    const seen = admit(gate, code, Date.now());
+    gate = seen.gate;
+    if (seen.fire) onCode(code);
   };
   // Off while an entry or a sheet is open: no stray scans, and the battery lasts the whole count.
   if (!active) return null;
