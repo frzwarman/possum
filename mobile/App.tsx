@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { BackHandler, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Attention } from './src/screens/Attention';
+import { Count } from './src/screens/Count';
 import { Home, type Route } from './src/screens/Home';
 import { Pair } from './src/screens/Pair';
 import { SignIn } from './src/screens/SignIn';
@@ -18,6 +19,7 @@ import { color } from './src/ui/theme';
 function Root() {
   const app = useApp();
   const [route, setRoute] = useState<Route>('home');
+  const [resume, setResume] = useState<string>();
   const who = app.identity?.id;
   // A new person always starts at Beranda.
   useEffect(() => setRoute('home'), [who]);
@@ -36,14 +38,13 @@ function Root() {
   if (!app.identity) return <SignIn />;
   if (!app.identity.paired && !app.identity.demo) return <Pair />;
   const home = () => setRoute('home');
+  // "Lanjutkan" on Beranda opens that paused count directly.
+  const go = (next: Route, draft?: string) => {
+    setResume(draft);
+    setRoute(next);
+  };
   if (route === 'attention') return <Attention back={home} />;
-  if (route === 'count') {
-    return (
-      <Screen title="Hitung stok" onBack={home}>
-        <T>Layar ini dibuat di langkah berikutnya.</T>
-      </Screen>
-    );
-  }
+  if (route === 'count') return <Count key={resume ?? 'new'} back={home} resume={resume} />;
   if (route === 'receive') {
     return (
       <Screen title="Terima barang" onBack={home}>
@@ -51,7 +52,7 @@ function Root() {
       </Screen>
     );
   }
-  return <Home go={setRoute} />;
+  return <Home go={go} />;
 }
 
 export default function App() {

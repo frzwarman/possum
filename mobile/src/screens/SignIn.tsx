@@ -33,7 +33,7 @@ export function SignIn() {
     setMember(m);
   };
   const demo = (
-    <Pressable accessibilityRole="button" onPress={app.startDemo} hitSlop={8}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Coba demo" onPress={app.startDemo} hitSlop={8}>
       <T style={local.link}>Coba demo</T>
     </Pressable>
   );
@@ -83,7 +83,7 @@ export function SignIn() {
         </Card>
         <View style={local.links}>
           {people.length > 0 ? (
-            <Pressable accessibilityRole="button" onPress={() => setByEmail(false)} hitSlop={8}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Masuk dengan nama dan PIN" onPress={() => setByEmail(false)} hitSlop={8}>
               <T style={local.link}>Masuk dengan nama dan PIN</T>
             </Pressable>
           ) : null}
@@ -110,7 +110,7 @@ export function SignIn() {
         </Pressable>
       ))}
       <View style={local.links}>
-        <Pressable accessibilityRole="button" onPress={() => setByEmail(true)} hitSlop={8}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Masuk dengan email" onPress={() => setByEmail(true)} hitSlop={8}>
           <T style={local.link}>Masuk dengan email</T>
         </Pressable>
         {demo}

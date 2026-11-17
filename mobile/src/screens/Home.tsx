@@ -7,7 +7,7 @@ import { color, radius, space } from '../ui/theme';
 
 export type Route = 'home' | 'count' | 'receive' | 'attention';
 
-export function Home({ go }: { go: (route: Route) => void }) {
+export function Home({ go }: { go: (route: Route, draft?: string) => void }) {
   const app = useApp();
   const me = app.identity;
   if (!me) return null;
@@ -61,7 +61,7 @@ export function Home({ go }: { go: (route: Route) => void }) {
           {app.drafts.map((c) => (
             <Row
               key={c.id} title={c.area} note={`${c.lines.filter((l) => l.counted !== undefined).length} dari ${c.lines.length} dihitung`}
-              right={<T tone="strong">Lanjutkan ›</T>} onPress={() => go('count')}
+              right={<T tone="strong">Lanjutkan ›</T>} onPress={() => go('count', c.id)}
             />
           ))}
         </View>

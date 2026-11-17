@@ -54,7 +54,7 @@ export function Field({ label, style, ...rest }: TextInputProps & { label: strin
 
 export function Chip({ label, active, onPress }: { label: string; active?: boolean; onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityState={{ selected: Boolean(active) }} onPress={onPress} style={[styles.chip, active && styles.chipOn]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: Boolean(active) }} onPress={onPress} style={[styles.chip, active && styles.chipOn]}>
       <Text style={[styles.small, { color: color.ink, fontFamily: active ? font.semibold : font.medium }]}>{label}</Text>
     </Pressable>
   );
@@ -98,6 +98,23 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
         </View>
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+// A yes-or-no question as a sheet. (React Native's own Alert does nothing in a browser, where the demo runs.)
+export function Confirm({ ask, onClose }: { ask?: { title: string; message: string; yes: string; run: () => void }; onClose: () => void }) {
+  return (
+    <Sheet visible={Boolean(ask)} onClose={onClose} title={ask?.title ?? ''}>
+      <Text style={styles.body}>{ask?.message}</Text>
+      <Button
+        label={ask?.yes ?? 'Ya'} kind="accent"
+        onPress={() => {
+          onClose();
+          ask?.run();
+        }}
+      />
+      <Button label="Batal" kind="secondary" onPress={onClose} />
+    </Sheet>
   );
 }
 
