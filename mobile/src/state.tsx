@@ -9,9 +9,9 @@ import { countJob } from '../../src/stok/count';
 import { deliveryJobs } from '../../src/stok/delivery';
 import { demoIdentity, demoServer, demoSnapshot } from '../../src/stok/demo';
 import { Queue, load, save } from '../../src/stok/queue';
-import { Rejected, explain, flush } from '../../src/stok/sync';
+import { Rejected, explain, flush, staysSignedIn } from '../../src/stok/sync';
 import type { BarcodeLink, CountSession, Delivery, Identity, Job, KV, PhoneStock, Snapshot, TeamMember } from '../../src/stok/types';
-import { configured, currentUser, server, signIn as serverSignIn, signOut as serverSignOut } from './platform/supabase';
+import { configured, currentUser, onSignedOut, server, signIn as serverSignIn, signOut as serverSignOut } from './platform/supabase';
 
 // A count or a delivery the person sent off today. It counts as sent once none of its jobs is left in the queue.
 export interface Sent { id: string; label: string; at: string; jobs: string[] }
@@ -142,8 +142,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDeliveryLive(load(kv, keys.delivery(user.id), emptyDelivery()));
       setSentLive(load(kv, keys.sent(user.id), []));
     };
+    // True while this phone itself is signing the person out, so that is not mistaken for an expired session.
+    let leaving = false;
     const leave = async () => {
-      if (me.current && !me.current.demo) await serverSignOut().catch(() => undefined);
+      leaving = true;
+      try {
+        if (me.current && !me.current.demo) await serverSignOut().catch(() => undefined);
+      } finally {
+        leaving = false;
+      }
       remember(undefined);
       setJobs([]);
       setDrafts([]);
@@ -245,12 +252,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       start: async () => {
         const saved = load<Identity | null>(kv, keys.identity, null);
         if (!saved) return;
-        if (!saved.demo && (await currentUser().catch(() => undefined)) !== saved.id) {
+        // No signal is not a reason to sign someone out: see staysSignedIn.
+        const session = saved.demo ? { unsure: false } : await currentUser().catch(() => ({ unsure: true }));
+        if (!staysSignedIn(saved, session)) {
           kv.removeItem(keys.identity);
           return;
         }
         open({ ...saved, deviceId: device });
         void sync();
+      },
+      // The server ended this person's session while the app was open. Their unsent work stays on the phone and
+      // goes out once they sign in again.
+      expired: () => {
+        if (leaving || !me.current || me.current.demo) return;
+        remember(undefined);
+        setError('Sesi berakhir. Masuk lagi; catatan yang belum terkirim tetap tersimpan.');
       },
       signIn: (email: string, secret: string, byPin = false) =>
         act(async () => {
@@ -302,7 +318,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveDraft: (session: CountSession) =>
         writeDrafts(draftsRef.current.some((d) => d.id === session.id) ? draftsRef.current.map((d) => (d.id === session.id ? session : d)) : [...draftsRef.current, session]),
       dropDraft: (id: string) => writeDrafts(draftsRef.current.filter((d) => d.id !== id)),
+      // A count is sent once: after that its draft is gone, and a second call does nothing.
       submitCount: (session: CountSession) =>
+        draftsRef.current.some((d) => d.id === session.id) &&
         guard(() => {
           const user = need();
           const job = countJob(session, stockRef.current, user.id, uuid(), stamp());
@@ -370,6 +388,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void actions.start().finally(() => setReady(true));
+    return onSignedOut(actions.expired);
   }, [actions]);
 
   // Try again when the app comes to the front, and every 30 seconds while something is waiting.
@@ -393,7 +412,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const { start: _start, ...api } = actions;
+  const { start: _start, expired: _expired, ...api } = actions;
   const value: App = { ready, configured, identity, team, stock, links, jobs, drafts, delivery, sent, busy, syncing, error, notice, ...api };
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

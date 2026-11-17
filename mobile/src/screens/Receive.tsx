@@ -44,6 +44,7 @@ export function Receive({ back }: { back: () => void }) {
   const [shooting, setShooting] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [problem, setProblem] = useState('');
+  const saved = useRef(false);
 
   // Android's back button closes the note camera before it leaves the delivery.
   useEffect(() => {
@@ -134,7 +135,10 @@ export function Receive({ back }: { back: () => void }) {
         <Button
           label={`Masukkan ke stok · ${rupiah(total)}`} kind="accent" disabled={rows.length === 0 || photoBusy}
           onPress={() => {
-            if (app.saveDelivery()) back();
+            // One delivery, one save: a second tap before the screen closes does nothing.
+            if (saved.current) return;
+            saved.current = app.saveDelivery();
+            if (saved.current) back();
           }}
         />
       }

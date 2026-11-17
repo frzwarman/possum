@@ -1,5 +1,5 @@
 // The few building blocks every screen uses. Sizes are for a thumb in a storeroom: 52-point buttons, 16-point text.
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
   type StyleProp, type TextInputProps, type TextProps, type TextStyle, type ViewStyle,
@@ -103,14 +103,18 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
 
 // A yes-or-no question as a sheet. (React Native's own Alert does nothing in a browser, where the demo runs.)
 export function Confirm({ ask, onClose }: { ask?: { title: string; message: string; yes: string; run: () => void }; onClose: () => void }) {
+  // A second tap while the sheet is still closing must not answer "yes" twice.
+  const answered = useRef<unknown>(undefined);
   return (
     <Sheet visible={Boolean(ask)} onClose={onClose} title={ask?.title ?? ''}>
       <Text style={styles.body}>{ask?.message}</Text>
       <Button
         label={ask?.yes ?? 'Ya'} kind="accent"
         onPress={() => {
+          if (!ask || answered.current === ask) return;
+          answered.current = ask;
           onClose();
-          ask?.run();
+          ask.run();
         }}
       />
       <Button label="Batal" kind="secondary" onPress={onClose} />

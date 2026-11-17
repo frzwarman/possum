@@ -1,6 +1,7 @@
 # Takar Stok: phone app for stock counts and deliveries
 
-Status: draft for approval, 17 Nov 2026. Nothing is built yet.
+Status: approved on 17 Nov 2026 and built on branch `worktree-stock-app`. How to run, pair and build the app is in
+[docs/MOBILE.md](../../MOBILE.md); the task plan is in [plans/2026-11-17-takar-stok-app.md](../plans/2026-11-17-takar-stok-app.md).
 
 ## Intent
 
@@ -87,8 +88,8 @@ A role that cannot receive sees "Terima barang" greyed out with the line "Hanya 
 
 ### Screens
 
-All text is Indonesian. Colours and type follow Takar (ink `#1B1D21`, lime `#D3F26A`, paper `#F6F5F0`,
-Plus Jakarta Sans).
+All text is Indonesian. Colours and type follow Takar's live tokens in `src/styles.css` (ink `#1B1D21`, lime
+`#D3F26A`, canvas `#EEF0F2` with white surfaces, Plus Jakarta Sans).
 
 **1. Masuk.** Same idea as the shared tablet: tap your name, type your 6-digit PIN.
 

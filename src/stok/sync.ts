@@ -40,6 +40,14 @@ const WORDS: Record<string, string> = {
 }
 export const explain = (message: string): string => (Object.prototype.hasOwnProperty.call(WORDS, message) ? WORDS[message] : message)
 
+// On start: does the person who was signed in stay signed in? `session` is what the phone can tell about the saved
+// session: whose it is, or `unsure` when it has expired and could not be refreshed for lack of signal. Unsure
+// keeps the person in: a phone opened in a storeroom must still count, and nothing reaches the server without a
+// good session anyway.
+export function staysSignedIn(saved: { id: string; demo: boolean }, session: { id?: string; unsure: boolean }): boolean {
+  return saved.demo || session.id === saved.id || (session.id === undefined && session.unsure)
+}
+
 // A queued count or delivery as apply_operation takes it.
 export function toOperation(job: Extract<Job, { type: 'op' }>, identity: Identity): Operation {
   return { id: job.id, kind: job.kind, actor: job.actor, restaurantId: identity.restaurantId, deviceId: identity.deviceId, occurredAt: job.occurredAt, payload: job.payload }

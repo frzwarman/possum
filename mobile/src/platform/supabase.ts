@@ -1,7 +1,7 @@
 // The phone's only door to Takar's database: the same Supabase project as the web app, reached through five server
 // functions. Set up as Expo's Supabase guide does it: the session is kept in SQLite-backed localStorage.
 import 'expo-sqlite/localStorage/install';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import { classify } from '../../../src/stok/sync';
 import type { Server, Snapshot } from '../../../src/stok/types';
@@ -59,7 +59,20 @@ export async function signOut(): Promise<void> {
   await supabase?.auth.signOut();
 }
 
-// Who the saved session belongs to. Read from the phone's storage, so it also answers with no signal.
-export async function currentUser(): Promise<string | undefined> {
-  return (await supabase?.auth.getSession())?.data.session?.user.id;
+// Whose session is saved on this phone. After about an hour the session has to be refreshed, which needs signal:
+// `unsure` says it could not be, so the caller keeps the person signed in rather than locking them out of a
+// storeroom. A refresh the server refused is not unsure: that session is gone.
+export async function currentUser(): Promise<{ id?: string; unsure: boolean }> {
+  if (!supabase) return { unsure: false };
+  const { data, error } = await supabase.auth.getSession();
+  return { id: data.session?.user.id, unsure: Boolean(error && isAuthRetryableFetchError(error)) };
+}
+
+// The server ended the session (a refresh it refused, or the account was signed out elsewhere).
+export function onSignedOut(run: () => void): () => void {
+  if (!supabase) return () => undefined;
+  const { data } = supabase.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT') run();
+  });
+  return () => data.subscription.unsubscribe();
 }

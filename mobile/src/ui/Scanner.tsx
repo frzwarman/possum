@@ -1,6 +1,6 @@
 // The camera strip that reads barcodes. It only reports a code; what the code means is the screen's business.
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { BARCODE_TYPES, normalizeCode } from '../../../src/stok/barcode';
 import { Button, T } from './kit';
@@ -10,6 +10,8 @@ export function Scanner({ onCode, active }: { onCode: (code: string) => void; ac
   const [permission, request] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const last = useRef({ code: '', at: 0 });
+  // One settings object for the life of the strip, so the camera is not reconfigured on every render.
+  const settings = useMemo(() => ({ barcodeTypes: [...BARCODE_TYPES] }), []);
   // The camera reports the same code many times a second: one report per code every 1.5 seconds is enough.
   const scanned = (result: BarcodeScanningResult) => {
     const code = normalizeCode(result.data);
@@ -32,7 +34,7 @@ export function Scanner({ onCode, active }: { onCode: (code: string) => void; ac
   }
   return (
     <View style={local.frame}>
-      <CameraView style={StyleSheet.absoluteFill} facing="back" enableTorch={torch} barcodeScannerSettings={{ barcodeTypes: [...BARCODE_TYPES] }} onBarcodeScanned={scanned} />
+      <CameraView style={StyleSheet.absoluteFill} facing="back" enableTorch={torch} barcodeScannerSettings={settings} onBarcodeScanned={scanned} />
       <View style={local.aim} />
       <Pressable accessibilityRole="button" accessibilityLabel="Senter" accessibilityState={{ selected: torch }} onPress={() => setTorch(!torch)} style={local.torch}>
         <T tone="small" style={{ color: color.onInk }}>{torch ? 'Senter nyala' : 'Senter'}</T>
