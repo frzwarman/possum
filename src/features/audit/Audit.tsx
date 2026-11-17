@@ -16,7 +16,7 @@ const KINDS: Record<string, string> = { 'order.void': 'Pembatalan', 'order.voidl
 // Figma M3 filter pills, each over the audit kinds it covers; Pengaturan shows only when there is one.
 const GROUPS: [string, string[]][] = [['Pembatalan', ['order.void', 'order.voidline', 'refund.record']], ['Diskon', ['order.save']], ['Stok', ['stock.record', 'count.record']], ['Menu & harga', ['catalog.publish', 'catalog.remove']], ['Kas', ['shift.cash', 'shift.close']], ['Pengaturan', ['settings.update']]]
 const STOCK: Record<string, string> = { waste: 'Terbuang', adjustment: 'Penyesuaian', count: 'Stok', purchase: 'Stok masuk', opening: 'Stok awal' }
-const DEVICE: Record<string, string> = { pos: 'Kasir utama', station: 'Tablet stasiun', office: 'Back office (laptop)' }
+const DEVICE: Record<string, string> = { pos: 'Kasir utama', station: 'Tablet stasiun', office: 'Back office (laptop)', phone: 'Ponsel stok' }
 const PERIODS = [{ value: '0', label: 'Hari ini' }, { value: '6', label: '7 hari terakhir' }, { value: '29', label: '30 hari terakhir' }, { value: 'custom', label: 'Rentang lain' }]
 const pairs = (...list: unknown[]) => list.filter((p): p is [string, string] => Array.isArray(p) && Boolean(p[1]))
 // CTL-3: every sensitive action, who did it, from which device, who approved it; nobody can edit it.

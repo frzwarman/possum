@@ -5,22 +5,16 @@ import { useApp } from '../../app/context'
 import { ApprovalDialog,type ApprovalRequest } from '../../app/Approval'
 import { Button } from '../../components/ui/button'
 import { Select } from '../../components/ui/select'
-import { convert,countGap,countsDue,itemsLost,quantity,rupiah,when } from '../../domain/calculate'
+import { countGap,countsDue,itemsLost,quantity,rupiah,when } from '../../domain/calculate'
+import { BIG,blank,measure,type Entry } from '../../domain/measure'
 import { can } from '../../domain/permissions'
 import { uid } from '../../lib/db'
 import type { Approval,CountSession,StockItem } from '../../domain/types'
-// What the counter typed for one item (Figma C10): full packs per pack, plus what is left in the open one.
-type Entry={packs:Record<string,string>;loose:string;big:boolean}
-const blank:Entry={packs:{},loose:'',big:false}
-const BIG:Record<string,string>={g:'kg',ml:'l'}
 const unitName=(u:string)=>u==='l'?'L':u
 const cap=(s:string)=>s.charAt(0).toUpperCase()+s.slice(1)
 // Amounts as people say them: 13 L and 2,35 kg instead of 13.000 ml and 2.350 g; a true minus as on the Figma (−105 g, −Rp7.350).
 const nice=(v:number,unit:string)=>(Math.abs(v)>=1e6&&BIG[unit]?`${quantity(v/1000)} ${unitName(BIG[unit])}`:`${quantity(v)} ${unit}`).replace(/^-/,'−')
 const money=(v:number)=>rupiah(v).replace(/^-/,'−')
-// A box left empty is not counted; 0 is a count of nothing. Throws the conversion's own message on a bad number.
-function measure(s:StockItem,e:Entry){const parts=[...(s.packs??[]).map(p=>[e.packs[p.name]??'',p.name] as [string,string]),[e.loose,e.big?BIG[s.unit]:s.unit] as [string,string]].map(([a,u])=>[a.trim().replace(/[.,]$/,''),u] as [string,string]).filter(([a])=>a)
- return parts.length?parts.reduce((n,[a,u])=>n+(Number(a.replace(',','.'))===0?0:convert(a,u,s.unit,s.packs)),0):undefined}
 // F6: count by storage area with the expected amount hidden, pause and resume, then a variance review
 // that a manager approves (PIN for everyone else) into one count.record operation.
 export default function Counts(){
