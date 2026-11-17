@@ -4,7 +4,8 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 const db = new PGlite({ extensions: { pgcrypto } });
-let passed = 0;
+let passed = 0,
+  failed = 0;
 await db.exec(
   `create schema auth;create schema extensions;create role anon;create role authenticated;create role service_role;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`,
 );
@@ -75,7 +76,7 @@ async function test(name, fn) {
     console.log(`PASS ${name}`);
   } catch (e) {
     console.error(`FAIL ${name}:`, e);
-    process.exitCode = 1;
+    failed++;
   }
 }
 const op = (kind, payload, id = randomUUID()) => ({
@@ -1123,6 +1124,70 @@ await test("The morning report and cash-gap alerts go to linked managers, once",
   assert.equal((await db.query("select public.telegram_status() as s")).rows[0].s, false);
   assert.deepEqual(await one("select public.telegram_report()"), []);
 });
+// ---- Takar Stok (202611170003): phones, barcodes, one read call ----
+const stokPhone = randomUUID();
+const link = (dev, code, item, pack = "") => db.query("select public.link_barcode($1,$2,$3,$4)", [dev, code, item, pack]);
+const codes = async () => (await read("select code,stock_id,pack from public.barcodes where restaurant_id=$1 order by code", [rid])).rows;
+const stockApp = async (dev) => (await db.query("select public.stock_app($1) as s", [dev])).rows[0].s;
+const till = async () => (await read("select primary_device_id from public.restaurants where id=$1", [rid])).rows[0].primary_device_id;
+await test("Only an owner or manager pairs a phone, and the till never becomes one", async () => {
+  await login(kitchen);
+  await assert.rejects(db.query("select public.enroll_phone($1)", [stokPhone]), /Manager required/);
+  await login(owner);
+  const before = await till();
+  await db.query("select public.enroll_phone($1)", [stokPhone]);
+  assert.deepEqual((await read("select mode,revoked_at from public.devices where restaurant_id=$1 and id=$2", [rid, stokPhone])).rows, [{ mode: "phone", revoked_at: null }]);
+  await assert.rejects(db.query("select public.enroll_phone($1)", [before]), /till cannot be a phone/);
+  assert.equal(await till(), before);
+});
+await test("Any member links a barcode on a paired phone; a second link moves it; bad input and unpaired devices are refused", async () => {
+  await login(kitchen);
+  await link(stokPhone, "8991002101234", "rice", "karung");
+  assert.deepEqual(await codes(), [{ code: "8991002101234", stock_id: "rice", pack: "karung" }]);
+  await link(stokPhone, "8991002101234", "egg");
+  assert.deepEqual(await codes(), [{ code: "8991002101234", stock_id: "egg", pack: "" }]);
+  await assert.rejects(link(stokPhone, "12", "egg"), /Invalid barcode/);
+  await assert.rejects(link(stokPhone, "8991 002", "egg"), /Invalid barcode/);
+  await assert.rejects(link(stokPhone, "8991002101234", "nope"), /Unknown stock item/);
+  await assert.rejects(link(stokPhone, "8991002101234", "rice", "dus"), /Unknown pack/);
+  await assert.rejects(link(randomUUID(), "8991002101234", "rice"), /Device not enrolled/);
+  await assert.rejects(db.query("select * from public.barcodes"), /permission denied/);
+  await login(outsider);
+  await assert.rejects(link(stokPhone, "8991002101234", "rice"), /Device not enrolled/);
+  await login(kitchen);
+  await db.query("select public.unlink_barcode($1,$2)", [stokPhone, "8991002101234"]);
+  await db.query("select public.unlink_barcode($1,$2)", [stokPhone, "8991002101234"]);
+  assert.deepEqual(await codes(), []);
+  await link(stokPhone, "8991002101234", "rice", "karung");
+});
+await test("stock_app gives a phone its bahan, barcodes and team; prices only to those who receive; never another store", async () => {
+  await login(admin);
+  await send(opOn(stokPhone, "stock.record", { stockId: "rice", kind: "purchase", qty: 25000000, cost: 300000, fromDrawer: false, reason: "CV Beras, nota 1" }));
+  const a = await stockApp(stokPhone), rice = a.stock.find((s) => s.id === "rice");
+  assert.deepEqual([a.restaurantId, a.role, a.store, a.timezone, a.device.enrolled, a.device.mode], [rid, "admin", "Warung Uji", "Asia/Jakarta", true, "phone"]);
+  assert.deepEqual([rice.unit, rice.area, rice.packs[0].name, rice.aliases[0]], ["g", "Dry store", "karung", "nasi"]);
+  assert.equal(rice.cost, 300000 / 25000000);
+  assert.equal(rice.usual.at(-1), 25000000);
+  assert.deepEqual(a.barcodes, [{ code: "8991002101234", stockId: "rice", pack: "karung" }]);
+  assert.ok(a.team.some((m) => m.id === kitchen && m.role === "kitchen"));
+  await login(kitchen);
+  const k = await stockApp(stokPhone);
+  assert.ok(k.stock.length > 0 && k.stock.every((s) => s.cost === undefined && s.usual === undefined));
+  await login(outsider);
+  const o = await stockApp(stokPhone);
+  assert.deepEqual([o.restaurantId, o.device.enrolled, o.barcodes.length], [other, false, 0]);
+  assert.ok(o.stock.every((s) => s.id !== "rice"));
+  await login(owner);
+});
+await test("A count and a delivery from a paired phone go through apply_operation; crew cannot receive and an unpaired phone is refused", async () => {
+  await login(kitchen);
+  const id = randomUUID();
+  await send(opOn(stokPhone, "count.submit", { id, area: "Dry store", lines: [{ stockId: "rice", counted: 1000, reason: "" }] }));
+  assert.deepEqual((await read("select status from public.counts where id=$1", [id])).rows, [{ status: "submitted" }]);
+  await assert.rejects(send(opOn(stokPhone, "stock.record", { stockId: "rice", kind: "purchase", qty: 1000, cost: 0, fromDrawer: false, reason: "x" })), /Manager permission/);
+  await assert.rejects(send(opOn(randomUUID(), "count.submit", { id: randomUUID(), area: "Dry store", lines: [{ stockId: "rice", counted: 1, reason: "" }] })), /Device not enrolled/);
+  await login(owner);
+});
 // Independent database restoration, never a live environment.
 await db.exec("reset role");
 const paymentsBefore = (await db.query("select count(*)::int n from public.payments")).rows[0].n;
@@ -1161,10 +1226,15 @@ for (const table of [...new Set(columns.map((c) => c.table_name))]) {
   types += "  }; Insert: never; Update: never; Relationships: [] }\n";
 }
 types +=
-  "}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined }; request_approval: { Args: { action: string; order_id?: string; amount?: number; what: string }; Returns: string }; approval_request: { Args: { request: string }; Returns: Json }; telegram_code: { Args: Record<string, never>; Returns: string }; telegram_status: { Args: Record<string, never>; Returns: boolean }; telegram_unlink: { Args: Record<string, never>; Returns: undefined } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }\n";
+  "}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined }; request_approval: { Args: { action: string; order_id?: string; amount?: number; what: string }; Returns: string }; approval_request: { Args: { request: string }; Returns: Json }; telegram_code: { Args: Record<string, never>; Returns: string }; telegram_status: { Args: Record<string, never>; Returns: boolean }; telegram_unlink: { Args: Record<string, never>; Returns: undefined }; enroll_phone: { Args: { device_id: string }; Returns: undefined }; link_barcode: { Args: { device_id: string; barcode: string; item: string; pack_name?: string }; Returns: undefined }; unlink_barcode: { Args: { device_id: string; barcode: string }; Returns: undefined }; stock_app: { Args: { device_id: string }; Returns: Json } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }\n";
 await writeFile("src/lib/database.types.ts", types);
 await restored.close();
 await db.close();
 console.log(
   `\n${passed} PostgreSQL integration checks passed. Auth JWT context emulated; Supabase hosted verification still required.`,
 );
+// PGlite's shutdown sets the exit code back to 0, so a failed check has to end the run itself.
+if (failed) {
+  console.error(`${failed} PostgreSQL integration checks FAILED.`);
+  process.exit(1);
+}
