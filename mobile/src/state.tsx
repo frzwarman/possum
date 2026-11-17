@@ -309,7 +309,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           enqueue(user, [job], job.label);
           writeDrafts(draftsRef.current.filter((d) => d.id !== session.id));
         }),
-      setDelivery: writeDelivery,
+      // A message about the delivery is out of date the moment the person changes the delivery.
+      setDelivery: (next: Delivery) => {
+        setError('');
+        writeDelivery(next);
+      },
       saveDelivery: () =>
         guard(() => {
           const user = need();

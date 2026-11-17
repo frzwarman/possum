@@ -10,9 +10,9 @@ import { Attention } from './src/screens/Attention';
 import { Count } from './src/screens/Count';
 import { Home, type Route } from './src/screens/Home';
 import { Pair } from './src/screens/Pair';
+import { Receive } from './src/screens/Receive';
 import { SignIn } from './src/screens/SignIn';
 import { AppProvider, useApp } from './src/state';
-import { Screen, T } from './src/ui/kit';
 import { color } from './src/ui/theme';
 
 // Six screens, switched by state: who is signed in decides the first three, a route the rest. No router.
@@ -45,13 +45,7 @@ function Root() {
   };
   if (route === 'attention') return <Attention back={home} />;
   if (route === 'count') return <Count key={resume ?? 'new'} back={home} resume={resume} />;
-  if (route === 'receive') {
-    return (
-      <Screen title="Terima barang" onBack={home}>
-        <T>Layar ini dibuat di langkah berikutnya.</T>
-      </Screen>
-    );
-  }
+  if (route === 'receive') return <Receive back={home} />;
   return <Home go={go} />;
 }
 

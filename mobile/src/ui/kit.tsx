@@ -119,14 +119,15 @@ export function Confirm({ ask, onClose }: { ask?: { title: string; message: stri
 }
 
 // What just happened, or what went wrong. A notice fades by itself; an error stays until it is tapped.
+// It sits in the layout between the body and the footer, never on top of them: a message that floats over the
+// screen ends up covering the very button the person needs next.
 export function Toast() {
   const { error, notice, clearMessage } = useApp();
-  const insets = useSafeAreaInsets();
   if (!error && !notice) return null;
   return (
     <Pressable
       accessibilityRole="alert" accessibilityLabel={error || notice} onPress={clearMessage}
-      style={[styles.toast, { bottom: Math.max(insets.bottom, space.l) + 76 }, error ? { backgroundColor: color.criticalBg, borderColor: color.criticalFg } : null]}
+      style={[styles.toast, error ? { backgroundColor: color.criticalBg, borderColor: color.criticalFg } : null]}
     >
       <Text style={[styles.strong, { color: error ? color.criticalFg : color.onInk }]}>{error || notice}</Text>
       {error ? <Text style={[styles.small, { color: color.criticalFg }]}>Ketuk untuk menutup</Text> : null}
@@ -166,8 +167,8 @@ export function Screen({ title, note, onBack, backLabel = 'Kembali', right, chil
       ) : (
         <View style={[styles.grow, styles.content]}>{children}</View>
       )}
-      {footer ? <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, space.l) }]}>{footer}</View> : null}
       <Toast />
+      {footer ? <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, space.l) }]}>{footer}</View> : <View style={{ height: insets.bottom }} />}
     </KeyboardAvoidingView>
   );
 }
@@ -210,5 +211,5 @@ export const styles = StyleSheet.create({
   sheetShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(27,29,33,0.45)' },
   sheet: { backgroundColor: color.canvas, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: space.l, paddingTop: space.l, gap: space.m, maxHeight: '88%', width: '100%', maxWidth: 480, alignSelf: 'center' },
   sheetHead: { flexDirection: 'row', alignItems: 'center', gap: space.m },
-  toast: { position: 'absolute', left: space.l, right: space.l, backgroundColor: color.ink, borderRadius: radius.m, borderWidth: 1, borderColor: color.ink, paddingHorizontal: space.l, paddingVertical: space.m, gap: 2 },
+  toast: { marginHorizontal: space.l, marginBottom: space.s, backgroundColor: color.ink, borderRadius: radius.m, borderWidth: 1, borderColor: color.ink, paddingHorizontal: space.l, paddingVertical: space.m, gap: 2 },
 });
