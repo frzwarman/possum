@@ -19,6 +19,27 @@ export function classify(error: { code?: string; message: string }): Error {
   return error.code && FINAL.includes(error.code) ? new Rejected(error.message) : new Error(error.message)
 }
 
+// The server answers in English. These are the refusals a phone can meet, in words staff can act on; anything
+// else is shown as the server said it.
+const WORDS: Record<string, string> = {
+  'Device not enrolled': 'Ponsel ini belum dipasangkan. Minta pemilik atau manajer memasangkannya.',
+  'Manager permission required': 'Peran Anda tidak boleh melakukan ini.',
+  'Manager required': 'Hanya pemilik atau manajer yang bisa melakukan ini.',
+  'No active staff membership': 'Akun ini tidak aktif. Hubungi manajer.',
+  'Operation timestamp outside recovery window': 'Catatan ini tertunda lebih dari 7 hari, atau jam ponsel salah. Kirim ulang untuk mencatatnya sekarang.',
+  'Count already approved': 'Hitungan ini sudah disetujui manajer.',
+  'Invalid count': 'Hitungan tidak bisa diterima. Mulai hitungan baru.',
+  'Invalid count line': 'Ada bahan di hitungan ini yang sudah tidak ada di Takar. Mulai hitungan baru.',
+  'Invalid stock amount': 'Jumlah atau harga di luar batas.',
+  'Invalid stock quantity': 'Jumlah harus lebih dari nol.',
+  'Invalid photo': 'Foto nota tidak bisa diterima. Ambil ulang fotonya.',
+  'Invalid barcode': 'Barcode tidak bisa dipakai.',
+  'Unknown stock item': 'Bahan ini sudah tidak ada di Takar.',
+  'Unknown pack': 'Kemasan ini sudah tidak ada di Takar.',
+  'The till cannot be a phone': 'Perangkat ini adalah kasir utama.',
+}
+export const explain = (message: string): string => (Object.prototype.hasOwnProperty.call(WORDS, message) ? WORDS[message] : message)
+
 // A queued count or delivery as apply_operation takes it.
 export function toOperation(job: Extract<Job, { type: 'op' }>, identity: Identity): Operation {
   return { id: job.id, kind: job.kind, actor: job.actor, restaurantId: identity.restaurantId, deviceId: identity.deviceId, occurredAt: job.occurredAt, payload: job.payload }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { demoIdentity, demoServer, demoSnapshot } from '../../src/stok/demo'
 import { Queue, load, save } from '../../src/stok/queue'
-import { Rejected, classify, flush, toOperation } from '../../src/stok/sync'
+import { Rejected, classify, explain, flush, toOperation } from '../../src/stok/sync'
 import type { Identity, Job, KV, Operation, Server } from '../../src/stok/types'
 
 const memory = (): KV => { const m = new Map<string, string>(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), removeItem: (k) => void m.delete(k) } }
@@ -43,6 +43,12 @@ describe('sending', () => {
     expect(classify({ code: '42501', message: 'Manager permission required' })).toBeInstanceOf(Rejected)
     expect(classify({ message: 'Failed to fetch' })).not.toBeInstanceOf(Rejected)
     expect(classify({ code: 'PGRST301', message: 'JWT expired' })).not.toBeInstanceOf(Rejected)
+  })
+  it('puts the server\'s refusals in words staff can act on, and passes an unknown one through', () => {
+    expect(explain('Device not enrolled')).toBe('Ponsel ini belum dipasangkan. Minta pemilik atau manajer memasangkannya.')
+    expect(explain('Operation timestamp outside recovery window')).toBe('Catatan ini tertunda lebih dari 7 hari, atau jam ponsel salah. Kirim ulang untuk mencatatnya sekarang.')
+    expect(explain('Manager permission required')).toBe('Peran Anda tidak boleh melakukan ini.')
+    expect(explain('Something new')).toBe('Something new')
   })
   it('wraps a job as the operation apply_operation expects', () => {
     const j = job('j1')
