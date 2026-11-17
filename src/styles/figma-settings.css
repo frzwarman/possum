@@ -218,3 +218,4 @@ a.team-row:hover{background:var(--bg-muted)}
 .import-row input{flex:0 0 min(280px,55%);min-height:40px;padding:8px 12px}
 .import-links{display:grid;gap:8px;margin-bottom:16px}
 .import-links>h3,.import-links>p{margin:0}
+.upload-label.dragging{border-color:var(--ink);border-style:solid;background:var(--surface)}

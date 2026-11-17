@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { test, expect, demo, go, openShift, addItem, sell } from './meja'
 // The sample files in docs/samples/menu-import: import five TEST items, give one a photo, then remove them again.
 // An item that was sold can only be switched off; the rest are removed for good.
@@ -104,4 +105,21 @@ test("the owner's market list becomes bahan and a COGS tab becomes menus with re
   await file.setInputFiles('docs/samples/sheet-import/cogs-beverage.csv')
   await expect(page.getByText('1 nama bahan di resep belum ada di Stok')).toBeVisible()
   await expect(page.getByText(/Nama sudah ada: Americano, Vegan Latte/)).toBeVisible()
+})
+
+test('a CSV dropped on the import field is read like a picked one; another kind of file is turned away', async ({ page }) => {
+  await demo(page)
+  await go(page, 'Lainnya')
+  await page.getByRole('button', { name: 'Impor CSV' }).click()
+  const drop = async (name: string, type: string, text: string) => {
+    const data = await page.evaluateHandle(([n, t, x]) => { const d = new DataTransfer(); d.items.add(new File([x], n, { type: t })); return d }, [name, type, text])
+    await page.locator('.upload-label').dispatchEvent('dragover', { dataTransfer: data })
+    await expect(page.locator('.upload-label')).toContainText('Lepas untuk membaca berkas')
+    await page.locator('.upload-label').dispatchEvent('drop', { dataTransfer: data })
+  }
+  await drop('Ziggy.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'PK')
+  await expect(page.getByText(/Pilih berkas CSV\. Di Google Sheets/)).toBeVisible()
+  await drop('COGS Ziggy Lounge - MARKET LIST BAR.csv', 'text/csv', readFileSync('docs/samples/sheet-import/market-list-bar.csv', 'utf8'))
+  await expect(page.getByText('10 baris diperiksa')).toBeVisible()
+  await expect(page.locator('.upload-label')).toContainText('Pilih atau seret berkas CSV ke sini')
 })

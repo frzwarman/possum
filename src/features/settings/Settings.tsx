@@ -147,6 +147,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   const [importType, setImportType] = useState<"menu" | "stock">("menu");
   const [preview, setPreview] = useState<Record<string, string>[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [dragging, setDragging] = useState(false);
   // A file from the owner's own sheet: what the reader says about it, and for a COGS tab each row's recipe.
   const [sheet, setSheet] = useState<{ note: string; lines?: SheetMenu["lines"][] }>();
   // A recipe name with no bahan of that name or "nama lain" → the bahan the owner picked for it ("" = leave it out).
@@ -270,6 +271,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   }
   async function readFile(file: File) {
     try {
+      // A dropped file skips the picker's .csv filter: an Excel file or a photo is turned away here.
+      if (!/\.csv$/i.test(file.name) && file.type !== "text/csv") throw new Error("Pilih berkas CSV. Di Google Sheets: File → Download → Comma-separated values (.csv).");
       if (file.size > 200000) throw new Error("CSV maksimal 200 KB");
       const text = await file.text();
       // The owner's own sheet (a market list or a COGS tab, downloaded as CSV) is read as laid out; anything else
@@ -1142,8 +1145,25 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
           <Button variant="secondary" onClick={template}>
             <Download size={16} /> Unduh template CSV
           </Button>
-          <label className="upload-label">
-            <Upload size={20} /> Pilih berkas CSV
+          {/* Click to pick a file, or drop one anywhere on the field (dropping elsewhere would open it in the tab). */}
+          <label
+            className={`upload-label${dragging ? " dragging" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+              setDragging(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              const f = e.dataTransfer.files[0];
+              if (f) void readFile(f);
+            }}
+          >
+            <Upload size={20} /> {dragging ? "Lepas untuk membaca berkas" : "Pilih atau seret berkas CSV ke sini"}
             <input
               type="file"
               accept=".csv,text/csv"
