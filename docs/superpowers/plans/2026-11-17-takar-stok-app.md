@@ -41,7 +41,7 @@ Each line names a condition the spec implies, the behaviour a person would expec
 
 | File | Responsibility |
 | --- | --- |
-| `supabase/migrations/202611170003_stock_app.sql` | `phone` device mode, `enroll_phone`, `barcodes`, `link_barcode`, `unlink_barcode`, `stock_app` |
+| `supabase/migrations/202611170004_stock_app.sql` | `phone` device mode, `enroll_phone`, `barcodes`, `link_barcode`, `unlink_barcode`, `stock_app` |
 | `scripts/test-db.mjs` | four new PGlite tests |
 | `src/domain/measure.ts` | pack-and-loose arithmetic, moved out of `Counts.tsx` |
 | `src/features/counts/Counts.tsx` | imports `measure` instead of defining it |
@@ -62,7 +62,7 @@ Each line names a condition the spec implies, the behaviour a person would expec
 ### Task 1: Database: phones, barcodes and one read call
 
 **Files:**
-- Create: `supabase/migrations/202611170003_stock_app.sql`
+- Create: `supabase/migrations/202611170004_stock_app.sql`
 - Modify: `scripts/test-db.mjs` (insert before the line `// Independent database restoration, never a live environment.`)
 
 **Interfaces:**
@@ -80,7 +80,7 @@ Each line names a condition the spec implies, the behaviour a person would expec
 - [ ] **Step 1: Write the failing tests**
 
 ```js
-// ---- Takar Stok (202611170003): phones, barcodes, one read call ----
+// ---- Takar Stok (202611170004): phones, barcodes, one read call ----
 const phone = randomUUID();
 const link = (dev, code, item, pack = "") => db.query("select public.link_barcode($1,$2,$3,$4)", [dev, code, item, pack]);
 const codes = async () => (await read("select code,stock_id,pack from public.barcodes where restaurant_id=$1 order by code", [rid])).rows;
@@ -161,7 +161,7 @@ Expected: `64 PostgreSQL integration checks passed`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/superpowers supabase/migrations/202611170003_stock_app.sql scripts/test-db.mjs
+git add docs/superpowers supabase/migrations/202611170004_stock_app.sql scripts/test-db.mjs
 git commit -m "feat: phone pairing, barcodes and a read call for the stock app"
 ```
 

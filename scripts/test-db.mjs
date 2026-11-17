@@ -1124,7 +1124,7 @@ await test("The morning report and cash-gap alerts go to linked managers, once",
   assert.equal((await db.query("select public.telegram_status() as s")).rows[0].s, false);
   assert.deepEqual(await one("select public.telegram_report()"), []);
 });
-// ---- Takar Stok (202611170003): phones, barcodes, one read call ----
+// ---- Takar Stok (202611170004): phones, barcodes, one read call ----
 const stokPhone = randomUUID();
 const link = (dev, code, item, pack = "") => db.query("select public.link_barcode($1,$2,$3,$4)", [dev, code, item, pack]);
 const codes = async () => (await read("select code,stock_id,pack from public.barcodes where restaurant_id=$1 order by code", [rid])).rows;

@@ -213,7 +213,7 @@ All text is Indonesian. Colours and type follow Takar's live tokens in `src/styl
 
 ### Server changes (one migration, additions only)
 
-`supabase/migrations/202611170003_stock_app.sql`. Nothing existing is redefined, so it cannot collide with the
+`supabase/migrations/202611170004_stock_app.sql`. Nothing existing is redefined, so it cannot collide with the
 migration the other session is writing.
 
 1. `devices.mode` also accepts `phone`.

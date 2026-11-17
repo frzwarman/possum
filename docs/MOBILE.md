@@ -26,7 +26,7 @@ labels, lock itself after idle minutes, or let Takar un-pair a lost phone. See [
 
 - Counts and deliveries use the operations the web app already sends, so permissions, the manager's approval and
   the audit log are unchanged. In the audit log a phone shows as "Ponsel stok".
-- The new pieces are in one migration, `supabase/migrations/202611170003_stock_app.sql`. It only adds things.
+- The new pieces are in one migration, `supabase/migrations/202611170004_stock_app.sql`. It only adds things.
 - The phone's decisions (barcodes, counts, deliveries, the offline queue, sending) are plain TypeScript in
   `src/stok/`, next to Takar's unit maths in `src/domain/`. The phone bundles those same files, and the web app's
   `pnpm test` covers them.
