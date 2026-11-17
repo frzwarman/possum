@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { can } from "../../domain/permissions";
-import { Search, Info, Plus, Minus, ShoppingBag, ArrowRight, ChefHat, Save, Wallet, Ellipsis, Percent, FilePlus, Check, Banknote, QrCode, Printer, ReceiptText, TriangleAlert, NotebookPen } from "lucide-react";
+import { Search, Info, Plus, Minus, ShoppingBag, ArrowRight, ChefHat, Save, Wallet, Ellipsis, Percent, FilePlus, Eraser, Check, Banknote, QrCode, Printer, ReceiptText, TriangleAlert, NotebookPen } from "lucide-react";
 import { useApp } from "../../app/context";
 import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { Button } from "../../components/ui/button";
@@ -88,6 +88,13 @@ export default function Pos() {
     if (initialized.current && !draft.orderId && !draft.lines.length && auto.test(draft.label) && draft.label !== pager) void update({ ...draft, label: pager });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pager]);
+  // A saved order voided or paid elsewhere (from Pesanan, or on another device) has nothing left to edit or pay:
+  // the cart lets go of it instead of failing with "Pesanan sudah berubah" on every try.
+  const gone = orders.find((o) => o.id === draft.orderId && o.status !== "open");
+  useEffect(() => {
+    if (initialized.current && gone) void update(fresh(pager));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gone?.id, gone?.status]);
   async function update(next: Draft) {
     // A discount belongs to the order it was given for: once a new cart is emptied, drop it so it
     // cannot slide onto the next customer's order.
@@ -238,6 +245,8 @@ export default function Pos() {
               <button disabled={busy || !count || !shift} onClick={() => { setMoreOpen(false); void save(); }}><Save size={16} /> Simpan pesanan</button>
               {!comp && <button onClick={() => { setMoreOpen(false); setDiscountValue(String(draft.discount)); setDiscountReason(draft.discountReason); setDiscountDialog(true); }}><Percent size={16} /> Tambah diskon</button>}
               {draft.orderId && <button disabled={busy} onClick={() => { setMoreOpen(false); void newOrder(); }}><FilePlus size={16} /> Mulai pesanan baru</button>}
+              {/* A new order not saved yet is only a draft: empty it in one go, with the next free pager. */}
+              {!draft.orderId && count > 0 && <button onClick={() => { setMoreOpen(false); void update(fresh(pager)); }}><Eraser size={16} /> Kosongkan pesanan</button>}
             </div>
           )}
         </div>

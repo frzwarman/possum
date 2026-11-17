@@ -163,7 +163,7 @@ export class Commands {
   if(list){counted+=list.reduce((n,x)=>n+x.slip,0)}
   const expected=cash+(list?list.reduce((n,x)=>n+x.expected,0):0),variance=counted-expected
   const limit=settings?.varianceLimit??10000,ok=gap>limit?this.approver('variance',approval,{amount:gap}):{by:undefined,payload:{}}
-  Object.assign(s,{status:'closed',counted,expected,variance,closedAt:op.occurredAt,...(list&&{settlements:list}),...(ok.by&&!can(this.user.role,'approve')&&{varianceApprovedBy:ok.by})});op.payload={counted,id:s.id,...(list&&{settlements:list.map(({edc,slip})=>({edc,slip}))}),...ok.payload};await this.db.shifts.put(s);return s})}
+  Object.assign(s,{status:'closed',counted,expected,variance,closedAt:op.occurredAt,...(list&&{settlements:list}),...(ok.by&&!can(this.user.role,'approve')&&{varianceApprovedBy:ok.by})});op.payload={counted,id:s.id,...(list&&{settlements:list.map(({edc,slip})=>({edc,slip}))}),...ok.payload};await this.db.shifts.put(s);await this.db.drafts.delete('current');return s})}
  // A menu item never sold goes for good (a test import, a typo), versions and all; a sold one is only switched off so
  // its receipts and reports keep it. The server checks again: a rejected removal would hold up the outbox, so ask first.
  async removeMenu(ids:string[]){this.need('approve',true);if(!ids.length)throw new Error('Pilih menu yang dihapus')

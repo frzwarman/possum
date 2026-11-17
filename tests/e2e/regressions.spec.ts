@@ -64,7 +64,7 @@ test('the next table can be rung up while the first is still eating, without ove
   await expect(page.locator('.order-detail')).toContainText('Air mineral')
 })
 
-test('a cart whose order was voided from Pesanan can still start a new order', async ({ page }) => {
+test('a cart whose order was voided from Pesanan lets go of it by itself', async ({ page }) => {
   await demo(page)
   await openShift(page)
   await cart(page).getByLabel(/Nomor pager/).fill('Meja 9')
@@ -78,9 +78,8 @@ test('a cart whose order was voided from Pesanan can still start a new order', a
   await page.getByRole('button', { name: /Konfirmasi pembatalan/ }).click()
   await expect(page.getByText('Koreksi tersimpan di perangkat')).toBeVisible()
   await go(page, 'Kasir')
-  await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
-  await cart(page).getByRole('button', { name: 'Mulai pesanan baru' }).click()
   await expect(cart(page).getByRole('heading', { name: 'Pesanan baru' })).toBeVisible()
+  await expect(cart(page).getByText('Es teh manis')).toHaveCount(0)
   await expect(cart(page).getByText('Mulai dari satu menu')).toBeVisible()
 })
 
