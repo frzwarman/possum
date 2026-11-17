@@ -8,12 +8,13 @@ import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
 import { Dialog } from "../../components/ui/dialog";
-import { businessDay, complimentDiscount, tills, describeDelta, itemStation, lineUse, menuType, nextPager, orderTotals, quantity, rupiah, search } from "../../domain/calculate";
+import { businessDay, complimentDiscount, discountFor, tills, describeDelta, itemStation, lineUse, menuType, nextPager, orderTotals, quantity, rupiah, search } from "../../domain/calculate";
 import { team } from "../auth/Login";
 import { menuPicture } from "../../lib/menu-photo";
 import type { Compliment, Draft, Line, MenuItem, MenuType, Modifier, OptionGroup, Order } from "../../domain/types";
 import { uid } from "../../lib/db";
 import { Receipt } from "../orders/Receipt";
+import { DiscountDialog, type DiscountPick } from "./DiscountDialog";
 // POS-3: a new order is dine-in with the next pager number of the day; one tap switches to take away.
 const fresh = (label: string): Draft => ({ id: "current", revision: 0, label, mode: "dinein", lines: [], discount: 0, discountReason: "" });
 const auto = /^Pager \d+$/;
@@ -40,8 +41,8 @@ export default function Pos() {
   const [received, setReceived] = useState("");
   const [verified, setVerified] = useState(false);
   const [discountDialog, setDiscountDialog] = useState(false);
-  const [discountValue, setDiscountValue] = useState("0");
-  const [discountReason, setDiscountReason] = useState("");
+  // A discount waiting for a manager's PIN: what the cashier picked in the discount dialog.
+  const [pending, setPending] = useState<DiscountPick>();
   const [ask, setAsk] = useState<ApprovalRequest>();
   const [moreOpen, setMoreOpen] = useState(false);
   const [typing, setTyping] = useState(false);
@@ -62,10 +63,10 @@ export default function Pos() {
   const notTill = !user.primary && !user.demo;
   const pairedAs = user.mode === "office" ? "back office (laptop)" : user.mode === "station" ? "stasiun dapur/bar" : "belum dipasangkan";
   // Figma C2c/C2d: who the compliment is for, as pills. Staff meals list the team; the owner's family lists the
-  // owners and a family guest. "Lainnya" (or an empty team) types the name.
+  // owners, the family names set under Lainnya → Restoran, and a family guest. "Lainnya" (or an empty team) types the name.
   const people = team();
   const staff = people.filter((m) => m.role !== "owner").map((m) => m.name);
-  const family = [...people.filter((m) => m.role === "owner").map((m) => m.name), "Tamu keluarga"];
+  const family = [...new Set([...people.filter((m) => m.role === "owner").map((m) => m.name), ...(settings?.family ?? []), "Tamu keluarga"])];
   const today = businessDay(new Date().toISOString(), settings?.timezone, settings?.cutoff);
   const pager = `Pager ${nextPager(orders.filter((o) => businessDay(o.createdAt, settings?.timezone, settings?.cutoff) === today).map((o) => o.label))}`;
   useEffect(() => {
@@ -95,10 +96,26 @@ export default function Pos() {
     if (initialized.current && gone) void update(fresh(pager));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gone?.id, gone?.status]);
+  // A line's menu type, for discounts that cover one type (Commands.save reads it the same way).
+  const lineType = (l: Line): MenuType => { const m = menu.find((x) => x.id === l.itemId); return m ? menuType(m) : l.station === "bar" ? "beverage" : "food"; };
+  // Figma Cashier 2: a saved discount goes on in one tap. A manual one, a saved one the manager marked, or taking the discount
+  // off an order already saved needs a manager's PIN from a cashier (Commands.save asks the same).
+  function pickDiscount(p: DiscountPick) {
+    const was = orders.find((o) => o.id === draft.orderId);
+    const needs = p.discountId ? Boolean(settings?.discounts?.find((d) => d.id === p.discountId)?.approval) && p.discountId !== was?.discountId : p.discount !== (was?.discount ?? 0);
+    if (!manager && needs) { setPending(p); setAsk({ action: "discount", amount: p.discount, what: `Diskon ${rupiah(p.discount)} · ${p.reason}` }); return; }
+    void update({ ...draft, discountId: p.discountId, discount: p.discount, discountReason: p.reason, discountApproval: undefined });
+    setDiscountDialog(false);
+  }
   async function update(next: Draft) {
     // A discount belongs to the order it was given for: once a new cart is emptied, drop it so it
     // cannot slide onto the next customer's order.
-    if (!next.orderId && !next.lines.length) next = { ...next, discount: 0, discountReason: "", discountApproval: undefined };
+    if (!next.orderId && !next.lines.length) next = { ...next, discount: 0, discountReason: "", discountApproval: undefined, discountId: undefined };
+    // A saved discount follows the cart by its own rule, priced the same way Commands.save and the server price it.
+    if (next.discountId) {
+      const saved = settings?.discounts?.find((d) => d.id === next.discountId);
+      next = saved ? { ...next, discount: discountFor(saved, next.lines, lineType), discountReason: saved.name } : { ...next, discountId: undefined, discount: 0, discountReason: "" };
+    }
     // State first, storage second: a quick second tap or keystroke must see this draft, not the
     // one from before IndexedDB answered.
     setDraft(next);
@@ -239,11 +256,13 @@ export default function Pos() {
         {/* Figma C2: the footer carries only the bill and one pay button; keeping a tab open, a manager's discount
             and starting the next order live behind this menu. */}
         <div className="cart-more" onKeyDown={(e) => { if (e.key === "Escape") setMoreOpen(false); }}>
+          {/* Reviewer, 17 Nov: the discount gets its own entry point on the order, not only behind the menu. */}
+          {!comp && <button className="cart-discount" aria-label="Diskon" aria-pressed={draft.discount > 0} onClick={() => setDiscountDialog(true)}><Percent size={18} /></button>}
           <button className="cart-glyph" aria-label="Opsi pesanan" aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)}><Ellipsis size={20} /></button>
           {moreOpen && (
             <div className="cart-menu">
               <button disabled={busy || !count || !shift} onClick={() => { setMoreOpen(false); void save(); }}><Save size={16} /> Simpan pesanan</button>
-              {!comp && <button onClick={() => { setMoreOpen(false); setDiscountValue(String(draft.discount)); setDiscountReason(draft.discountReason); setDiscountDialog(true); }}><Percent size={16} /> Tambah diskon</button>}
+              {!comp && <button onClick={() => { setMoreOpen(false); setDiscountDialog(true); }}><Percent size={16} /> Diskon</button>}
               {draft.orderId && <button disabled={busy} onClick={() => { setMoreOpen(false); void newOrder(); }}><FilePlus size={16} /> Mulai pesanan baru</button>}
               {/* A new order not saved yet is only a draft: empty it in one go, with the next free pager. */}
               {!draft.orderId && count > 0 && <button onClick={() => { setMoreOpen(false); void update(fresh(pager)); }}><Eraser size={16} /> Kosongkan pesanan</button>}
@@ -466,20 +485,8 @@ export default function Pos() {
           </>;
         })()}
       </Dialog>
-      <Dialog open={discountDialog} onOpenChange={setDiscountDialog} title="Diskon manajer" description={manager ? undefined : "Kasir memerlukan PIN manajer untuk memberi diskon."}>
-        <label>Potongan<Money value={discountValue} onChange={setDiscountValue} /></label>
-        <label>Alasan<input value={discountReason} onChange={(e) => setDiscountReason(e.target.value)} required /></label>
-        <Button className="full" onClick={() => {
-          const d = Number(discountValue);
-          if (d < 0 || d > total.subtotal || !discountReason.trim()) { setError("Periksa jumlah dan alasan diskon"); return; }
-          // Same rule as Commands.save: a cashier changing the saved order's discount needs a PIN.
-          const was = orders.find((o) => o.id === draft.orderId)?.discount ?? 0;
-          if (!manager && d !== was) { setAsk({ action: "discount", amount: d, what: `Diskon ${rupiah(d)} · ${discountReason.trim()}` }); return; }
-          void update({ ...draft, discount: d, discountReason, discountApproval: undefined });
-          setDiscountDialog(false);
-        }}>Terapkan diskon</Button>
-      </Dialog>
-      <ApprovalDialog request={ask} onClose={() => setAsk(undefined)} onApproved={(discountApproval) => { setAsk(undefined); setDiscountDialog(false); void update({ ...draft, discount: discountApproval.amount!, discountReason, discountApproval }); }} />
+      {discountDialog && <DiscountDialog open onClose={() => setDiscountDialog(false)} draft={draft} settings={settings} manager={manager} type={lineType} onPick={pickDiscount} />}
+      <ApprovalDialog request={ask} onClose={() => setAsk(undefined)} onApproved={(discountApproval) => { setAsk(undefined); setDiscountDialog(false); void update({ ...draft, discountId: pending?.discountId, discount: discountApproval.amount!, discountReason: pending?.reason ?? "", discountApproval }); }} />
       {/* Figma C4/C4b: the total, how the guest pays, which EDC, what to do on it, the slip's code, then one confirm.
           Stores that take cash keep the cash and manual-check paths in the same layout. */}
       <Dialog open={Boolean(checkout)} onOpenChange={() => setCheckout(undefined)} className="pay-dialog" title="Terima pembayaran" description={checkout ? payNote(checkout) : undefined}>

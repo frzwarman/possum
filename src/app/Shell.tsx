@@ -4,7 +4,7 @@ import { Link,Outlet,useRouterState } from '@tanstack/react-router'
 import { PageSkeleton } from '../components/ui/loading'
 import { Mark } from '../components/logo'
 import { PinPad } from '../components/ui/pinpad'
-import { LayoutGrid,ReceiptText,Package,ChartNoAxesCombined,Ellipsis,TrendingUp,Truck,CookingPot,CalendarClock,ArrowLeftRight,Cloud,WifiOff,RefreshCw,ChevronDown,X,Store,ArrowUpRight,ChefHat,ClipboardList,House,FileClock,Users,ShoppingBag,Wallet,LockKeyhole,UserRound } from 'lucide-react'
+import { BadgePercent,LayoutGrid,ReceiptText,Package,ChartNoAxesCombined,Ellipsis,TrendingUp,Truck,CookingPot,CalendarClock,ArrowLeftRight,Cloud,WifiOff,RefreshCw,ChevronDown,X,Store,ArrowUpRight,ChefHat,ClipboardList,House,FileClock,Users,ShoppingBag,Wallet,LockKeyhole,UserRound } from 'lucide-react'
 import { can,roleLabel } from '../domain/permissions'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { useApp,logout,signOutBlockers } from './context'
@@ -57,7 +57,7 @@ const {needRefresh:[needRefresh],updateServiceWorker}=useRegisterSW();const pend
  // Figma "Manager laptop": Hari ini, Menu & resep, Stok (Ingredients), Hitung stok, Laporan, Log audit, Tim & perangkat,
  // in that order with no group captions; the pages the pilot design leaves out follow (the till here gets its own icon,
  // since the 4-square grid now means Menu & resep).
- const groups=office&&!tillLocked?[{caption:'Navigasi',links:[{to:'/today',label:'Hari ini',icon:House},{to:'/menu',label:'Menu & resep',icon:LayoutGrid},{to:'/inventory',label:'Stok',icon:Package},{to:'/counts',label:'Hitung stok',icon:ClipboardList},{to:'/reports',label:'Laporan',icon:ChartNoAxesCombined},...(can(user.role,'audit')?[{to:'/audit',label:'Log audit',icon:FileClock}]:[]),{to:'/team',label:'Tim & perangkat',icon:Users},...work.map(l=>l.to==='/pos'?{...l,icon:ShoppingBag}:l),{to:'/production',label:'Produksi',icon:CookingPot},{to:'/sales',label:'Penjualan',icon:TrendingUp},{to:'/purchases',label:'Pembelian',icon:Truck},{to:'/catering',label:'Katering',icon:CalendarClock},{to:'/transfers',label:'Transfer',icon:ArrowLeftRight},more]}]:[{caption:'Ruang kerja',links:sell?till:[...work,...stockWork,more]}];const links=groups.flatMap(g=>g.links)
+ const groups=office&&!tillLocked?[{caption:'Navigasi',links:[{to:'/today',label:'Hari ini',icon:House},{to:'/menu',label:'Menu & resep',icon:LayoutGrid},...(can(user.role,'settings')?[{to:'/discounts',label:'Diskon',icon:BadgePercent}]:[]),{to:'/inventory',label:'Stok',icon:Package},{to:'/counts',label:'Hitung stok',icon:ClipboardList},{to:'/reports',label:'Laporan',icon:ChartNoAxesCombined},...(can(user.role,'audit')?[{to:'/audit',label:'Log audit',icon:FileClock}]:[]),{to:'/team',label:'Tim & perangkat',icon:Users},...work.map(l=>l.to==='/pos'?{...l,icon:ShoppingBag}:l),{to:'/production',label:'Produksi',icon:CookingPot},{to:'/sales',label:'Penjualan',icon:TrendingUp},{to:'/purchases',label:'Pembelian',icon:Truck},{to:'/catering',label:'Katering',icon:CalendarClock},{to:'/transfers',label:'Transfer',icon:ArrowLeftRight},more]}]:[{caption:'Ruang kerja',links:sell?till:[...work,...stockWork,more]}];const links=groups.flatMap(g=>g.links)
  // The phone's bottom bar keeps Lainnya, which the rail reaches through the avatar.
  const bottom=links.some(l=>l.to==='/settings')?links:[...links,more]
  // A phone bar holds five: past that (owner, manager on the laptop view) the first four plus a Menu sheet with the rest.

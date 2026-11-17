@@ -1,4 +1,4 @@
-import { test, expect, openShift, addItem, cart, go, sell } from './meja'
+import { test, expect, openShift, addItem, cart, go, sell, manualDiscount } from './meja'
 import type { Page } from '@playwright/test'
 // Each demo role is its own sandbox on this device, like separate staff accounts.
 async function demoAs(page: Page, role: 'Pemilik · super admin' | 'Manajer · admin' | 'Kasir') {
@@ -65,12 +65,7 @@ test("a cashier's discount and void wait for a manager's PIN, and the approver i
   await openShift(page)
   await cart(page).getByLabel(/Nomor pager/).fill('Meja 4')
   await addItem(page, 'Es teh manis')
-  await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
-  await cart(page).getByRole('button', { name: 'Tambah diskon' }).click()
-  const discount = page.getByRole('dialog', { name: 'Diskon manajer' })
-  await discount.getByLabel('Potongan').fill('1000')
-  await discount.getByLabel('Alasan').fill('Langganan')
-  await discount.getByRole('button', { name: 'Terapkan diskon' }).click()
+  await manualDiscount(page, '1000', 'Langganan')
   const approval = await approveWith(page, 'Pemilik Demo', '000000')
   await expect(approval.getByRole('alert')).toHaveText('PIN salah')
   await expect(cart(page).locator('.bill-total')).toContainText(/Rp\s*6\.000/)
@@ -86,11 +81,12 @@ test("a cashier's discount and void wait for a manager's PIN, and the approver i
   await detail.getByRole('button', { name: 'Batalkan pesanan' }).click()
   await detail.getByLabel('Alasan wajib').fill('Pelanggan pergi')
   await detail.getByRole('button', { name: /Konfirmasi pembatalan/ }).click()
-  await approveWith(page, 'Manajer Demo')
+  // An admin can approve too, not only a manager (reviewer, 17 Nov).
+  await approveWith(page, 'Admin Demo')
   await expect(page.getByText('Koreksi tersimpan di perangkat')).toBeVisible()
   await page.getByRole('button', { name: 'Semua' }).click()
   await page.locator('.order-row').filter({ hasText: 'Meja 4' }).click()
-  await expect(page.locator('.order-detail')).toContainText('Dibatalkan: Pelanggan pergi · disetujui Manajer Demo')
+  await expect(page.locator('.order-detail')).toContainText('Dibatalkan: Pelanggan pergi · disetujui Admin Demo')
 })
 
 test('the owner sees every correction with who asked and who approved it', async ({ page }) => {
@@ -98,12 +94,7 @@ test('the owner sees every correction with who asked and who approved it', async
   await openShift(page)
   await cart(page).getByLabel(/Nomor pager/).fill('Meja 8')
   await addItem(page, 'Es teh manis')
-  await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
-  await cart(page).getByRole('button', { name: 'Tambah diskon' }).click()
-  const discount = page.getByRole('dialog', { name: 'Diskon manajer' })
-  await discount.getByLabel('Potongan').fill('1000')
-  await discount.getByLabel('Alasan').fill('Teman pemilik')
-  await discount.getByRole('button', { name: 'Terapkan diskon' }).click()
+  await manualDiscount(page, '1000', 'Teman pemilik')
   await expect(page.getByRole('dialog', { name: 'Persetujuan manajer' })).toHaveCount(0) // the owner approves their own
   await sell(page)
   await page.keyboard.press('Escape')

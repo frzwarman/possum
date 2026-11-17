@@ -6,6 +6,12 @@ const choose = async (page: Page, scope: ReturnType<Page['getByRole']>, label: s
   await page.getByRole('option', { name: option }).click()
 }
 
+// The bahan search: type the name, then pick it from the list.
+const pickBahan = async (page: Page, scope: ReturnType<Page['getByRole']>, label: string, name: string) => {
+  await scope.getByRole('combobox', { name: new RegExp(`^${label}`) }).fill(name)
+  await page.getByRole('option', { name: new RegExp(`^${name}`) }).first().click()
+}
+
 test('a PO to a saved supplier arrives in two deliveries, is paid in parts, and goes out by WhatsApp', async ({ page }) => {
   await demo(page)
   await go(page, 'Pembelian')
@@ -133,7 +139,7 @@ test('a batch recipe turns raw stock into a ready item through Produksi', async 
   const item = page.getByRole('dialog', { name: 'Bahan stok' })
   await item.getByLabel('Nama bahan').fill('Telur balado (porsi)')
   await item.getByLabel(/Dibuat sendiri dari bahan lain/).check()
-  await choose(page, item, 'Bahan per batch', 'Telur (pcs)')
+  await pickBahan(page, item, 'Bahan per batch', 'Telur')
   await item.getByLabel('Jumlah satuan dasar').fill('10')
   await item.getByRole('button', { name: 'Tambah bahan produksi' }).click()
   await item.getByLabel(/Hasil per batch/).fill('10')

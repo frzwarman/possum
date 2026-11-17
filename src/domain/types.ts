@@ -36,6 +36,18 @@ export interface Settings {
  lockMinutes?: number
  // Staff meals and the owner's family: what they may take free each month, in rupiah. 0 or unset = no budget.
  complimentBudget?: number
+ // The owner's family by name (not staff accounts): one-tap names when the cashier records a family compliment.
+ family?: string[]
+ // Saved discounts and vouchers the cashier applies in one tap (Figma Manager 7). The server compares an order's copy of
+ // the settings without this list, so a discount edited mid-shift never clashes with the till's next order.
+ discounts?: Discount[]
+}
+// A saved discount: a percent or a rupiah amount off the whole order, one menu type or chosen items, between two
+// business days (inclusive), from a minimum spend. approval = the cashier needs a manager's PIN the first time it goes
+// on an order; ended = stopped early. Priced by discountFor() here and public.saved_discount() on the server.
+export interface Discount {
+ id: string; name: string; note: string; kind: 'percent' | 'amount'; value: number
+ scope: 'order' | MenuType | 'items'; items?: string[]; from: string; to: string; minSpend?: number; approval?: boolean; ended?: boolean
 }
 // A pack is how an ingredient is bought: "karton = 12 × 1 L" is {name:'karton', qty:12_000_000} in thousandths of ml.
 export interface Pack { name: string; qty: number }
@@ -89,6 +101,8 @@ export interface Order {
  createdAt: string; updatedAt: string
  payment?: OrderPayment
  refund?: { reason: string; at: string; actor: string; approvedBy?: string }; voidReason?: string; voidApprovedBy?: string; discountApprovedBy?: string
+ // The saved discount on this order, if any: its amount follows the order's lines by the discount's own rule.
+ discountId?: string
 }
 export interface Shift { id: string; actor: string; cashier: string; openedAt: string; expiresAt: string; opening: number; status: 'open' | 'closed'; closedAt?: string; counted?: number; expected?: number; variance?: number; varianceApprovedBy?: string
  // Cashless close: what Takar recorded on each EDC against the total on that EDC's settlement slip.
@@ -111,4 +125,4 @@ export type OpKind =
  | 'salesorder.save' | 'salesorder.pay' | 'salesorder.deliver' | 'salesorder.cancel' | 'transfer.send' | 'transfer.receive' | 'transfer.cancel' | 'count.record' | 'count.submit'
 export interface Operation { id: string; kind: OpKind; actor: string; restaurantId: string; deviceId: string; occurredAt: string; payload: Record<string, unknown>; state: 'pending' | 'synced' | 'rejected'; attempts: number; nextAttempt: number; error?: string; receivedAt?: string }
 export interface PrintAttempt { id: string; orderId: string; kind: 'receipt' | 'kitchen' | 'test'; at: string; status: 'requested' | 'confirmed'; reprint: boolean; lineIds: string[] }
-export interface Draft { id: string; orderId?: string; revision: number; label: string; name?: string; mode: OrderMode; compliment?: Compliment; lines: Line[]; discount: number; discountReason: string; discountApproval?: Approval }
+export interface Draft { id: string; orderId?: string; revision: number; label: string; name?: string; mode: OrderMode; compliment?: Compliment; lines: Line[]; discount: number; discountReason: string; discountApproval?: Approval; discountId?: string }

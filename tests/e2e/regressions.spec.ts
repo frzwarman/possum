@@ -1,15 +1,8 @@
-import { test, expect, demo, openShift, addItem, cart, go } from './meja'
+import { test, expect, demo, openShift, addItem, cart, go, manualDiscount } from './meja'
 import type { Page } from '@playwright/test'
 import { defaultSettings, sampleMenu, stock } from '../../src/domain/sample'
 
-const discount = async (page: Page, amount: string) => {
-  await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
-  await cart(page).getByRole('button', { name: 'Tambah diskon' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Diskon manajer' })
-  await dialog.getByLabel('Potongan').fill(amount)
-  await dialog.getByLabel('Alasan').fill('Langganan')
-  await dialog.getByRole('button', { name: 'Terapkan diskon' }).click()
-}
+const discount = (page: Page, amount: string) => manualDiscount(page, amount, 'Langganan')
 
 test('a discount that no longer fits the cart is reported, not a crash that survives reloads', async ({ page }) => {
   await demo(page)

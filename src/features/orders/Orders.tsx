@@ -9,6 +9,7 @@ import { Dialog } from '../../components/ui/dialog'
 import { Select } from '../../components/ui/select'
 import { Receipt,lineTotal,payLabel } from './Receipt'
 import { ApprovalDialog,type ApprovalRequest } from '../../app/Approval'
+import { VoidSummary } from './VoidSummary'
 // Figma C11: every order in one table, the chosen one beside it. Where both do not fit (tablet portrait, phone, a
 // laptop narrowed by the sidebar) a tap opens the order as a dialog instead.
 const no=(o:Order)=>o.receiptId.slice(-6).toUpperCase()
@@ -26,10 +27,10 @@ export default function Orders(){const {orders,settings,db,commands,act,manager,
  const todays=visible.filter(o=>day(o.createdAt)===today).length,takings=visible.filter(o=>o.payment&&day(o.payment.at)===today&&o.status!=='refunded'&&isSale(o)).reduce((n,o)=>n+o.totals.total,0)
  // Find any order by number, pager or name, item, or the approval code on the EDC slip.
  const words=(o:Order)=>[o.label,o.name,o.receiptId,o.receiptId.slice(-6),o.compliment?.who,o.payment?.approvalCode,o.payment?.edc,...o.lines.map(l=>l.name)].join(' ').toLowerCase()
- const inTab=(o:Order,t:string)=>t==='kitchen'?(o.status==='open'||o.status==='paid')&&o.prep!=='ready':t==='compliment'?o.mode==='compliment':t==='paid'?o.status==='paid'&&isSale(o):t==='all'||o.status===t
+ const inTab=(o:Order,t:string)=>t==='kitchen'?(o.status==='open'||o.status==='paid')&&o.prep!=='ready':t==='compliment'?o.mode==='compliment':t==='paid'?o.status==='paid'&&isSale(o):t==='void'?o.status==='void'||o.lines.some(l=>l.cancelled):t==='all'||o.status===t
  const order=(a:Order,b:Order)=>sort==='amount'?b.totals.total-a.totals.total:sort==='old'?a.createdAt.localeCompare(b.createdAt):b.createdAt.localeCompare(a.createdAt)
  const filtered=visible.filter(o=>inTab(o,tab)&&words(o).includes(search.trim().toLowerCase())).sort(order)
- const o=filtered.find(x=>x.id===picked)??(wide?filtered[0]:undefined)
+ const o=filtered.find(x=>x.id===picked)??(wide&&tab!=='void'?filtered[0]:undefined)
  // A correction belongs to the order it was started on: picking another order never carries a half-typed void over.
  const open=action&&action.id===o?.id?action.kind:undefined,start=(k:'void'|'refund'|'line')=>{setReason('');setLineId('');setAction({id:o!.id,kind:k})}
  async function correct(approval?:Approval){const target=visible.find(x=>x.id===action?.id);if(!target||!action)return;const line=target.lines.find(l=>l.id===lineId),k=action.kind
@@ -70,12 +71,13 @@ export default function Orders(){const {orders,settings,db,commands,act,manager,
     {o.status==='paid'&&voidable.length>0&&<Button variant="destructive" onClick={()=>start('line')}><Trash2 size={18}/> Batalkan item</Button>}</div></>}
  </>
  return <section ref={fit} className="page-content orders-page"><div className="page-heading"><div><h1>Pesanan</h1><p className="muted">{when(Date.now(),tz,{weekday:'long'})} {when(Date.now(),tz,{day:'numeric',month:'long'})}: {todays} pesanan, {rupiah(takings)}</p></div><div className="search-box"><Search size={20}/><input aria-label="Cari pesanan" placeholder="Cari no. pesanan, nama, menu atau kode approval" value={search} onChange={e=>setSearch(e.target.value)}/></div></div>
-  <div className="orders-filters"><div className="category-tabs">{[['all','Semua'],['paid','Lunas'],['open','Belum dibayar'],['void','Dibatalkan'],['compliment','Compliment'],...(tablets?[['kitchen','Stasiun']]:[])].map(([id,label])=><button className={tab===id?'active':''} key={id} aria-pressed={tab===id} onClick={()=>setTab(id)}>{label}<span>{visible.filter(o=>inTab(o,id)).length}</span></button>)}</div><div className="filter-select"><Select ariaLabel="Urutkan" value={sort} onChange={v=>setSort(v as typeof sort)} options={[{value:'new',label:'Terbaru dulu'},{value:'old',label:'Terlama dulu'},{value:'amount',label:'Nominal terbesar'}]}/></div></div>
+  <div className="orders-filters"><div className="category-tabs">{[['all','Semua'],['paid','Lunas'],['open','Belum dibayar'],['void','Dibatalkan'],['compliment','Compliment'],...(tablets?[['kitchen','Stasiun']]:[])].map(([id,label])=><button className={tab===id?'active':''} key={id} aria-pressed={tab===id} onClick={()=>{setTab(id);setPicked(undefined)}}>{label}<span>{visible.filter(o=>inTab(o,id)).length}</span></button>)}</div><div className="filter-select"><Select ariaLabel="Urutkan" value={sort} onChange={v=>setSort(v as typeof sort)} options={[{value:'new',label:'Terbaru dulu'},{value:'old',label:'Terlama dulu'},{value:'amount',label:'Nominal terbesar'}]}/></div></div>
+  {!wide&&tab==='void'&&<VoidSummary/>}
   <div className="orders-columns"><div className="panel orders-list">{filtered.length?<table className="orders-table"><thead><tr><th>Pesanan</th><th>Waktu</th><th>Untuk</th><th className="col-type">Tipe</th><th>Pembayaran</th><th>Total</th><th>Status</th></tr></thead><tbody>
    {filtered.map(r=>{const head=r.label||r.name||r.compliment?.who||'Tanpa label',sub=[r.name,r.compliment?.who].find(v=>v&&v!==head)??kind(r),[how,via]=!r.payment?['—']:r.payment.method==='none'?['Gratis','Compliment']:payLabel(r).split(', '),on=r.id===o?.id
     return <tr key={r.id} className={`order-row${on?' selected':''}`} onClick={()=>setPicked(r.id)}><td className="col-no"><button type="button" aria-current={on||undefined}>{no(r)}</button></td><td className="col-time">{at(r.createdAt)}</td><td className="col-for">{head}<small>{sub}</small></td><td className="col-type">{kind(r)}</td><td className="col-pay">{how}{via&&<small>{via}</small>}</td><td className={`col-total${r.status==='void'?' line-voided':''}`}>{rupiah(r.totals.total)}</td><td className="col-status"><Status o={r}/></td></tr>})}
   </tbody></table>:<div className="empty-state"><ReceiptText size={42} strokeWidth={1.3}/><h2>{tab==='open'?'Semua pesanan sudah beres':'Belum ada pesanan di sini'}</h2><p>Pesanan baru akan muncul setelah disimpan dari kasir.</p><Button variant="secondary" onClick={()=>navigate({to:'/pos'})}>Ke kasir</Button></div>}</div>
-  {wide&&o&&<aside className="panel order-detail" aria-label={`Pesanan ${no(o)}`}>{detail}</aside>}</div>
+  {wide&&(o?<aside className="panel order-detail" aria-label={`Pesanan ${no(o)}`}>{detail}</aside>:tab==='void'&&<VoidSummary/>)}</div>
   {!wide&&<Dialog open={Boolean(o)} onOpenChange={()=>setPicked(undefined)} title={o?`Pesanan ${no(o)}`:'Pesanan'} className="order-dialog"><div className="order-detail">{detail}</div></Dialog>}
   <ApprovalDialog request={ask} onClose={()=>setAsk(undefined)} onApproved={a=>{setAsk(undefined);void correct(a)}}/>{printing&&<Receipt order={printing.order} kitchen={printing.kitchen} reprint onClose={()=>setPrinting(undefined)}/>}</section>
 }

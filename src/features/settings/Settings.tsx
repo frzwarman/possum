@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -38,6 +38,7 @@ import {
   stockImportSchema,
 } from "../../lib/import";
 import { readSheet, type SheetMenu } from "../../lib/sheet";
+import { BahanPicker } from "./BahanPicker";
 import type { Ingredient, MenuItem, MenuType, OptionGroup, Pack, Role, Station, StockItem } from "../../domain/types";
 import { convert, describeDelta, itemStation, menuType, quantity, rupiah, typeLabel, when } from "../../domain/calculate";
 import { can, roleLabel } from "../../domain/permissions";
@@ -79,6 +80,7 @@ const schema = z.object({
   lockMinutes: z.coerce.number<number>().int().min(0).max(120),
   edcs: z.string().refine((v) => { const list = v.split(",").map((x) => x.trim()).filter(Boolean); return list.length <= 10 && list.every((x) => x.length <= 30); }, "Maksimal 10 EDC, nama maksimal 30 karakter"),
   complimentBudget: z.coerce.number<number>().int().min(0).max(1000000000),
+  family: z.string().max(600),
   kitchenTarget: z.coerce.number<number>().int().min(1).max(600),
   barTarget: z.coerce.number<number>().int().min(1).max(600),
   varianceLimit: z.coerce.number<number>().int().min(0).max(1000000000),
@@ -148,6 +150,15 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   const [preview, setPreview] = useState<Record<string, string>[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
+  // Recipe entry by keyboard: a picked bahan moves to Jumlah, Enter adds the line and returns to the search.
+  const qtyRef = useRef<HTMLInputElement>(null);
+  const pickRef = useRef<HTMLInputElement>(null);
+  // "Belum ada? Tambah bahan baru" in a bahan search opens the bahan form with the typed name; once saved, the search takes it.
+  const afterStockSave = useRef<(id: string) => void>(undefined);
+  const newBahan = (name: string, pick: (id: string) => void) => {
+    afterStockSave.current = pick;
+    setStock({ id: uid(), name, unit: "pcs", threshold: 0, aliases: [], area: "", packs: [] });
+  };
   // A file from the owner's own sheet: what the reader says about it, and for a COGS tab each row's recipe.
   const [sheet, setSheet] = useState<{ note: string; lines?: SheetMenu["lines"][] }>();
   // A recipe name with no bahan of that name or "nama lain" → the bahan the owner picked for it ("" = leave it out).
@@ -215,7 +226,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   }
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
-    values: settings && { ...settings, tagline: settings.tagline ?? "", stationTablets: Boolean(settings.stationTablets), cash: !settings.cashless, edcs: (settings.edcs ?? []).join(", "), lockMinutes: settings.lockMinutes ?? 2, complimentBudget: settings.complimentBudget ?? 0, kitchenTarget: settings.stations?.kitchen ?? 15, barTarget: settings.stations?.bar ?? 8, varianceLimit: settings.varianceLimit ?? 10000, lowAt: settings.lowAt ?? 5 },
+    values: settings && { ...settings, tagline: settings.tagline ?? "", stationTablets: Boolean(settings.stationTablets), cash: !settings.cashless, edcs: (settings.edcs ?? []).join(", "), lockMinutes: settings.lockMinutes ?? 2, complimentBudget: settings.complimentBudget ?? 0, family: (settings.family ?? []).join(", "), kitchenTarget: settings.stations?.kitchen ?? 15, barTarget: settings.stations?.bar ?? 8, varianceLimit: settings.varianceLimit ?? 10000, lowAt: settings.lowAt ?? 5 },
   });
   const errors = form.formState.errors;
   async function saveSettings(values: z.infer<typeof schema>) {
@@ -224,14 +235,14 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       setError("Lebar area cetak harus lebih kecil dari lebar kertas");
       return;
     }
-    const { kitchenTarget, barTarget, varianceLimit, lowAt, stationTablets, cash, edcs, complimentBudget, lockMinutes, ...rest } = values;
+    const { kitchenTarget, barTarget, varianceLimit, lowAt, stationTablets, cash, edcs, complimentBudget, lockMinutes, family, ...rest } = values;
     const machines = words(edcs);
     if (!cash && !machines.length) {
       setError("Tanpa tunai, isi minimal satu mesin EDC untuk kartu dan QRIS");
       return;
     }
     await act(
-      () => commands.settings({ ...settings, ...rest, receiptWidth: width, stations: { kitchen: kitchenTarget, bar: barTarget }, varianceLimit, lowAt, stationTablets, cashless: !cash, edcs: machines, complimentBudget, lockMinutes }),
+      () => commands.settings({ ...settings, ...rest, receiptWidth: width, stations: { kitchen: kitchenTarget, bar: barTarget }, varianceLimit, lowAt, stationTablets, cashless: !cash, edcs: machines, complimentBudget, lockMinutes, family: [...new Set(words(family).filter((n) => n.length <= 60))].slice(0, 20) }),
       "Pengaturan tersimpan",
     );
   }
@@ -412,6 +423,9 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       setRecipeStock("");
       setRecipeQty("");
       setRecipeUnit("");
+      // The search stays open for the next bahan (Batal closes it).
+      setAdding(true);
+      pickRef.current?.focus();
     } catch (e) {
       setError(String(e));
     }
@@ -448,7 +462,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   // M8: the demo knows only its two approvers; a real restaurant lists its memberships. You come first.
   const me = { id: user.id, name: user.name, role: user.role, active: true };
   const people = user.demo
-    ? [me, ...demoApprovers.filter((a) => a.id !== user.id).map((a) => ({ ...a, role: (a.id === "demo-owner" ? "owner" : "manager") as Role, active: true }))]
+    ? [me, ...demoApprovers.filter((a) => a.id !== user.id).map((a) => ({ ...a, role: a.id.slice(5) as Role, active: true }))]
     : [me, ...(members ?? []).filter((m) => m.id !== user.id)];
   const activeMenu = menu.filter((m) => m.active), unrecipied = activeMenu.filter((m) => !m.recipe.length).length;
   // Lainnya: each tab has its own title and line, like the separate Figma pages it stands in for.
@@ -608,7 +622,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                           ))}
                           {effectFor === i ? (
                             <div className="form-grid">
-                              <Select label="Bahan" value={effect.stockId} onChange={(v) => setEffect({ ...effect, stockId: v, unit: stockItems.find((s) => s.id === v)?.unit ?? "" })} options={[{ value: "", label: "Pilih bahan" }, ...stockItems.map((s) => ({ value: s.id, label: `${s.name} (${s.unit})` }))]} />
+                              <BahanPicker items={stockItems} value={effect.stockId} costs={costs} onChange={(v) => setEffect({ ...effect, stockId: v, unit: stockItems.find((s) => s.id === v)?.unit ?? "" })} />
                               <Select label="Efek" value={effect.sign} onChange={(v) => setEffect({ ...effect, sign: v })} options={SIGNS} />
                               <label>
                                 Jumlah
@@ -698,10 +712,10 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                 )}
                 {adding || !item.recipe.length ? (
                   <div className="recipe-add">
-                    <Select label="Bahan" value={recipeStock} onChange={(v) => { setRecipeStock(v); setRecipeUnit(""); }} options={[{ value: "", label: "Pilih bahan" }, ...stockItems.map((s) => ({ value: s.id, label: `${s.name} (${s.unit})` }))]} />
+                    <BahanPicker items={stockItems} value={recipeStock} costs={costs} inputRef={pickRef} used={item.recipe.map((r) => r.stockId).filter((x) => x !== recipeStock)} onChange={(v) => { setRecipeStock(v); setRecipeUnit(""); if (v) qtyRef.current?.focus(); }} onNew={(name) => newBahan(name, (id) => { setRecipeStock(id); setRecipeUnit(""); })} />
                     <label>
                       Jumlah
-                      <input inputMode="decimal" value={recipeQty} onChange={(e) => setRecipeQty(e.target.value)} />
+                      <input ref={qtyRef} inputMode="decimal" value={recipeQty} onChange={(e) => setRecipeQty(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRecipe(); } }} />
                     </label>
                     <Select label="Satuan" value={recipeUnit || stockItems.find((s) => s.id === recipeStock)?.unit || ""} onChange={setRecipeUnit} options={unitsFor(stockItems.find((s) => s.id === recipeStock))} />
                     {/* Figma M7 draws the recipe without a delete column: a row is removed from its edit form. */}
@@ -966,6 +980,11 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               <label>
                 Anggaran compliment per bulan (Rp)
                 <input type="number" {...form.register("complimentBudget")} />
+              </label>
+              <label>
+                Keluarga pemilik
+                <input placeholder="Bu Rina, Kevin, Oma" {...form.register("family")} />
+                <small className="muted">Pisahkan dengan koma. Muncul sebagai pilihan sekali ketuk saat kasir mencatat compliment keluarga pemilik, setelah nama pemilik.</small>
               </label>
             </div>
             <div className="form-grid three">
@@ -1561,7 +1580,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               <KeyRound size={16} /> PIN masuk
             </Button>
           )}
-          {manager && !user.demo && (
+          {can(user.role, "pin") && !user.demo && (
             <Button
               variant="secondary"
               size="sm"
@@ -1592,7 +1611,10 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       )}
       <Dialog
         open={Boolean(stock)}
-        onOpenChange={() => setStock(undefined)}
+        onOpenChange={() => {
+          setStock(undefined);
+          afterStockSave.current = undefined;
+        }}
         title="Bahan stok"
       >
         {stock && (
@@ -1718,17 +1740,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                   </div>
                 ))}
                 <div className="form-grid">
-                  <Select
-                    label="Bahan per batch"
-                    value={bomStock}
-                    onChange={setBomStock}
-                    options={[
-                      { value: "", label: "Pilih bahan" },
-                      ...stockItems
-                        .filter((x) => x.id !== stock.id)
-                        .map((x) => ({ value: x.id, label: `${x.name} (${x.unit})` })),
-                    ]}
-                  />
+                  <BahanPicker label="Bahan per batch" drop="down" items={stockItems.filter((x) => x.id !== stock.id)} value={bomStock} costs={costs} onChange={setBomStock} />
                   <label>
                     Jumlah satuan dasar
                     <input inputMode="decimal" value={bomQty} onChange={(e) => setBomQty(e.target.value)} />
@@ -1790,6 +1802,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                     stock,
                   ]);
                   setStock(undefined);
+                  afterStockSave.current?.(stock.id);
+                  afterStockSave.current = undefined;
                 }, "Bahan tersimpan")
               }
             >

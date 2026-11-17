@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_MONEY, businessDay, change, consumption, convert, expectedCash, money, niceStep, refundStock, rupiah, stamp, totals, when } from '../../src/domain/calculate'
+import { MAX_MONEY, businessDay, change, consumption, convert, discountFor, discountRunning, expectedCash, money, niceStep, refundStock, rupiah, stamp, totals, when } from '../../src/domain/calculate'
 import { defaultSettings } from '../../src/domain/sample'
 import type { CashMovement, Line, Modifier, Order, Settings, Shift } from '../../src/domain/types'
 
@@ -354,5 +354,27 @@ describe('niceStep', () => {
     expect(niceStep(400_000)).toBe(100_000)
     expect(niceStep(410_000) * 4).toBe(600_000) // 1/2/5 steps would jump to 800.000
     expect(niceStep(1_250_000) * 4).toBe(1_600_000)
+  })
+})
+
+describe('discountFor() prices a saved discount the way the server does', () => {
+  const line = (itemId: string, price: number, qty = 1, extra = 0, cancelled = false) => ({ itemId, price, qty, cancelled, modifiers: extra ? [{ id: 'm', name: 'm', price: extra, recipe: [] }] : [] })
+  const type = (l: { itemId: string }) => (l.itemId.startsWith('drink') ? 'beverage' : 'food') as 'beverage' | 'food'
+  const base = { id: 'd', name: 'Hari Guru', note: '', from: '2026-11-18', to: '2026-11-25' }
+  it('takes a percent of the lines it covers, rounded down, options and quantity included', () => {
+    const lines = [line('drink-latte', 42000, 2, 1000), line('food-rice', 55000), line('drink-tea', 9999, 1, 0, true)]
+    expect(discountFor({ ...base, kind: 'percent', value: 15, scope: 'beverage' }, lines, type)).toBe(12900)
+    expect(discountFor({ ...base, kind: 'percent', value: 10, scope: 'order' }, lines, type)).toBe(14100)
+    expect(discountFor({ ...base, kind: 'percent', value: 33, scope: 'items', items: ['food-rice'] }, lines, type)).toBe(18150)
+  })
+  it('caps a rupiah voucher at what it covers, and gives nothing below the minimum spend', () => {
+    expect(discountFor({ ...base, kind: 'amount', value: 100000, scope: 'order' }, [line('food-rice', 55000)], type)).toBe(55000)
+    expect(discountFor({ ...base, kind: 'amount', value: 25000, scope: 'order', minSpend: 50000 }, [line('food-rice', 45000)], type)).toBe(0)
+    expect(discountFor({ ...base, kind: 'amount', value: 25000, scope: 'order', minSpend: 50000 }, [line('food-rice', 55000)], type)).toBe(25000)
+  })
+  it('runs between its first and last business day unless ended early', () => {
+    const d = { ...base, kind: 'percent' as const, value: 15, scope: 'order' as const }
+    expect(['2026-11-17', '2026-11-18', '2026-11-25', '2026-11-26'].map((day) => discountRunning(d, day))).toEqual([false, true, true, false])
+    expect(discountRunning({ ...d, ended: true }, '2026-11-20')).toBe(false)
   })
 })

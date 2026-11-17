@@ -848,3 +848,11 @@ label.slip-field{flex-direction:row;justify-self:end;width:auto}
 @media(min-width:951px){.sidebar:not(.rail)>nav{gap:4px}.sidebar:not(.rail) .nav-link{min-height:44px}}
 /* Cashier frames (C7, C9, C11...) put page content 24px after the 88px rail. */
 @media(min-width:701px){.workspace.rail .page-content{padding-left:24px;padding-right:24px}}
+/* A long dropdown carries a search field above its options (components/ui/select). */
+.select-menu.searchable{display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.select-search{position:relative;flex:none}
+.select-search>svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-secondary);pointer-events:none}
+.select-search input{min-height:40px;padding:8px 12px 8px 36px}
+.select-list{list-style:none;margin:0;padding:0;overflow-y:auto;min-height:0;flex:1}
+.select-empty{margin:0;padding:10px;font-size:13px;color:var(--text-secondary)}
+@media(min-width:701px){.select-menu.searchable{max-height:340px}}

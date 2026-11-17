@@ -164,3 +164,28 @@
  .item-dialog .note-toggle{order:1}
  .item-dialog .option-footer .btn-accent{order:2;flex:1 1 100%}
 }
+/* Discounts at the till (Figma Cashier 2): an entry point beside the order menu, and the Tersimpan / Manual dialog. */
+.cart-more{display:flex;align-items:center;gap:6px}
+.cart-discount{display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:10px;background:var(--bg-subtle);color:var(--ink);cursor:pointer}
+.cart-discount[aria-pressed=true]{background:var(--lime);color:var(--ink)}
+.discount-dialog{max-width:520px}
+.discount-dialog .segmented{display:grid;grid-template-columns:1fr 1fr;margin-bottom:12px}
+.discount-search{position:relative;display:block;margin:0 0 10px}
+.discount-search>svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--text-secondary)}
+.discount-search input{padding-left:38px}
+.discount-list{display:grid;gap:8px;max-height:46dvh;overflow-y:auto;margin-bottom:10px}
+.discount-card,.discount-kind{display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:10px 14px;border:1px solid var(--bg-muted);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.discount-card>span:nth-child(2),.discount-kind>span:nth-child(2){display:grid;gap:2px;flex:1;min-width:0}
+.discount-card small,.discount-kind small{font-size:12px;color:var(--text-secondary)}
+.discount-card>b{font-size:15px;white-space:nowrap}
+.discount-card.on,.discount-kind.on{border:2px solid var(--ink);background:var(--lime-subtle)}
+.discount-card:disabled{cursor:default;opacity:.6}
+.discount-icon{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;font-size:13px;font-weight:700;background:#E6E0FA}
+.discount-icon.amount{background:#DCE8FB}
+.discount-kinds{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px}
+.pill-row{display:flex;flex-wrap:wrap;gap:8px}
+.pill-row button{min-height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--bg-muted);background:var(--surface);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+.pill-row button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+.discount-sum{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin:12px 0;padding:12px 14px;border-radius:10px;background:var(--bg-subtle)}
+.discount-sum>span:first-child,.discount-sum>b{color:#3F6212}
+.discount-sum>strong{font-size:16px}

@@ -164,3 +164,19 @@
 .receipt-foot{margin-top:9px;padding-top:15px}
 .receipt-thanks{font-size:12px;line-height:16px}
 .receipt-brand{margin-top:1px}
+/* Figma Cashier 4 "Orders: voided, totals per person". */
+.void-summary{display:grid;gap:10px;align-content:start}
+.void-summary h2{margin:0;font-size:18px}
+.void-summary h3{margin:8px 0 0;font-size:13px;font-weight:500;color:var(--text-secondary)}
+.void-summary p{margin:0}
+.void-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.void-stats>div{display:grid;gap:2px;padding:12px;border-radius:10px;background:#FCE4E4}
+.void-stats strong{font-size:18px}
+.void-stats small,.void-person small{font-size:12px;color:var(--text-secondary)}
+.void-person{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px 0}
+.void-person>div{display:grid;gap:2px;min-width:0}
+.void-person .num{text-align:right}
+.void-person .avatar{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--bg-subtle);font-size:12px;font-weight:600}
+.void-person .avatar.critical{background:#FCE4E4;color:#B42318}
+.void-person small.critical-text{color:#B42318}
+.void-note{padding-top:8px;border-top:1px solid var(--border)}

@@ -9,6 +9,7 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   await page.getByLabel(/Terima tunai/).uncheck()
   await page.getByLabel(/Mesin EDC/).fill('BCA, BRI')
   await page.getByLabel(/Anggaran compliment/).fill('3000000')
+  await page.getByLabel('Keluarga pemilik').fill('Bu Rina, Kevin')
   await page.getByRole('button', { name: 'Simpan pengaturan' }).click()
   await expect(page.getByText('Pengaturan tersimpan')).toBeVisible()
   await go(page, 'Kasir')
@@ -36,7 +37,9 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   await addItem(page, 'Es teh manis')
   await cart(page).getByRole('button', { name: 'Compliment' }).click()
   await cart(page).getByRole('button', { name: /Keluarga pemilik/ }).click()
-  // Who: pills (owners, a family guest); "Lainnya" types a name.
+  // Who: pills (owners, the family set under Restoran, a family guest); "Lainnya" types a name.
+  await expect(cart(page).getByRole('button', { name: 'Bu Rina' })).toBeVisible()
+  await expect(cart(page).getByRole('button', { name: 'Kevin' })).toBeVisible()
   await cart(page).getByRole('button', { name: 'Lainnya' }).click()
   await cart(page).getByLabel('Nama penerima compliment').fill('Rino')
   await cart(page).getByRole('button', { name: /Simpan compliment/ }).click()
@@ -53,6 +56,11 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   await detail.getByLabel(/Alasan wajib/).fill('Salah menu')
   await detail.getByRole('button', { name: 'Konfirmasi pembatalan item' }).click()
   await expect(page.getByText(/Item dibatalkan/)).toBeVisible()
+  // Dibatalkan lists the order (one item voided) beside today's voids, by person (Figma Cashier 4).
+  await page.getByRole('button', { name: /^Dibatalkan/ }).click()
+  const voids = page.getByRole('complementary', { name: 'Pembatalan hari ini' })
+  await expect(voids).toContainText('1 pembatalan')
+  await expect(voids.locator('.void-person').first()).toContainText(/Pemilik Demo.*1× Es teh manis/)
   // Close: count first, then each EDC's slip. BRI took the rice only now.
   await go(page, 'Sif')
   await expect(page.getByRole('heading', { name: 'Tutup sif', level: 1 })).toBeVisible()

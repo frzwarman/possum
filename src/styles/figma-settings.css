@@ -219,3 +219,54 @@ a.team-row:hover{background:var(--bg-muted)}
 .import-links{display:grid;gap:8px;margin-bottom:16px}
 .import-links>h3,.import-links>p{margin:0}
 .upload-label.dragging{border-color:var(--ink);border-style:solid;background:var(--surface)}
+/* Bahan search (Figma Manager 4 "Recipe: search an ingredient"): the list opens over the recipe table above it. */
+.bahan-picker{position:relative}
+.bahan-search{position:relative}
+.bahan-search>svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--text-secondary);pointer-events:none}
+.bahan-search input{padding-left:38px}
+.bahan-menu{position:absolute;left:0;right:0;z-index:70;display:grid;gap:8px;padding:10px;background:#fffefa;border:1px solid #dce2d6;border-radius:12px;box-shadow:0 14px 34px #24381824}
+.bahan-menu.up{bottom:calc(100% + 6px)}
+.bahan-menu.down{top:calc(100% + 6px)}
+.bahan-chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.bahan-chips button{flex:none;min-height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--bg-muted);background:var(--surface);color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+.bahan-chips button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+.bahan-count{margin:0;font-size:12px;color:var(--text-secondary)}
+.bahan-list{list-style:none;margin:0;padding:0;max-height:228px;overflow-y:auto;display:grid;gap:2px}
+.bahan-option{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:7px 10px;border-radius:8px;cursor:pointer}
+.bahan-option.active{background:var(--lime-subtle)}
+.bahan-option[aria-disabled=true]{cursor:default;color:var(--text-secondary)}
+.bahan-option strong{display:block;font-size:14px;font-weight:600}
+.bahan-option small{display:block;font-size:12px;color:var(--text-secondary)}
+.bahan-option>span:last-child{flex:none;font-size:12px;color:var(--text-secondary)}
+.bahan-empty{margin:0;padding:10px;color:var(--text-secondary);font-size:13px}
+.bahan-new{justify-self:start;display:inline-flex;align-items:center;gap:6px;font-size:13px}
+/* Figma Manager 7 "Discounts": the saved list and the new-discount form with its till preview. */
+.discounts-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.discounts-tools .search-box{min-width:240px}
+.discounts-page .category-tabs{margin:4px 0 14px}
+.discounts-table td small{display:block;font-size:12px;color:var(--text-secondary)}
+.row-menu-cell{position:relative;width:44px}
+.row-menu-button{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:8px;background:transparent;color:var(--text-secondary);cursor:pointer}
+.row-menu-button[aria-expanded=true]{background:var(--bg-subtle);color:var(--ink)}
+.row-menu{position:absolute;right:6px;top:calc(100% - 4px);z-index:30;display:grid;min-width:170px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 30px #1b1d2124}
+.row-menu button{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.row-menu button:hover{background:var(--bg-subtle)}
+.row-menu button.danger{color:#B42318}
+.discount-form{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start}
+.discount-form>.panel{display:grid;gap:14px}
+.discount-form label,.discount-form .field{margin:0}
+.discount-dates{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.discount-preview{display:grid;gap:16px}
+.discount-preview h2{font-size:15px;margin:0 0 10px}
+.discount-items .discount-item-list{max-height:220px;overflow-y:auto;display:grid;gap:2px;margin-top:8px}
+.check-row{display:flex!important;flex-direction:row!important;align-items:center;gap:10px;min-height:40px;margin:0!important;font-weight:400}
+.check-row input{width:18px;height:18px;min-height:0;flex:none}
+.check-row small{margin-left:auto;color:var(--text-secondary)}
+.switch-row{display:flex!important;flex-direction:row!important;align-items:center;justify-content:space-between;gap:12px;min-height:52px;margin:0!important}
+.switch-row>span{display:grid;gap:2px}
+.switch-row small{font-size:12px;font-weight:400;color:var(--text-secondary)}
+.switch-row input{width:22px;height:22px;min-height:0;flex:none}
+.example-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)}
+.example-line small{display:block;font-size:12px;color:var(--text-secondary)}
+.example-line.total{border:0;color:#3F6212}
+@media(max-width:900px){.discount-form{grid-template-columns:1fr}.discount-dates{grid-template-columns:1fr 1fr}}

@@ -1,13 +1,13 @@
-import { MAX_MONEY, change, complimentDiscount, tills, consumption, expectedCash, itemStation, menuType, money, orderTotals, settlementGap, settlements, paidValue, prepState, receivedQty, receivedValue, rupiah, totals, unitCosts } from '../domain/calculate'
+import { MAX_MONEY, businessDay, change, complimentDiscount, discountFor, discountRunning, tills, consumption, expectedCash, itemStation, menuType, money, orderTotals, settlementGap, settlements, paidValue, prepState, receivedQty, receivedValue, rupiah, totals, unitCosts } from '../domain/calculate'
 import { can, type Action } from '../domain/permissions'
-import type { Approval, ApprovalAction, CountSession, Draft, Identity, Ingredient, Line, MenuItem, Operation, OpKind, Order, Outlet, Payment, PurchaseLine, PurchaseOrder, SalesLine, SalesOrder, Settings, Shift, Station, StockItem, Supplier, Transfer } from '../domain/types'
+import type { Approval, ApprovalAction, CountSession, Draft, Identity, Ingredient, Line, MenuItem, MenuType, Operation, OpKind, Order, Outlet, Payment, PurchaseLine, PurchaseOrder, SalesLine, SalesOrder, Settings, Shift, Station, StockItem, Supplier, Transfer } from '../domain/types'
 import { MejaDB, uid } from './db'
 import { validateMenuPhotoData } from './menu-photo'
 import { supabase, telegramBot } from './supabase'
 // The demo has no server: its approvers and their PIN live here, and the hint shows the PIN.
 export const DEMO_PIN='123456'
-export const demoApprovers=[{id:'demo-owner',name:'Pemilik Demo'},{id:'demo-manager',name:'Manajer Demo'}]
-const refusal:Record<string,string>={'wrong-pin':'PIN salah','no-pin':'Manajer ini belum membuat PIN persetujuan (Lainnya → PIN persetujuan)',locked:'Terlalu banyak PIN salah. Coba lagi setelah 5 menit.'}
+export const demoApprovers=[{id:'demo-owner',name:'Pemilik Demo'},{id:'demo-manager',name:'Manajer Demo'},{id:'demo-admin',name:'Admin Demo'}]
+const refusal:Record<string,string>={'wrong-pin':'PIN salah','no-pin':'Orang ini belum membuat PIN persetujuan (Lainnya → PIN persetujuan)',locked:'Terlalu banyak PIN salah. Coba lagi setelah 5 menit.'}
 // Selling happens on the one till; everything else may come from any paired device (station tablet, laptop).
 const SELLING:OpKind[]=['shift.open','shift.close','shift.cash','order.save','order.prepare','order.void','order.voidline','payment.record','refund.record']
 // Postgres reorders jsonb keys, so a line pulled back from the server is compared on sorted keys.
@@ -62,7 +62,7 @@ export class Commands {
  }
  async approvers(){
   if(this.user.demo)return demoApprovers.filter(a=>a.id!==this.user.id)
-  const {data,error}=await supabase!.from('memberships').select('user_id,name').in('role',['owner','manager']).eq('active',true).order('name');if(error)throw error
+  const {data,error}=await supabase!.from('memberships').select('user_id,name').in('role',['owner','manager','admin']).eq('active',true).order('name');if(error)throw error
   return (data as {user_id:string;name:string}[]).filter(m=>m.user_id!==this.user.id).map(m=>({id:m.user_id,name:m.name}))
  }
  // The manager types their PIN on this till; the server checks it and hands back a one-use approval.
@@ -104,16 +104,25 @@ export class Commands {
   // The guest's name is optional; the pager number is how the order is called.
   const name=draft.name?.trim()||undefined;if(name&&name.length>60)throw new Error('Nama maksimal 60 karakter')
   const comp=draft.mode==='compliment'?draft.compliment:undefined;if(draft.mode==='compliment'&&(!comp||!['staff','family'].includes(comp.kind)||!comp.who.trim()||comp.who.length>60))throw new Error('Pilih untuk siapa compliment ini')
-  const menu=comp?await this.db.menu.toArray():[],drink=(l:Line)=>{const m=menu.find(x=>x.id===l.itemId);return m?menuType(m)==='beverage':l.station==='bar'}
-  const discount=comp?complimentDiscount(draft.lines,comp.kind,drink):draft.discount,discountReason=comp?`${comp.kind==='staff'?'Staff meal':'Keluarga pemilik'} · ${comp.who.trim()}`:draft.discountReason
+  // A saved discount (Figma Manager 7) prices itself by its rule, like a compliment: no PIN unless the manager asked for
+  // one, and then only when it first goes on the order. It must be running on the day it goes on.
+  const current=await this.db.settings.get('settings')
+  const saved=!comp&&draft.discountId?current?.discounts?.find(d=>d.id===draft.discountId):undefined
+  if(!comp&&draft.discountId&&!saved)throw new Error('Diskon tersimpan ini sudah dihapus. Pilih diskon lain.')
+  const fresh=Boolean(saved)&&draft.discountId!==old?.discountId
+  if(saved&&fresh&&!discountRunning(saved,businessDay(new Date().toISOString(),current?.timezone,current?.cutoff)))throw new Error(`Diskon ${saved.name} sedang tidak berlaku`)
+  const menu=comp||saved?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return m?menuType(m):l.station==='bar'?'beverage':'food'},drink=(l:Line)=>type(l)==='beverage'
+  const discount=comp?complimentDiscount(draft.lines,comp.kind,drink):saved?discountFor(saved,draft.lines,type):draft.discount,discountReason=comp?`${comp.kind==='staff'?'Staff meal':'Keluarga pemilik'} · ${comp.who.trim()}`:saved?saved.name:draft.discountReason
   const discounted=!comp&&discount!==(old?.mode==='compliment'?0:old?.discount||0);if(discounted&&discount&&!discountReason.trim())throw new Error('Isi alasan diskon')
-  const approved=comp?{by:undefined,payload:{}}:discounted?this.approver('discount',draft.discountApproval,{amount:discount}):{by:old?.mode==='compliment'?undefined:old?.discountApprovedBy,payload:{}}
-  const settings=old?.settings||await this.db.settings.get('settings');if(!settings)throw new Error('Selesaikan pengaturan restoran')
+  const approved=comp?{by:undefined,payload:{}}:saved?(saved.approval&&fresh?this.approver('discount',draft.discountApproval,{amount:discount}):{by:old?.discountId===saved.id?old.discountApprovedBy:undefined,payload:{}}):discounted?this.approver('discount',draft.discountApproval,{amount:discount}):{by:old?.mode==='compliment'?undefined:old?.discountApprovedBy,payload:{}}
+  // The order keeps a copy of the settings; the server compares it with its own leaving the saved discounts out, so a
+  // discount edited mid-shift on another device never turns this order down.
+  const settings=old?.settings||current;if(!settings)throw new Error('Selesaikan pengaturan restoran')
   if(old)for(const line of old.lines.filter(l=>l.prepared)){const next=draft.lines.find(l=>l.id===line.id);if(!next||strip(next)!==strip(line))throw new Error('Menu yang sudah disiapkan tidak dapat diubah. Batalkan seluruh pesanan dengan alasan.')}
   // A station may have marked a sent line ready meanwhile: that flag is the server's, not the till's.
   const lines=draft.lines.map(l=>{const was=old?.lines.find(x=>x.id===l.id);return was?.readyAt?{...l,readyAt:was.readyAt}:l})
   for(const l of draft.lines){if(!Number.isInteger(l.qty)||l.qty<1||l.qty>999)throw new Error('Jumlah menu 1–999');money(l.price)}
-  const order:Order={id:old?.id||uid(),restaurantId:this.user.restaurantId,shiftId:shift.id,actor:this.user.id,cashier:this.user.name,revision:(old?.revision||0)+1,receiptId:old?.receiptId||`MJ-${op.id.toUpperCase()}`,label:draft.label,...(name&&{name}),mode:draft.mode,...(comp&&{compliment:{kind:comp.kind,who:comp.who.trim()}}),lines,status:'open',prep:prepState(lines),discount,discountReason,...(approved.by&&{discountApprovedBy:approved.by}),settings,totals:orderTotals({lines,discount,mode:draft.mode},settings),createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
+  const order:Order={id:old?.id||uid(),restaurantId:this.user.restaurantId,shiftId:shift.id,actor:this.user.id,cashier:this.user.name,revision:(old?.revision||0)+1,receiptId:old?.receiptId||`MJ-${op.id.toUpperCase()}`,label:draft.label,...(name&&{name}),mode:draft.mode,...(comp&&{compliment:{kind:comp.kind,who:comp.who.trim()}}),lines,status:'open',prep:prepState(lines),discount,discountReason,...(approved.by&&{discountApprovedBy:approved.by}),...(saved&&{discountId:saved.id}),settings,totals:orderTotals({lines,discount,mode:draft.mode},settings),createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
   op.payload={order,expectedRevision:old?.revision||0,...approved.payload};await this.db.orders.put(order);await this.db.drafts.delete('current');return order
  })}
  async prepare(id:string){return this.run('order.prepare',{id},async op=>{await this.shift();const o=await this.openOrder(id);const lines=o.lines.filter(l=>!l.prepared&&!l.cancelled);if(!lines.length)throw new Error('Tidak ada tambahan baru untuk disiapkan');op.payload={id,expectedRevision:o.revision,lineIds:lines.map(l=>l.id)}
@@ -143,7 +152,10 @@ export class Commands {
   const line=o.lines.find(l=>l.id===lineId&&!l.cancelled);if(!line||!line.prepared)throw new Error('Menu yang belum dikirim cukup dihapus dari keranjang')
   if(o.lines.filter(l=>!l.cancelled).length<2)throw new Error(o.status==='paid'?'Satu-satunya menu: kembalikan seluruh pembayaran':'Satu-satunya menu: batalkan seluruh pesanan')
   const lines=o.lines.map(l=>l.id===lineId?{...l,cancelled:true,voidReason:reason.trim(),...(ok.by&&{voidApprovedBy:ok.by})}:l)
-  const menu=o.compliment?await this.db.menu.toArray():[],discount=o.compliment?complimentDiscount(lines,o.compliment.kind,l=>{const m=menu.find(x=>x.id===l.itemId);return m?menuType(m)==='beverage':l.station==='bar'}):o.discount
+  // A compliment or a saved discount follows the lines left, by its own rule (the server recomputes both the same way).
+  const saved=o.discountId?(await this.db.settings.get('settings'))?.discounts?.find(d=>d.id===o.discountId):undefined
+  const menu=o.compliment||saved?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return m?menuType(m):l.station==='bar'?'beverage':'food'}
+  const discount=o.compliment?complimentDiscount(lines,o.compliment.kind,l=>type(l)==='beverage'):saved?discountFor(saved,lines,type):o.discount
   op.payload={...op.payload,expectedRevision:o.revision};Object.assign(o,{lines,discount,totals:orderTotals({lines,discount,mode:o.mode},o.settings),revision:o.revision+1,updatedAt:op.occurredAt});await this.db.orders.put(o);return o})}
  async voidOrder(id:string,reason:string,approval?:Approval){if(!reason.trim())throw new Error('Alasan wajib');const ok=this.approver('void',approval,{orderId:id});return this.run('order.void',{id,reason,...ok.payload},async op=>{await this.shift({late:true,others:true});const o=await this.openOrder(id);op.payload={...op.payload,expectedRevision:o.revision};o.status='void';o.voidReason=reason;o.voidApprovedBy=ok.by;o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o)})}
  async refund(id:string,reason:string,approval?:Approval){this.online();if(!reason.trim())throw new Error('Alasan wajib');const ok=this.approver('refund',approval,{orderId:id});return this.run('refund.record',{id,reason,...ok.payload},async op=>{const o=await this.db.orders.get(id);if(!o||o.status!=='paid')throw new Error('Hanya transaksi lunas yang dapat dikembalikan');const s=await this.shift();if(s.id!==o.shiftId)throw new Error('MVP: pengembalian hanya dalam sif asal yang masih terbuka');op.payload={...op.payload,expectedRevision:o.revision};o.status='refunded';o.refund={reason,at:op.occurredAt,actor:this.user.id,approvedBy:ok.by};o.revision++;await this.db.orders.put(o)})}

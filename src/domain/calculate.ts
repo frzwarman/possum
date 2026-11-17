@@ -1,4 +1,4 @@
-import type { CashMovement, Compliment, CountSession, Ingredient, Line, MenuItem, MenuType, Order, Pack, Settings, Settlement, Shift, Station, StockItem, Totals } from './types'
+import type { CashMovement, Compliment, CountSession, Discount, Ingredient, Line, MenuItem, MenuType, Order, Pack, Settings, Settlement, Shift, Station, StockItem, Totals } from './types'
 export const MAX_MONEY = 1_000_000_000
 export function money(value:number):number { if(!Number.isSafeInteger(value)||value<0||value>MAX_MONEY) throw new Error('Nilai rupiah tidak valid'); return value }
 export function totals(lines:Pick<Line,'price'|'qty'|'cancelled'|'modifiers'>[], discount:number, settings:Pick<Settings,'taxBps'|'serviceBps'>):Totals {
@@ -17,6 +17,18 @@ export function complimentDiscount<L extends Priced>(lines:L[],kind:Compliment['
  for(const l of lines.filter(l=>!l.cancelled)){const v=(l.price+l.modifiers.reduce((n,m)=>n+m.price,0))*l.qty;if(kind==='family'||drink(l))free+=v;else food+=v}
  return free+Math.floor(food/2)
 }
+// A saved discount on these lines: a percent (rounded down) or a fixed amount of the lines it covers (the whole order,
+// one menu type, or chosen items), never more than they cost, and nothing below its minimum spend. Mirrors
+// public.saved_discount() on the server, which turns down an order whose amount differs.
+export function discountFor<L extends Priced&Pick<Line,'itemId'>>(d:Discount,lines:L[],type:(l:L)=>MenuType){
+ const live=lines.filter(l=>!l.cancelled),value=(l:L)=>(l.price+l.modifiers.reduce((n,m)=>n+m.price,0))*l.qty
+ if((d.minSpend??0)>live.reduce((n,l)=>n+value(l),0))return 0
+ const base=live.filter(l=>d.scope==='order'||(d.scope==='items'?(d.items??[]).includes(l.itemId):type(l)===d.scope)).reduce((n,l)=>n+value(l),0)
+ return Math.min(base,d.kind==='percent'?Math.floor(base*d.value/100):d.value)
+}
+// Running on a business day: not stopped early, and the day falls between its first and last day.
+export const discountRunning=(d:Discount,day:string)=>!d.ended&&d.from<=day&&day<=d.to
+export const discountAmount=(d:Pick<Discount,'kind'|'value'>)=>d.kind==='percent'?`${d.value}%`:rupiah(d.value)
 export const orderTotals=(o:{lines:Priced[];discount:number;mode:string},settings:Pick<Settings,'taxBps'|'serviceBps'>)=>totals(o.lines,o.discount,o.mode==='compliment'?{taxBps:0,serviceBps:0}:settings)
 // Which payment paths a store has: cash in a drawer, EDC machines for card and QRIS, or both. A cashless store
 // with no machines listed still uses the pilot's three.

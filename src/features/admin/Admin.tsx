@@ -49,7 +49,7 @@ export default function Admin(){
   <article className="panel"><div className="panel-heading"><h2>Hak akses per peran</h2><span className="badge">Diperiksa server</span></div>
    <div className="table-scroll"><table className="data-table"><thead><tr><th>Tindakan</th>{(Object.keys(roleTitle) as Role[]).map(r=><th key={r}>{roleTitle[r]}</th>)}</tr></thead>
    <tbody>{access.map(([what,...grants])=><tr key={what}><td>{what}</td>{grants.map((g,i)=><td key={i}>{g}</td>)}</tr>)}</tbody></table></div>
-   <p className="small muted">PIN manajer: kasir tetap masuk, manajer atau pemilik mengetik PIN-nya di kasir untuk satu tindakan itu. Setiap manajer membuat PIN sendiri di Lainnya → PIN persetujuan.</p></article>
+   <p className="small muted">PIN persetujuan: kasir tetap masuk, lalu pemilik, manajer, atau admin mengetik PIN-nya di kasir untuk satu tindakan itu. Masing-masing membuat PIN sendiri di Lainnya → PIN persetujuan.</p></article>
   <p className="callout">Menonaktifkan akun berlaku di server: sif yang sedang berjalan tetap harus ditutup dan operasi yang belum tersinkron dari perangkat itu akan ditolak. Nonaktifkan setelah sif selesai.</p>
   <article className="panel"><div className="panel-heading"><h2><Terminal size={17}/> Akun baru dan sandi</h2></div><p className="muted">Pendaftaran publik dimatikan. Membuat akun, mengganti sandi, dan melihat email butuh kunci service role yang hanya ada di terminal pemilik — tidak pernah di aplikasi.</p>
   <div className="code-block"><code>{`pnpm staff add <email> <peran> <nama> --restaurant ${me.restaurant_id} --pin 482915\npnpm staff reset-password <email> --pin 102030\npnpm staff list`}</code></div>

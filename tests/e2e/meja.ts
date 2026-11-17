@@ -48,3 +48,16 @@ export async function go(page:Page,label:string){
 }
 export const drawer=(page:Page)=>page.locator('.panel').filter({hasText:'Laci kas'}).locator('.bill-total')
 export const balance=(page:Page,name:string)=>page.locator('.stock-row').filter({hasText:name}).locator('.stock-quantity strong')
+
+// A manual discount from the cart's discount button (Figma Cashier 2, Manual tab): a rupiah amount with a reason of
+// its own. A cashier's ends at the manager's PIN; an owner or manager applies it directly.
+export async function manualDiscount(page:Page,amount:string,reason:string){
+ await cart(page).getByRole('button',{name:'Diskon',exact:true}).click()
+ const dialog=page.getByRole('dialog',{name:'Diskon'})
+ await dialog.getByRole('button',{name:'Manual'}).click()
+ await dialog.getByRole('button',{name:/^Rupiah/}).click()
+ await dialog.getByLabel('Potongan').fill(amount)
+ await dialog.getByRole('button',{name:'Lainnya'}).click()
+ await dialog.getByLabel('Alasan lain').fill(reason)
+ await dialog.getByRole('button',{name:/^(Terapkan diskon|Minta persetujuan manajer)$/}).click()
+}
