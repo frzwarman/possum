@@ -4,7 +4,7 @@
 // dan kunci hanya dibaca dari process.env — tidak pernah dari VITE_*, tidak pernah dicetak.
 import { createClient } from '@supabase/supabase-js'
 import { randomBytes,randomUUID } from 'node:crypto'
-const ROLES=['owner','manager','admin','chef','cashier','barista','kitchen'],MIN=8,MAX_STAFF=20
+const ROLES=['owner','manager','admin','chef','cashier','barista','kitchen','accountant'],MIN=8,MAX_STAFF=20
 const argv=process.argv.slice(2),pos=[],flags={}
 for(let i=0;i<argv.length;i++) if(argv[i].startsWith('--')){flags[argv[i].slice(2)]=argv[i+1]&&!argv[i+1].startsWith('--')?argv[++i]:true} else pos.push(argv[i])
 const cmd=pos.shift()

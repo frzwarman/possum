@@ -1,6 +1,7 @@
 // Takar roles: the owner is the brand account, the manager runs the lounge, the admin keeps stock,
-// the chef writes recipes, cashiers sell, baristas and kitchen crew work the station tablets.
-export type Role = 'owner' | 'manager' | 'admin' | 'chef' | 'cashier' | 'barista' | 'kitchen'
+// the chef writes recipes, cashiers sell, baristas and kitchen crew work the station tablets. The accountant
+// keeps the books: reads the Akuntansi page and the audit log and writes the cash book of costs, nothing that changes the store.
+export type Role = 'owner' | 'manager' | 'admin' | 'chef' | 'cashier' | 'barista' | 'kitchen' | 'accountant'
 export type Station = 'kitchen' | 'bar'
 // A paired device: the one till (pos), a station tablet, or a back-office laptop. null = not paired.
 export type DeviceMode = 'pos' | 'station' | 'office'

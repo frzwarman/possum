@@ -67,3 +67,19 @@
 .reports-page .report-columns .panel>p.muted+p.muted{margin-top:8px}
 @media(max-width:1190px){.report-grid{grid-template-columns:1fr}.report-side{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start}}
 @media(max-width:700px){.report-main .metrics{grid-template-columns:1fr}.report-actions{width:100%}.report-actions .field{flex:1}}
+/* Akuntansi: wide ledger tables. Numbers line up on the right, subtotals and the totals row stand out, the first
+   column stays put while the rest scrolls sideways. */
+.accounting-page .report-completeness{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 16px;font-size:13px;color:var(--text)}
+.accounting-page .report-filter{gap:12px;margin:-6px 0 18px}
+.accounting-page .panel>.small{margin:0 0 14px;max-width:78ch}
+.books-table{min-width:0;width:100%}
+.books-table th,.books-table td{white-space:nowrap}
+.books-table td:first-child,.books-table th:first-child{white-space:pre-wrap;min-width:150px}
+.books-table .num{text-align:right;font-variant-numeric:tabular-nums}
+.books-table tr.sum td,.books-table tfoot td{font-weight:600;border-top:1px solid var(--border-strong,var(--border))}
+.books-table tfoot td{border-bottom:0}
+.account-grid{display:grid;gap:8px;margin-bottom:16px}
+.account-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px}
+.account-row input{min-width:0}
+@media(min-width:701px){.accounting-page .category-tabs{flex-wrap:wrap;overflow:visible}}
+.accounting-page .report-actions .btn{min-height:44px;border-radius:12px}

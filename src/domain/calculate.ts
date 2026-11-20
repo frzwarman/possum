@@ -58,7 +58,7 @@ export function convert(qty:string,unit:string,base:string,packs:Pack[]=[]):numb
 }
 // Per line: base recipe plus option deltas, never below zero (a swap removes at most what the base
 // used), then times the quantity. The server (order.prepare) adds up the same way.
-export function lineUse(l:Pick<Line,'recipe'|'modifiers'|'qty'>,packaging:Ingredient[]=[]) {
+export function lineUse(l:{recipe:Ingredient[];modifiers:{recipe:Ingredient[]}[];qty:number},packaging:Ingredient[]=[]) {
  const map=new Map<string,number>()
  for(const r of [...l.recipe,...l.modifiers.flatMap(m=>m.recipe),...packaging])map.set(r.stockId,(map.get(r.stockId)||0)+r.qty)
  return [...map].flatMap(([stockId,qty])=>qty>0?[{stockId,qty:qty*l.qty}]:[])

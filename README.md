@@ -31,6 +31,22 @@ PIN and land in an audit log nobody can edit. The till keeps selling offline.
 | **Station** (`station`) | kitchen tablet, bar tablet | kitchen crew, barista | see its own tickets oldest first, mark ready, log waste, make prep batches, count its area |
 | **Back office** (`office`) | laptop, manager's phone | owner, manager, inventory admin, head chef | Today, menu and recipes, ingredients and receiving, counts, reports, audit log, team |
 
+The **accountant** role is separate from all three: a laptop sign-in that reads *Akuntansi* and the audit log, writes
+the cash book of costs, and can change nothing else. *Akuntansi* (also open to the owner and manager) gives the
+accounting team a range of up to 93 business days as:
+
+- **Laba rugi** and **Neraca**: profit and loss down to net profit, and the balance sheet at the end of the range.
+- **Rekap harian**, **Per menu**, **Persediaan**, **Hutang pemasok** (aged 0-30, 31-60, 61-90, over 90 days), **Sif & kas**.
+- **Biaya & kas**: the cash book for money that never passes the till (rent, salaries, a PB1 payment, owner's capital).
+- **Jurnal** and **Buku besar**: balanced double-entry journals per day, and each account with its running balance.
+
+Each tab downloads as CSV or prints; *Unduh Excel* puts every tab in one workbook (`src/lib/xlsx.ts`, no library).
+The figures come complete from the server (`accounting_data`), because a device only holds its newest orders. Stock
+is valued at moving average cost, and opening balances are carried from the store's go-live date a month at a time
+(`carryTo` in `src/features/accounting/books.ts`; finished months are kept in the laptop's localStorage). The reports
+and the journal are worked out in `src/domain/accounting.ts`. Account codes are edited on the Jurnal tab and kept on
+that laptop. Laporan and Hari ini still value stock at the latest purchase price, so their food cost can differ a little.
+
 A device is paired once by an owner or manager (*Lainnya → Printer & perangkat*). Only the POS device may
 sell; every paired device sends its own work (ready, waste, batches, counts) and pulls everyone else's
 through the `pull` RPC: station tablets every 5 s, the till every 10 s, laptops every 30 s. An unpaired
@@ -197,8 +213,8 @@ others did.
 | `pnpm measure` | builds if needed, then gates the initial JS bundle |
 | `pnpm staff` | owner-only staff provisioning; needs `.env.admin` (see [docs/SUPABASE.md](docs/SUPABASE.md)) |
 
-Test results on this machine on 2026-11-08 (macOS, Node v25): `pnpm test` 180 passed in 9 files,
-`pnpm test:db` 52 PostgreSQL checks passed, `pnpm test:e2e` 37 passed, `npx tsc -b` clean, `pnpm build` clean.
+Test results on this machine on 2026-11-20 (macOS, Node v25): `pnpm test` 227 passed in 13 files,
+`pnpm test:db` 61 PostgreSQL checks passed, `pnpm test:e2e` 53 passed, `npx tsc -b` clean, `pnpm build` clean.
 
 ### What is NOT verified here
 

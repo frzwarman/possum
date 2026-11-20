@@ -92,7 +92,7 @@ const words = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
 // Figma M7 option rows carry their group's kind as a chip; a loose add-on reads as "Tambah".
 const KIND_CHIP: Record<OptionGroup["kind"], string> = { add: "Tambah", swap: "Ganti", level: "Level", size: "Ukuran" };
 // Figma M8 puts what a person does under their name; here it is what the role may do (the access table).
-const ROLE_NOTE: Record<Role, string> = { owner: "Pemilik, semua akses", manager: "Menyetujui pembatalan, diskon, dan selisih", admin: "Bahan, pembelian, dan hitung stok", chef: "Menu, resep, dan prep", cashier: "Kasir, pembayaran, dan stok harian", barista: "Stasiun bar", kitchen: "Stasiun dapur" };
+const ROLE_NOTE: Record<Role, string> = { owner: "Pemilik, semua akses", manager: "Menyetujui pembatalan, diskon, dan selisih", admin: "Bahan, pembelian, dan hitung stok", chef: "Menu, resep, dan prep", cashier: "Kasir, pembayaran, dan stok harian", barista: "Stasiun bar", kitchen: "Stasiun dapur", accountant: "Akuntansi, catat biaya, dan log audit" };
 const initials = (n: string) => n.split(/\s+/).slice(0, 2).map((w) => w[0] ?? "").join("").toUpperCase();
 // Chips inside one field (Figma M7 tags): Enter or a comma adds what was typed, Backspace on an empty field drops the last.
 function ChipBox({ values, onChange, label, placeholder, list }: { values: string[]; onChange: (v: string[]) => void; label: string; placeholder: string; list?: string }) {
@@ -1831,7 +1831,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             <div className="code-block set-code">
               <code>{`pnpm staff add <email> <peran> <nama> --restaurant ${user.restaurantId} --pin <6 angka>`}</code>
             </div>
-            <p className="small muted">Peran: owner, manager, admin, chef, cashier, barista, kitchen. Sandi awal tampil sekali; serahkan langsung ke orangnya. Peran dan akses diubah di area pemilik.</p>
+            <p className="small muted">Peran: owner, manager, admin, chef, cashier, barista, kitchen, accountant. Sandi awal tampil sekali; serahkan langsung ke orangnya. Peran dan akses diubah di area pemilik.</p>
             {user.role === "owner" && !user.demo && (
               <Button asChild variant="secondary">
                 <a href="/admin">

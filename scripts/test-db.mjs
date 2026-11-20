@@ -391,7 +391,7 @@ await test("Managers set their own 6-digit approval PIN; cashiers cannot, and no
   await db.query("select public.set_approval_pin('482915')");
   await assert.rejects(db.query("select * from public.approval_pins"), /permission denied/);
   await login(cashier);
-  await assert.rejects(db.query("select public.set_approval_pin('482915')"), /Manager required/);
+  await assert.rejects(db.query("select public.set_approval_pin('482915')"), /Manager or admin required/);
 });
 await test("A cashier voids only with a manager's PIN approval for that very order", async () => {
   const o = makeOrder();
@@ -400,7 +400,7 @@ await test("A cashier voids only with a manager's PIN approval for that very ord
   const voiding = (approval) => op("order.void", { id, expectedRevision: 1, reason: "Salah meja", ...(approval && { approval }) });
   await assert.rejects(send(voiding()), /Manager approval required/);
   assert.deepEqual(await approve(owner, "000001", "void", id), { error: "wrong-pin" });
-  await assert.rejects(approve(cashier, "482915", "void", id), /active manager/);
+  await assert.rejects(approve(cashier, "482915", "void", id), /active owner, manager or admin/);
   const elsewhere = await approve(owner, "482915", "void", randomUUID());
   await assert.rejects(send(voiding(elsewhere.id)), /Manager approval required/);
   const granted = await approve(owner, "482915", "void", id);
@@ -918,7 +918,67 @@ await test("The audit log names who did what, from which device, and who approve
   assert.ok(rows.some((r) => r.kind === "order.void" && r.actorName === "Owner"));
   assert.ok(rows.some((r) => r.kind === "stock.record" && r.actorName === "Dapur" && r.mode === "station"));
   await login(cashier);
-  await assert.rejects(db.query("select public.audit_log('2026-01-01','2026-01-02')"), /Manager required/);
+  await assert.rejects(db.query("select public.audit_log('2026-01-01','2026-01-02')"), /Manager or accountant required/);
+  await login(owner);
+});
+await test("The accountant reads the books for a range, complete, and the audit log, and writes only the cash book", async () => {
+  const range = [new Date(Date.now() - 86400000).toISOString().slice(0, 10), new Date(Date.now() + 86400000).toISOString().slice(0, 10)];
+  const books = async () => (await db.query("select public.accounting_data($1,$2) as b", range)).rows[0].b;
+  const mine = await books();
+  // Every payment of the store falls in the range, and each order comes trimmed to what the ledger reads.
+  const paid = (await read("select count(*)::int as n,coalesce(sum(total),0)::int as total from public.payments where restaurant_id=$1", [rid])).rows[0];
+  assert.ok(paid.n > 0);
+  assert.equal(mine.orders.length, paid.n);
+  assert.equal(mine.orders.reduce((n, o) => n + o.totals.total, 0), paid.total);
+  assert.ok(mine.orders.every((o) => o.payment.at && !("settings" in o) && o.lines.every((l) => Array.isArray(l.recipe) && Array.isArray(l.modifiers) && typeof l.cancelled === "boolean")));
+  assert.equal(mine.orders.filter((o) => o.refund).length, (await read("select count(*)::int as n from public.refunds where restaurant_id=$1", [rid])).rows[0].n);
+  // Opening stock plus the summed movements is the balance on hand, per ingredient.
+  const stock = (await read("select stock_id,sum(qty)::bigint as qty,sum(case when qty<0 then -cost else cost end)::bigint as cost from public.stock_movements where restaurant_id=$1 group by 1", [rid])).rows;
+  assert.ok(stock.length > 0 && mine.moves.length > 0 && mine.moves.every((m) => /^\d{4}-\d\d-\d\d$/.test(m.day)));
+  for (const s of stock) {
+    const rows = mine.moves.filter((m) => m.stockId === s.stock_id);
+    assert.equal((mine.opening[s.stock_id] ?? 0) + rows.reduce((n, m) => n + m.qty, 0), Number(s.qty));
+    assert.equal(rows.reduce((n, m) => n + m.cost, 0), Number(s.cost));
+  }
+  const used = (await read("select coalesce(sum(m.qty),0)::bigint as qty from public.stock_movements m join public.orders o on o.restaurant_id=m.restaurant_id and o.id::text=m.record_id where m.restaurant_id=$1 and m.kind='preparation' and o.snapshot->>'mode'='compliment'", [rid])).rows[0];
+  assert.equal(mine.moves.filter((m) => m.comp).reduce((n, m) => n + m.qty, 0), Number(used.qty));
+  assert.ok(mine.shifts.length > 0 && mine.shifts.every((s) => s.status === "closed") && mine.shifts.some((s) => typeof s.expected === "number" && typeof s.counted === "number"));
+  assert.ok(mine.purchaseOrders.length > 0 && mine.purchaseOrders.every((p) => p.receipts.every((r) => !("photo" in r))));
+  assert.ok(Object.keys(mine.costs).length > 0 && Array.isArray(mine.cash) && Array.isArray(mine.salesOrders));
+  // Every shift opened in the range comes with the drawer count of the one before it; the very first has none.
+  assert.equal(mine.opened.length, (await read("select count(*)::int as n from public.shifts where restaurant_id=$1", [rid])).rows[0].n);
+  assert.equal(mine.opened[0].prior, 0);
+  assert.ok(mine.opened.every((o) => typeof o.opening === "number" && (o.prior === null || typeof o.prior === "number")) && mine.opened.some((o) => o.prior > 0));
+  assert.deepEqual(mine.entries, []);
+  await assert.rejects(db.query("select public.accounting_data('2026-01-01','2026-06-01')"), /93 days/);
+  await assert.rejects(db.query("select public.accounting_rows($1,'2026-01-01','2026-01-02')", [rid]), /permission denied/);
+  // A cashier turned accountant reads the same books and the audit log; every write and the back office stay shut.
+  await db.query("select public.manage_staff($1,$2,$3)", [cashier, "accountant", true]);
+  await login(cashier);
+  assert.equal((await books()).orders.length, paid.n);
+  assert.ok((await db.query("select public.audit_log($1,$2) as a", range)).rows[0].a.length > 0);
+  // The cash book is the one thing an accountant writes: rent paid from the bank, written once however often it is sent.
+  const rent = { id: randomUUID(), day: range[0], kind: "rent", amount: 25000000, note: " November " };
+  await db.query("select public.ledger_save($1::jsonb)", [JSON.stringify(rent)]);
+  await db.query("select public.ledger_save($1::jsonb)", [JSON.stringify(rent)]);
+  assert.deepEqual((await books()).entries, [{ id: rent.id, day: range[0], kind: "rent", amount: 25000000, note: "November", by: "Kasir" }]);
+  await assert.rejects(db.query("select public.ledger_save($1::jsonb)", [JSON.stringify({ ...rent, id: randomUUID(), kind: "bribe" })]), /ledger_entries_kind_check/);
+  await assert.rejects(db.query("select public.ledger_save($1::jsonb)", [JSON.stringify({ ...rent, id: randomUUID(), amount: 0 })]), /ledger_entries_amount_check/);
+  await assert.rejects(db.query("select public.ledger_save($1::jsonb)", [JSON.stringify({ ...rent, id: randomUUID(), day: "2099-01-01" })]), /in the future/);
+  await assert.rejects(db.query("select * from public.ledger_entries"), /permission denied/);
+  await db.query("select public.ledger_remove($1)", [rent.id]);
+  await assert.rejects(db.query("select public.ledger_remove($1)", [rent.id]), /Entry not found/);
+  assert.deepEqual((await books()).entries, []);
+  assert.equal((await read("select removed_by from public.ledger_entries where id=$1", [rent.id])).rows[0].removed_by, cashier);
+  await assert.rejects(send(op("stock.record", { stockId: "rice", kind: "waste", qty: 1000, reason: "Coba", cost: 0 })), /permission required/);
+  await assert.rejects(send(op("settings.update", { settings })), /permission required/);
+  assert.deepEqual((await db.query("select public.bootstrap($1) as b", [device])).rows[0].b.purchaseOrders, []);
+  await assert.rejects(db.query("select public.manage_staff($1,$2,$3)", [cashier, "owner", true]), /Owner required/);
+  await login(owner);
+  await db.query("select public.manage_staff($1,$2,$3)", [cashier, "cashier", true]);
+  await login(cashier);
+  await assert.rejects(books(), /Manager or accountant required/);
+  await assert.rejects(db.query("select public.ledger_save($1::jsonb)", [JSON.stringify(rent)]), /Manager or accountant required/);
   await login(owner);
 });
 await test("A manager manages staff below the owner; the owner stays out of reach", async () => {
@@ -1161,7 +1221,7 @@ for (const table of [...new Set(columns.map((c) => c.table_name))]) {
   types += "  }; Insert: never; Update: never; Relationships: [] }\n";
 }
 types +=
-  "}; Views: Record<string, never>; Functions: { apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined }; request_approval: { Args: { action: string; order_id?: string; amount?: number; what: string }; Returns: string }; approval_request: { Args: { request: string }; Returns: Json }; telegram_code: { Args: Record<string, never>; Returns: string }; telegram_status: { Args: Record<string, never>; Returns: boolean }; telegram_unlink: { Args: Record<string, never>; Returns: undefined } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }\n";
+  "}; Views: Record<string, never>; Functions: { accounting_data: { Args: { from_day: string; to_day: string }; Returns: Json }; apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; ledger_remove: { Args: { entry_id: string }; Returns: undefined }; ledger_save: { Args: { entry: Json }; Returns: undefined }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined }; request_approval: { Args: { action: string; order_id?: string; amount?: number; what: string }; Returns: string }; approval_request: { Args: { request: string }; Returns: Json }; telegram_code: { Args: Record<string, never>; Returns: string }; telegram_status: { Args: Record<string, never>; Returns: boolean }; telegram_unlink: { Args: Record<string, never>; Returns: undefined } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }\n";
 await writeFile("src/lib/database.types.ts", types);
 await restored.close();
 await db.close();
