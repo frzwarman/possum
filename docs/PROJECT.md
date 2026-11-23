@@ -126,21 +126,27 @@ grid; dark shades beyond the five the file exposes are derived).
 ```
 pnpm install
 pnpm dev            # http://localhost:5173, reachable from a tablet on the same Wi-Fi
-pnpm test           # Vitest, 180 tests
-pnpm test:db        # PGlite, 52 checks, regenerates database.types.ts
-pnpm test:e2e       # Playwright in demo mode, 37 tests (needs port 4173 free)
+pnpm test           # Vitest, 272 tests
+pnpm test:db        # PGlite, 76 checks, regenerates database.types.ts
+pnpm test:e2e       # Playwright in demo mode, 61 tests (needs port 4173 free)
 pnpm build          # tsc -b && vite build → dist/
 pnpm staff          # provisioning (needs .env.admin; see docs/SUPABASE.md)
 ```
 
-All five checks were green on 11 Nov 2026. The browser suite starts its own Vite server on port
-4173; a second dev server on the same checkout, or another project answering on 4173, makes it fail.
+All five checks were green on 23 Nov 2026, and `.github/workflows/ci.yml` runs them (plus the phone app's
+typecheck) on every push to GitHub. The browser suite starts its own Vite server on port 4173; a second dev
+server on the same checkout, or another project answering on 4173, makes it fail.
 
-**Database.** `supabase db push` applies new migrations; the hosted project has the first nine; `202611130010_cashless.sql` still needs a push.
-**Frontend.** Cloudflare Pages: `pnpm build` then `pnpm dlx wrangler pages deploy dist`, with the two
-`VITE_SUPABASE_*` variables set in the Cloudflare project. Order when both change: database first,
+**Database.** `supabase db push` applies new migrations. On 23 Nov 2026 the hosted project had everything up to
+`202611200001_accounting.sql`; `202611170004_stock_app.sql` (dated before it, hence `--include-all`) and
+`202611230001_maintenance.sql` were still to be pushed.
+**Frontend.** Cloudflare Workers static assets at https://possum.farizz-a.workers.dev: `pnpm build` then
+`pnpm dlx wrangler deploy` (Pages works too: `pnpm dlx wrangler pages deploy dist`). The two
+`VITE_SUPABASE_*` values are baked in at build time from `.env`. Order when both change: database first,
 then frontend. `public/_headers` carries the security headers; its Content-Security-Policy allows
 Supabase and Unsplash and nothing else. Details in `docs/DEPLOYMENT.md` and `docs/SUPABASE.md`.
+**Android.** The POS ships as an APK that wraps the hosted site (`twa/`, see `twa/README.md`); Takar Stok
+builds locally from `mobile/` (see `docs/MOBILE.md`).
 
 ## 7. Not verified on this machine
 

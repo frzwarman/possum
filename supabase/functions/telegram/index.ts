@@ -25,6 +25,7 @@ const label: Record<string, string> = {
   variance: "Selisih kas",
   publish: "Menu tanpa resep",
 };
+const status: Record<string, string> = { open: "Belum dibayar", paid: "Lunas", void: "Dibatalkan", refunded: "Dikembalikan" };
 
 async function tg(method: string, body: Record<string, unknown>) {
   const r = await fetch(`https://api.telegram.org/bot${env("TELEGRAM_BOT_TOKEN")}/${method}`, {
@@ -52,15 +53,26 @@ async function ask(req: Request) {
   });
   const { action, orderId, amount, what } = await req.json();
   const id = await rpc<string>("request_approval", { action, order_id: orderId ?? null, amount: amount ?? null, what }, user);
-  const r = await rpc<{ action: string; amount: number | null; what: string; by: string; chats: number[] } | null>(
-    "telegram_request",
-    { request: id },
-  );
+  const r = await rpc<{
+    action: string;
+    amount: number | null;
+    what: string;
+    by: string;
+    chats: number[];
+    order: { receipt: string; label: string; status: string; total: number; items: string | null } | null;
+    count: { area: string; lines: number } | null;
+  } | null>("telegram_request", { request: id });
   if (!r) return json({ id, sent: 0 });
+  // What the approval is bound to comes from the server and goes first; the requester's own words are only a note.
+  // Telegram refuses a message over 4096 characters, so a long order's items are cut.
+  const o = r.order, items = o?.items && o.items.length > 1500 ? `${o.items.slice(0, 1500)}…` : o?.items;
   const text = [
     `Persetujuan: ${label[r.action] ?? r.action}`,
-    r.what,
+    o ? `Pesanan #${o.receipt.slice(-6).toUpperCase()}${o.label ? ` · ${o.label}` : ""} · ${status[o.status] ?? o.status} · ${rp(o.total)}` : "",
+    items ? `Isi: ${items}` : "",
+    r.count ? `Hitung stok ${r.count.area}: ${r.count.lines} bahan` : "",
     r.amount != null ? `Nominal: ${rp(r.amount)}` : "",
+    `Catatan kasir: ${r.what}`,
     `Diminta oleh ${r.by}. Berlaku 5 menit.`,
   ].filter(Boolean).join("\n");
   const buttons = { inline_keyboard: [[{ text: "Setujui", callback_data: `ok:${id}` }, { text: "Tolak", callback_data: `no:${id}` }]] };

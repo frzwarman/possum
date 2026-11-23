@@ -214,6 +214,7 @@ export interface Database { public: { Tables: {
     logo: string | null
     logo_at: string | null
     catalog_at: string | null
+    retired_discounts: Json
   }; Insert: never; Update: never; Relationships: [] }
   sales_orders: { Row: {
     restaurant_id: string

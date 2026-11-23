@@ -84,8 +84,9 @@ tablet and the manager's laptop only. *Lainnya → Restoran → "Tablet dapur & 
 
 The server (`apply_operation`) re-checks every rule; a hidden button is never the only guard. Each
 owner and manager sets a 6-digit approval PIN in *Lainnya → PIN persetujuan*; three wrong PINs pause
-approvals for five minutes. Staff sign in on a shared device by picking their name and typing their
-own 6-digit PIN (`pnpm staff add … --pin`); POS and station devices lock after two minutes idle.
+approvals for five minutes for the person asking, and nobody else. Staff sign in on a shared device
+by picking their name and typing their own 6-digit PIN (`pnpm staff add … --pin`); POS and station
+devices lock after two minutes idle.
 
 ## Features, by PRD section
 
@@ -117,7 +118,8 @@ own 6-digit PIN (`pnpm staff add … --pin`); POS and station devices lock after
 
 Deferred to later phases, as the PRD says: purchase orders from the low-stock list and supplier price
 comparison (the existing purchase-order screen stays), recipe approvals, a one-time approval code on
-the manager's phone, batch invoices, LAN / ESC-POS printing, Talenta and accounting.
+the manager's phone, batch invoices, LAN / ESC-POS printing, Talenta attendance and the sync to Accurate accounting (the in-app
+*Akuntansi* books above are built).
 
 ## Design system
 

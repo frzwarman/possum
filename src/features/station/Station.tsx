@@ -36,8 +36,8 @@ export default function Station(){
    <span className="badge"><Clock size={15}/>{when(now,settings?.timezone,{hour:'2-digit',minute:'2-digit'})}</span></div>
   <div className="station-bar">
    <div className="segmented" aria-label="Pilih stasiun">
-    <button className={station==='kitchen'?'active':''} onClick={()=>setStation('kitchen')}><ChefHat size={16}/> Dapur</button>
-    <button className={station==='bar'?'active':''} onClick={()=>setStation('bar')}><Coffee size={16}/> Bar</button>
+    <button className={station==='kitchen'?'active':''} aria-pressed={station==='kitchen'} onClick={()=>setStation('kitchen')}><ChefHat size={16}/> Dapur</button>
+    <button className={station==='bar'?'active':''} aria-pressed={station==='bar'} onClick={()=>setStation('bar')}><Coffee size={16}/> Bar</button>
    </div>
    <Button variant="secondary" onClick={()=>setDark(!dark)} aria-label={dark?'Mode terang':'Mode gelap'}>{dark?<Sun size={17}/>:<Moon size={17}/>} {dark?'Terang':'Gelap'}</Button>
    <Button variant="secondary" onClick={()=>openWaste()}><Trash2 size={17}/> Catat buang</Button>
@@ -72,7 +72,7 @@ export default function Station(){
      <label>Jumlah<input inputMode="decimal" value={waste.amount} onChange={e=>setWaste({...waste,amount:e.target.value})} placeholder="0"/></label>
      <Select label="Satuan" value={waste.unit} onChange={v=>setWaste({...waste,unit:v})} options={(()=>{const s=item(waste.stockId);return s?[{value:s.unit,label:s.unit},...(s.unit==='g'?[{value:'kg',label:'kg'}]:s.unit==='ml'?[{value:'l',label:'liter'}]:[]),...(s.packs??[]).map(p=>({value:p.name,label:`${p.name} (${quantity(p.qty)} ${s.unit})`}))]:[{value:'',label:'Pilih bahan dulu'}]})()}/>
     </div>
-    <div className="reason-chips">{REASONS.map(r=><button key={r} className={waste.reason===r?'active':''} onClick={()=>setWaste({...waste,reason:r})}>{r}</button>)}</div>
+    <div className="reason-chips">{REASONS.map(r=><button key={r} className={waste.reason===r?'active':''} aria-pressed={waste.reason===r} onClick={()=>setWaste({...waste,reason:r})}>{r}</button>)}</div>
     <Button className="full" loading={busy} disabled={busy||!waste.stockId||!waste.amount||!waste.reason} onClick={()=>saveWaste()}><Trash2 size={17}/> Simpan</Button>
    </>}
   </Dialog>

@@ -61,6 +61,10 @@ if you use it). They are the **only** two values the frontend may contain:
 | `VITE_SUPABASE_URL` | `https://abcdefgh.supabase.co` | the project address, public by design |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | the project's publishable / anon key | it authorizes nothing on its own — every table is under RLS, clients hold `SELECT` only, and all writes go through one RPC that checks the caller |
 
+Optional, also public: `VITE_TELEGRAM_BOT` (the bot's username) and `VITE_POS_APK_URL` /
+`VITE_STOK_APK_URL`, download links for the two Android apps that appear as buttons under *Lainnya → Tim &
+perangkat*, for the owner only. An empty value hides its button.
+
 Anything with `VITE_` in its name is compiled into public JavaScript. **Never** put a
 service-role key there. The service-role key belongs in `.env.admin`, which is gitignored and
 read only by `scripts/provision-staff.mjs` on the owner's own machine.

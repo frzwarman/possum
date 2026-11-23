@@ -46,9 +46,14 @@ import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { supabase } from "../../lib/supabase";
 import { demoApprovers } from "../../lib/commands";
 import { compressLogo, compressMenuPhoto, menuPicture } from "../../lib/menu-photo";
-import { bootstrap, pinHash } from "../auth/Login";
+import { bootstrap, pinHash, team } from "../auth/Login";
+import { SESSION_GONE, signInAgain } from "../../lib/sync";
 import { roleTitle } from "../../domain/permissions";
 import { TelegramLink } from "./TelegramLink";
+// Download links for the Android apps (twa/ and mobile/), set in .env at build time; an empty one hides its button.
+// Shown to the owner (super admin) only.
+const posApk = import.meta.env.VITE_POS_APK_URL || "";
+const stokApk = import.meta.env.VITE_STOK_APK_URL || "";
 const schema = z.object({
   appName: z.string().min(1).max(30),
   name: z.string().min(1).max(100),
@@ -129,6 +134,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
     sync,
     setError,
     busy,
+    gone,
   } = useApp();
   // Owner and manager tune the restaurant; chef and admin keep menu and ingredients; everyone has sync and device.
   const tillLocked = user.primary && Boolean(shift);
@@ -1318,7 +1324,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                         pembayaran.
                       </p>
                     )}
-                    {o.state === "rejected" && manager && (
+                    {/* Every queued operation is this person's: whoever owns it may send it again; the server decides. */}
+                    {o.state === "rejected" && (
                       <Button
                         variant="secondary"
                         onClick={() =>
@@ -1530,6 +1537,25 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               </p>
             )}
             </article>
+          {user.role === "owner" && (posApk || stokApk) && (
+            <article className="panel">
+              <h2>Aplikasi Android</h2>
+              <p className="muted">Unduh di tablet atau ponsel, buka file APK-nya, lalu izinkan pemasangan bila diminta.</p>
+              <div className="callout">
+                <AlertTriangle size={18} /> Aplikasi ini belum tersedia di Play Store.
+              </div>
+              {posApk && (
+                <Button asChild className="full">
+                  <a href={posApk} target="_blank" rel="noopener noreferrer"><Download size={17} /> Unduh aplikasi kasir (POS)</a>
+                </Button>
+              )}
+              {stokApk && (
+                <Button asChild variant="secondary" className="full mt">
+                  <a href={stokApk} target="_blank" rel="noopener noreferrer"><Download size={17} /> Unduh aplikasi stok (Takar Stok)</a>
+                </Button>
+              )}
+            </article>
+          )}
           <article className="panel">
             <h2>Penyimpanan perangkat</h2>
             <p className="muted">{storage}</p>
@@ -1555,6 +1581,28 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
           </article>
           </div>
         </div>
+      )}
+      {/* A session ended elsewhere (revoked, expired for good): this person's work waits on this device until they sign in again here. */}
+      {!only && gone && (
+        <form
+          className="callout"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const secret = String(new FormData(e.currentTarget).get("secret") ?? "");
+            void act(async () => {
+              if (!(await signInAgain(db, user, team().find((m) => m.id === user.id)?.login, secret))) throw new Error("PIN atau kata sandi salah, atau server belum terjangkau");
+            }, "Masuk lagi berhasil; antrean dikirim");
+          }}
+        >
+          <AlertTriangle size={16} />
+          <label>
+            {SESSION_GONE}
+            <input name="secret" type="password" autoComplete="current-password" required />
+          </label>
+          <Button size="sm" loading={busy} disabled={busy}>
+            Masuk lagi
+          </Button>
+        </form>
       )}
       {/* The account strip (PINs, Telegram, sign out) belongs to Lainnya, not to the /menu and /team pages. */}
       {!only && <div className="account-footer">

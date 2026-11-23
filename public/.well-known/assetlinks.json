@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.takar.pos",
+      "sha256_cert_fingerprints": ["96:CB:E5:D3:3F:A4:85:73:FE:F1:4C:B1:1F:E4:35:65:9C:9A:36:28:2B:D2:D4:5B:06:82:B4:26:A7:A7:9D:63"]
+    }
+  }
+]

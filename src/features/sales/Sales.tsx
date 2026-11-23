@@ -91,7 +91,7 @@ export default function Sales() {
       {catering !== 0 && <p className="callout">Pembayaran pesanan katering &amp; B2B di rentang ini: {rupiah(catering)} (DP, pelunasan, pengembalian; tidak termasuk di atas).</p>}
       <div className="category-tabs">
         {[["receipts", "Per struk"], ["items", "Per menu"], ["days", "Per hari"], ["cashiers", "Per kasir"]].map(([id, label]) => (
-          <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+          <button key={id} className={tab === id ? "active" : ""} aria-pressed={tab === id} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}

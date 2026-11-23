@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Trusted Web Activity: opens the hosted Takar POS in Chrome, full screen once the site serves
+     /.well-known/assetlinks.json for this app's signing key. Printing, the offline cache, share and
+     storage are Chrome's, so they behave exactly as in the installed PWA. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <application
+    android:allowBackup="false"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:label="@string/appName"
+    android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+    android:supportsRtl="true"
+    android:theme="@android:style/Theme.Translucent.NoTitleBar">
+    <meta-data android:name="asset_statements" android:resource="@string/assetStatements" />
+
+    <activity android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity" android:exported="false">
+      <meta-data android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL" android:value="@string/launchUrl" />
+    </activity>
+
+    <activity
+      android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+      android:alwaysRetainTaskState="true"
+      android:exported="true"
+      android:label="@string/appName">
+      <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="@string/launchUrl" />
+      <meta-data android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR" android:resource="@color/ink" />
+      <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR" android:resource="@color/ink" />
+      <meta-data android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE" android:resource="@drawable/splash" />
+      <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR" android:resource="@color/paper" />
+      <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION" android:value="300" />
+      <meta-data android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY" android:value="${applicationId}.fileprovider" />
+      <meta-data android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY" android:value="customtabs" />
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+      <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="https" android:host="${hostName}" />
+      </intent-filter>
+    </activity>
+
+    <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" android:exported="false" />
+    <activity
+      android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
+      android:configChanges="orientation|screenSize"
+      android:exported="false"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+    <provider
+      android:name="androidx.core.content.FileProvider"
+      android:authorities="${applicationId}.fileprovider"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/filepaths" />
+    </provider>
+
+    <!-- Lets the site's notifications (Hari ini's par alerts) show under the app's name. -->
+    <service android:name="com.google.androidbrowserhelper.trusted.DelegationService" android:enabled="true" android:exported="true">
+      <meta-data android:name="android.support.customtabs.trusted.SMALL_ICON" android:resource="@drawable/ic_notification_icon" />
+      <intent-filter>
+        <action android:name="android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </service>
+  </application>
+</manifest>

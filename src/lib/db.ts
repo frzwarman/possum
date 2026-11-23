@@ -15,4 +15,6 @@ export async function exportData(db:MejaDB,recovery=false) {
  return data
 }
 export function download(name:string,data:BlobPart,type='application/json'){const url=URL.createObjectURL(new Blob([data],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-export function csv(rows:(string|number)[][]){return '﻿'+rows.map(r=>r.map(v=>'"'+String(v).replace(/^[=+@\-]/,"'$&").replaceAll('"','""')+'"').join(',')).join('\r\n')}
+// Text that a spreadsheet would run as a formula (OWASP: = + - @ tab CR) gets a leading apostrophe; a number cannot be
+// one, and an apostrophe would turn a negative into text that SUM skips.
+export function csv(rows:(string|number)[][]){return '﻿'+rows.map(r=>r.map(v=>'"'+(typeof v==='number'?String(v):String(v).replace(/^[=+@\-\t\r]/,"'$&")).replaceAll('"','""')+'"').join(',')).join('\r\n')}

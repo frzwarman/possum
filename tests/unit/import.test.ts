@@ -122,6 +122,12 @@ describe('csv()',()=>{
    expect(csv([[payload]])).toBe(`﻿"'${payload}"`)
   expect(csv([['=HYPERLINK("http://jahat","klik")']])).toBe('﻿"\'=HYPERLINK(""http://jahat"",""klik"")"')
  })
+ it('defuses a formula behind a leading tab or carriage return too',()=>{
+  expect(csv([['\t=1+1'],['\r=1+1']])).toBe('﻿"\'\t=1+1"\r\n"\'\r=1+1"')
+ })
+ it('writes a negative number as a number: only text can carry a formula, and a sum must not skip it',()=>{
+  expect(csv([['Saldo',-5000],['Terpakai',-0.4]])).toBe('﻿"Saldo","-5000"\r\n"Terpakai","-0.4"')
+ })
  it('leaves an ordinary value untouched',()=>{
   expect(csv([['Nasi goreng']])).toBe('﻿"Nasi goreng"')
  })

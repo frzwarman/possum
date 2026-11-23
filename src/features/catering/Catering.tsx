@@ -129,7 +129,7 @@ export default function Catering() {
       </div>
       <div className="category-tabs">
         {[["upcoming", "Akan dikirim"], ["owed", "Belum lunas"], ["all", "Semua"]].map(([id, label]) => (
-          <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+          <button key={id} className={tab === id ? "active" : ""} aria-pressed={tab === id} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}

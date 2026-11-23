@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, Navigate } from '@tanstack/react-router'
 import { Bell, ChartColumn, Percent, Trash2, CircleAlert, Milk, Ban, Scale, ChefHat, Clock, ArrowRight, ClipboardList } from 'lucide-react'
 import { useApp } from '../../app/context'
@@ -8,13 +9,17 @@ import type { ReactNode } from 'react'
 // Figma M1 "Today": three numbers, sales by hour, what needs the manager, what runs low; on the right the count that
 // is due, the compliment budget and who is on shift. Every line links to where it is fixed.
 export default function Today(){
- const {orders,movements,stockItems,menu,counts,settings,costs,balance,user,shift}=useApp()
+ const {orders,movements,stockItems,menu,counts,settings,costs,balance,user,shift,db}=useApp()
  const [permission,setPermission]=useState<NotificationPermission|'unsupported'>(()=>typeof Notification==='undefined'?'unsupported':Notification.permission)
  const [all,setAll]=useState(false)
  const notified=useRef(new Set<string>())
- if(!can(user.role,'backoffice'))return <Navigate to="/pos"/>
  const tz=settings?.timezone
  const day=(iso:string)=>businessDay(iso,tz,settings?.cutoff),today=day(new Date().toISOString())
+ // The app keeps only its newest 500 orders in memory: the compliment budget reads this month's compliments from the
+ // device's store (a day early, for the cutoff), as VoidSummary does.
+ const month=today.slice(0,7),since=new Date(Date.parse(`${month}-01T00:00:00Z`)-86400000).toISOString()
+ const compliments=useLiveQuery(()=>db.orders.where('createdAt').aboveOrEqual(since).filter(o=>o.mode==='compliment').toArray(),[db,since])??[]
+ if(!can(user.role,'backoffice'))return <Navigate to="/pos"/>
  const paid=orders.filter(o=>o.payment&&day(o.payment.at)===today&&o.status!=='refunded'&&isSale(o)),sales=paid.reduce((n,o)=>n+o.totals.total,0)
  const value=(kind:string)=>movements.filter(m=>m.kind===kind&&day(m.at)===today).reduce((n,m)=>n+m.qty*(costs.get(m.stockId)??0),0)
  const cogs=-value('preparation'),wasted=movements.filter(m=>m.kind==='waste'&&day(m.at)===today),waste=-value('waste'),gap=value('count')
@@ -26,7 +31,7 @@ export default function Today(){
  const due=countsDue(stockItems,movements,counts),soon=expiring(stockItems,movements,2)
  const item=(id:string)=>stockItems.find(s=>s.id===id)
  // Compliment budget: what staff meals and the owner's family took this calendar month, against the manager's budget.
- const month=today.slice(0,7),given=orders.filter(o=>o.mode==='compliment'&&o.status==='paid'&&day(o.payment!.at).startsWith(month)),budget=settings?.complimentBudget??0
+ const given=compliments.filter(o=>o.status==='paid'&&day(o.payment!.at).startsWith(month)),budget=settings?.complimentBudget??0
  const by=(k:string)=>given.filter(o=>o.compliment?.kind===k),worth=(list:typeof given)=>list.reduce((n,o)=>n+o.discount,0),used=worth(given)
  const now=new Date(),monthEnd=new Date(now.getFullYear(),now.getMonth()+1,0).getDate()-now.getDate()
  // TDY-2: a browser notification for each ingredient that reaches par while this screen is open.

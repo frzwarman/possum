@@ -58,7 +58,7 @@ export default function Inventory(){
     </div>
     {amountText&&<p className="small muted">= {quantity(parsed())} {selected.unit}{kind==='count'?` (sekarang ${quantity(balance(selected.id))} ${selected.unit})`:''}</p>}
     {kind==='adjustment'&&<label className="check-row"><input type="checkbox" checked={negative} onChange={e=>setNegative(e.target.checked)}/>Kurangi stok</label>}
-    {kind==='waste'?<><div className="reason-chips">{WASTE.map(r=><button key={r} className={reason===r?'active':''} onClick={()=>setReason(r)}>{r}</button>)}</div><label>Catatan (opsional)<input value={WASTE.includes(reason)?'':reason} onChange={e=>setReason(e.target.value)} placeholder="atau tulis alasan lain"/></label></>
+    {kind==='waste'?<><div className="reason-chips">{WASTE.map(r=><button key={r} className={reason===r?'active':''} aria-pressed={reason===r} onClick={()=>setReason(r)}>{r}</button>)}</div><label>Catatan (opsional)<input value={WASTE.includes(reason)?'':reason} onChange={e=>setReason(e.target.value)} placeholder="atau tulis alasan lain"/></label></>
     :<label>{kind==='purchase'?'Pemasok / nota':'Alasan'}<input value={reason} onChange={e=>setReason(e.target.value)} placeholder={kind==='purchase'?'Contoh: CV Beras Makmur, nota 1203':'Contoh: hitung ulang rak'}/></label>}
     {kind==='purchase'&&<>
      <label>Harga total kiriman<Money value={cost} onChange={setCost}/></label>

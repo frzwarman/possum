@@ -13,7 +13,8 @@ const monthEnd = (d: string) => addDays(`${addDays(`${d.slice(0, 8)}28`, 4).slic
 // The demo, and a signed-in store the server could not answer for: the books from what this device holds.
 export async function localBooks(db: MejaDB, r: Range): Promise<Books> {
   const [orders, movements, shifts, cash, purchaseOrders, salesOrders, book, seed] = await Promise.all([db.orders.toArray(), db.movements.toArray(), db.shifts.toArray(), db.cash.toArray(), db.purchaseOrders.toArray(), db.salesOrders.toArray(), db.meta.get("ledger"), db.meta.get("costs")]);
-  const costs = Object.fromEntries(unitCosts(movements, JSON.parse(seed?.value || "{}")));
+  // Prices known by the end of the range, like the server: a later purchase must not change a month that has ended.
+  const costs = Object.fromEntries(unitCosts(movements.filter((m) => r.dayOf(m.at) <= r.to), JSON.parse(seed?.value || "{}")));
   return { orders, ...sumMoves(movements, new Set(orders.filter((o) => o.mode === "compliment").map((o) => o.id)), r), costs, shifts, opened: openings(shifts, r), cash, purchaseOrders, salesOrders, entries: JSON.parse(book?.value || "[]") };
 }
 export const serverBooks: Load = async (from, to) => {
@@ -37,8 +38,9 @@ export async function carryTo(load: Load, menu: MenuItem[], dayOf: Range["dayOf"
     const end = cache ? monthEnd(cursor) : addDays(from, -1), to = end < from ? end : addDays(from, -1);
     const done = journal(await load(cursor, to), menu, { from: cursor, to, dayOf }, carry.stock);
     carry = { balances: balances(done.entries, carry.balances), stock: done.stock };
-    // A till that was offline over the month's last night may still send that night's sales: give a month three days to settle.
-    if (cache && to === end && addDays(end, 3) <= today) {
+    // The server still takes an operation up to 7 days late (a till that was offline over the month's last night), so a
+    // month is kept only from the 8th business day after it ends, when nothing more can land in it.
+    if (cache && to === end && addDays(end, 8) <= today) {
       marks[end] = carry;
       for (const old of Object.keys(marks).sort().slice(0, -36)) delete marks[old];
       try { localStorage.setItem(cache, JSON.stringify(marks)); } catch { /* storage full or private mode: worked out again next time */ }

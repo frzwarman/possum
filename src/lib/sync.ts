@@ -4,7 +4,17 @@ import { supabase } from './supabase'
 export type Transport=(op:Operation)=>Promise<{receivedAt:string}>
 export interface PullResult { now:string; device?:{mode:string|null;enrolled:boolean;primary:boolean}; orders:Order[]; shifts:Shift[]; cash:CashMovement[]; movements:Movement[]; counts:CountSession[]; catalog?:{menu:MenuItem[];stock:StockItem[]}; settings?:Settings }
 export type Puller=(since:string,deviceId:string)=>Promise<PullResult>
-export const serverTransport:Transport=async op=>{if(!supabase)throw new Error('Supabase belum dikonfigurasi');const {data,error}=await supabase.rpc('apply_operation',{operation:op});if(error){const e=new Error(error.message);e.name=['P0001','23514','42501','23503','23505','22P02'].includes(error.code)?'Rejected':'Network';throw e}return {receivedAt:data.receivedAt}}
+export const SESSION_GONE='Sesi masuk berakhir. Masuk lagi dengan PIN atau kata sandi agar antrean terkirim.'
+// Whose session this device holds. 'gone': none is stored, or another account's, and only signing in again brings it
+// back; 'wait': it expired and could not be refreshed yet (offline), which clears by itself.
+export async function sessionState(userId:string):Promise<'ok'|'wait'|'gone'>{if(!supabase)return 'gone';const {data:{session},error}=await supabase.auth.getSession();return session?.user.id===userId?'ok':session||!error?'gone':'wait'}
+// The server sees whoever holds that session, or anon without one, and answers 42501 to another person's operation:
+// no verdict on the operation, so it stays pending (with back-off), never rejected, until the session is this person's.
+async function signedIn(userId:string){const s=await sessionState(userId);if(s==='ok')return;const e=new Error(s==='gone'?SESSION_GONE:'Sesi masuk belum diperbarui; dicoba lagi otomatis');e.name='Network';throw e}
+export const serverTransport:Transport=async op=>{if(!supabase)throw new Error('Supabase belum dikonfigurasi');await signedIn(op.actor);const {data,error}=await supabase.rpc('apply_operation',{operation:op});if(error){if(error.code==='42501')await signedIn(op.actor);const e=new Error(error.message);e.name=['P0001','23514','42501','23503','23505','22P02'].includes(error.code)?'Rejected':'Network';throw e}return {receivedAt:data.receivedAt}}
+// The same person signs in again on this device: identity, local data and queue stay, only the session comes back, and
+// what waited for it goes out on the next sync instead of after its back-off. The login is the one the team list keeps.
+export async function signInAgain(db:MejaDB,user:Identity,login:string|undefined,secret:string){if(!supabase)return false;const email=login||(await supabase.auth.getSession()).data.session?.user.email;if(!email)return false;const {data,error}=await supabase.auth.signInWithPassword({email,password:secret});if(error||data.user?.id!==user.id)return false;await db.outbox.where('state').equals('pending').modify({nextAttempt:0});return true}
 export const serverPull:Puller=async(since,deviceId)=>{if(!supabase)throw new Error('Supabase belum dikonfigurasi');const {data,error}=await supabase.rpc('pull',{since,device_id:deviceId});if(error)throw error;return data as unknown as PullResult}
 // apply_operation serializes writes per restaurant on a row lock, so a write can commit after a pull
 // that started later: ask again from a little before the last cursor. Pulled rows upsert by id.

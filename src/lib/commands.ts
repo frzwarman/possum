@@ -111,12 +111,15 @@ export class Commands {
   if(!comp&&draft.discountId&&!saved)throw new Error('Diskon tersimpan ini sudah dihapus. Pilih diskon lain.')
   const fresh=Boolean(saved)&&draft.discountId!==old?.discountId
   if(saved&&fresh&&!discountRunning(saved,businessDay(new Date().toISOString(),current?.timezone,current?.cutoff)))throw new Error(`Diskon ${saved.name} sedang tidak berlaku`)
-  const menu=comp||saved?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return m?menuType(m):l.station==='bar'?'beverage':'food'},drink=(l:Line)=>type(l)==='beverage'
+  // A line is typed by the catalog version it was rung up from, as the server prices it; older lines by the item's current one.
+  const menu=comp||saved?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return l.type??(m?menuType(m):l.station==='bar'?'beverage':'food')},drink=(l:Line)=>type(l)==='beverage'
   const discount=comp?complimentDiscount(draft.lines,comp.kind,drink):saved?discountFor(saved,draft.lines,type):draft.discount,discountReason=comp?`${comp.kind==='staff'?'Staff meal':'Keluarga pemilik'} · ${comp.who.trim()}`:saved?saved.name:draft.discountReason
   const discounted=!comp&&discount!==(old?.mode==='compliment'?0:old?.discount||0);if(discounted&&discount&&!discountReason.trim())throw new Error('Isi alasan diskon')
   const approved=comp?{by:undefined,payload:{}}:saved?(saved.approval&&fresh?this.approver('discount',draft.discountApproval,{amount:discount}):{by:old?.discountId===saved.id?old.discountApprovedBy:undefined,payload:{}}):discounted?this.approver('discount',draft.discountApproval,{amount:discount}):{by:old?.mode==='compliment'?undefined:old?.discountApprovedBy,payload:{}}
-  // The order keeps a copy of the settings; the server compares it with its own leaving the saved discounts out, so a
-  // discount edited mid-shift on another device never turns this order down.
+  // The order keeps a copy of the settings. The server checks a new order's copy only for tax, service and packaging, and a
+  // re-save's against the order's own, so a settings save on the laptop mid-shift turns it down only if it changes those. A
+  // saved discount priced here by a definition the laptop changed, ended or deleted before this till pulled still goes
+  // through if that happened since this shift opened (the server keeps such a definition 13 hours).
   const settings=old?.settings||current;if(!settings)throw new Error('Selesaikan pengaturan restoran')
   if(old)for(const line of old.lines.filter(l=>l.prepared)){const next=draft.lines.find(l=>l.id===line.id);if(!next||strip(next)!==strip(line))throw new Error('Menu yang sudah disiapkan tidak dapat diubah. Batalkan seluruh pesanan dengan alasan.')}
   // A station may have marked a sent line ready meanwhile: that flag is the server's, not the till's.
@@ -154,7 +157,7 @@ export class Commands {
   const lines=o.lines.map(l=>l.id===lineId?{...l,cancelled:true,voidReason:reason.trim(),...(ok.by&&{voidApprovedBy:ok.by})}:l)
   // A compliment or a saved discount follows the lines left, by its own rule (the server recomputes both the same way).
   const saved=o.discountId?(await this.db.settings.get('settings'))?.discounts?.find(d=>d.id===o.discountId):undefined
-  const menu=o.compliment||saved?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return m?menuType(m):l.station==='bar'?'beverage':'food'}
+  const menu=o.compliment||saved?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return l.type??(m?menuType(m):l.station==='bar'?'beverage':'food')}
   const discount=o.compliment?complimentDiscount(lines,o.compliment.kind,l=>type(l)==='beverage'):saved?discountFor(saved,lines,type):o.discount
   op.payload={...op.payload,expectedRevision:o.revision};Object.assign(o,{lines,discount,totals:orderTotals({lines,discount,mode:o.mode},o.settings),revision:o.revision+1,updatedAt:op.occurredAt});await this.db.orders.put(o);return o})}
  async voidOrder(id:string,reason:string,approval?:Approval){if(!reason.trim())throw new Error('Alasan wajib');const ok=this.approver('void',approval,{orderId:id});return this.run('order.void',{id,reason,...ok.payload},async op=>{await this.shift({late:true,others:true});const o=await this.openOrder(id);op.payload={...op.payload,expectedRevision:o.revision};o.status='void';o.voidReason=reason;o.voidApprovedBy=ok.by;o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o)})}

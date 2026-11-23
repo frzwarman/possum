@@ -1,0 +1,2 @@
+<!-- androidbrowserhelper hands the splash image to Chrome from files/twa_splash/ (SplashImageTransferTask). -->
+<paths><files-path name="twa_splash" path="twa_splash/" /></paths>

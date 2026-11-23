@@ -117,7 +117,34 @@ cp .env.example .env
 
 ## Build an Android app file (APK)
 
-This Mac has no Android SDK, so the installable file is built on Expo's servers. It needs a free Expo account.
+### On this Mac
+
+The Mac has the Android SDK (Homebrew's `android-commandlinetools`) and JDK 17 (`openjdk@17`) since 23 Nov 2026, so no
+account is needed. From `mobile/`:
+
+1. Copy the store's two values from the web app's `.env` into `mobile/.env.local` (git-ignored) as
+   `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. They are baked into the APK.
+2. `npx expo prebuild -p android --no-install` writes the git-ignored `mobile/android/`. It also rewrites the
+   `android` and `ios` scripts in `package.json`; put them back with `git checkout mobile/package.json`.
+3. Build:
+
+```bash
+cd android
+JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
+ANDROID_HOME=/opt/homebrew/share/android-commandlinetools \
+./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+```
+
+The APK is `mobile/android/app/build/outputs/apk/release/app-release.apk` (about 47 MB). The first build takes about
+12 minutes and fills about 9 GB of Gradle and SDK caches.
+
+It is signed with React Native's public debug key. That is fine for trying it on the store's phones. Before real use,
+build with a private key (Expo's servers below make one), and sync every phone first: an app signed with a different
+key installs only after uninstalling this one, which deletes counts and deliveries not yet sent.
+
+### On Expo's servers
+
+This needs a free Expo account.
 
 ```bash
 npx eas-cli@latest login

@@ -62,7 +62,7 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
   <header className="signin-top"><div className="login-brand"><span className="brand-mark"><Mark size={40}/></span><span>takar</span></div><span>{[store,now].filter(Boolean).join('. ')}</span></header>
   {!member?<section className="signin-pick">
    <h1>Siapa yang bertugas hari ini?</h1><p className="muted">Ketuk nama Anda, lalu masukkan PIN.</p>
-   <div className="signin-people" role="list">{members.map(m=><button type="button" role="listitem" key={m.id} className="signin-person" onClick={()=>{setWho(m.id);setPin('');setError('')}}><span className="avatar">{initials(m.name)}</span><strong>{m.name}</strong><small>{roleLabel[m.role]}</small>{['owner','manager'].includes(m.role)&&<span className="signin-chip">Menyetujui dan menutup hari</span>}</button>)}</div>
+   <div className="signin-people">{members.map(m=><button type="button" key={m.id} className="signin-person" onClick={()=>{setWho(m.id);setPin('');setError('')}}><span className="avatar">{initials(m.name)}</span><strong>{m.name}</strong><small>{roleLabel[m.role]}</small>{['owner','manager'].includes(m.role)&&<span className="signin-chip">Menyetujui dan menutup hari</span>}</button>)}</div>
    <p className="small muted">Tidak ada di daftar? Pemilik atau manajer menambahkan staf dari laptop.</p>
    <p className="signin-links"><button type="button" className="text-button" onClick={()=>setByEmail(true)}><Mail size={14}/> Masuk dengan email</button><button type="button" className="text-button" onClick={()=>setTryDemo(!tryDemo)}>Coba demo lokal</button></p>
    {tryDemo&&demoBox}

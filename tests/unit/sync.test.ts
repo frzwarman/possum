@@ -1,6 +1,13 @@
 import { afterEach,describe,expect,it,vi } from 'vitest'
 import { boom,draft,identity,line,recorder,sale,seed,tea,tick } from './offline-harness'
-import { synchronize } from '../../src/lib/sync'
+import { SESSION_GONE,serverTransport,signInAgain,synchronize } from '../../src/lib/sync'
+import { logout } from '../../src/app/context'
+// serverTransport and logout talk to Supabase: a stand-in client whose session and RPC answers each test sets.
+type Answer={data:unknown;error:{code:string;message:string}|null}
+const server=vi.hoisted(()=>({session:null as {user:{id:string}}|null,error:null as unknown,signOuts:[] as unknown[],accounts:{} as Record<string,{password:string;id:string}>,rpc:async(_name:string):Promise<Answer>=>({data:null,error:{code:'PGRST000',message:'Failed to fetch'}})}))
+vi.mock('../../src/lib/supabase',()=>({configured:true,telegramBot:'',supabase:{rpc:(name:string)=>server.rpc(name),auth:{getSession:async()=>({data:{session:server.session},error:server.error}),
+ signInWithPassword:async({email,password}:{email:string;password:string})=>{const a=server.accounts[email];if(a?.password!==password)return {data:{user:null,session:null},error:{message:'Invalid login credentials'}};server.session={user:{id:a.id}};server.error=null;return {data:{user:{id:a.id},session:server.session},error:null}},
+ signOut:async(options:unknown)=>{server.signOuts.push(options);server.session=null;return {error:null}}}}}))
 afterEach(()=>vi.useRealTimers())
 // Only Date is faked: Dexie and fake-indexeddb still need real timers to settle.
 const at=async(when:number,run:()=>Promise<unknown>)=>{vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(when);try{await run()}finally{vi.useRealTimers()}}
@@ -98,6 +105,71 @@ describe('backoff and rejection',()=>{
   await synchronize(db,user,transport)
   expect(sent).toHaveLength(0)
   expect(await db.outbox.where('state').equals('pending').count()).toBe(1)
+ })
+})
+// The server sees whoever holds this device's session, or anon without one, and both answer 42501: that is no verdict
+// on the operation, and a rejected one would stop the till's queue for good.
+describe('a session that is gone, stale or someone else\'s',()=>{
+ const puller=async()=>({now:new Date().toISOString(),orders:[],shifts:[],cash:[],movements:[],counts:[]})
+ const refused=(message:string):Answer=>({data:null,error:{code:'42501',message}})
+ async function queued(){const user=identity();const {db,commands}=await seed(user);await commands.openShift(200000);await tick();return {user,db,op:(await db.outbox.toArray())[0]}}
+ it('keeps the operation pending, sends nothing, and sends it once this person signs in again',async()=>{
+  const {user,db,op}=await queued()
+  const sent:string[]=[];server.session=null;server.error=null;server.rpc=async name=>{sent.push(name);return refused('permission denied for function apply_operation')}
+  await synchronize(db,user,serverTransport,puller)
+  expect([(await db.outbox.get(op.id))!.state,(await db.outbox.get(op.id))!.error,sent]).toEqual(['pending',SESSION_GONE,[]])
+  // Another account holds the session (signed in at /admin, say): the server would answer "Authenticated actor mismatch".
+  server.session={user:{id:'pemilik'}}
+  await at(Date.now()+600000,()=>synchronize(db,user,serverTransport,puller) as Promise<unknown>)
+  expect([(await db.outbox.get(op.id))!.state,sent]).toEqual(['pending',[]])
+  server.session={user:{id:user.id}};server.rpc=async name=>{sent.push(name);return {data:{receivedAt:new Date().toISOString()},error:null}}
+  await at(Date.now()+1200000,()=>synchronize(db,user,serverTransport,puller) as Promise<unknown>)
+  expect([(await db.outbox.get(op.id))!.state,sent]).toEqual(['synced',['apply_operation']])
+ })
+ it('waits, without asking anyone to sign in, while an expired session cannot be refreshed offline',async()=>{
+  const {user,db,op}=await queued()
+  server.session=null;server.error={name:'AuthRetryableFetchError',message:'Failed to fetch'};server.rpc=async()=>refused('permission denied for function apply_operation')
+  await synchronize(db,user,serverTransport,puller)
+  const after=(await db.outbox.get(op.id))!
+  expect(after.state).toBe('pending')
+  expect(after.error).not.toBe(SESSION_GONE)
+ })
+ it('takes no 42501 as a verdict when the session went away while the call was out',async()=>{
+  const {user,db,op}=await queued()
+  server.session={user:{id:user.id}};server.error=null;server.rpc=async()=>{server.session=null;return refused('permission denied for function apply_operation')}
+  await synchronize(db,user,serverTransport,puller)
+  expect([(await db.outbox.get(op.id))!.state,(await db.outbox.get(op.id))!.error]).toEqual(['pending',SESSION_GONE])
+ })
+ it('signing in again as the same person keeps the queue and sends it at once, past its back-off',async()=>{
+  const {user,db,op}=await queued()
+  server.session=null;server.error=null;server.accounts={'siti@takar.id':{password:'482915',id:user.id},'adit@takar.id':{password:'111111',id:'adit'}}
+  await synchronize(db,user,serverTransport,puller)
+  expect((await db.outbox.get(op.id))!.nextAttempt).toBeGreaterThan(Date.now())
+  expect(await signInAgain(db,user,'siti@takar.id','000000')).toBe(false)
+  expect(await signInAgain(db,user,'adit@takar.id','111111')).toBe(false) // someone else's login is no way back in
+  expect(await signInAgain(db,user,'siti@takar.id','482915')).toBe(true)
+  server.rpc=async()=>({data:{receivedAt:new Date().toISOString()},error:null})
+  await synchronize(db,user,serverTransport,puller)
+  expect((await db.outbox.get(op.id))!.state).toBe('synced')
+ })
+ it('still rejects what the server refuses this person, signed in as themselves',async()=>{
+  const {user,db,op}=await queued()
+  server.session={user:{id:user.id}};server.error=null;server.rpc=async()=>refused('Manager permission required')
+  await synchronize(db,user,serverTransport,puller)
+  expect([(await db.outbox.get(op.id))!.state,(await db.outbox.get(op.id))!.error]).toEqual(['rejected','Manager permission required'])
+ })
+})
+describe('signing out',()=>{
+ afterEach(()=>vi.unstubAllGlobals())
+ it('ends only this device\'s session (the same person stays in on the laptop) and leaves no PIN hash behind',async()=>{
+  // Node's own localStorage shadows jsdom's and has no methods (as in books.test.ts); jsdom cannot navigate.
+  const kept=new Map([['takar-pin-hash','sidik-pin'],['meja-identity','{}']]),went:string[]=[]
+  vi.stubGlobal('localStorage',{getItem:(k:string)=>kept.get(k)??null,setItem:(k:string,v:string)=>void kept.set(k,v),removeItem:(k:string)=>void kept.delete(k)})
+  vi.stubGlobal('location',{assign:(to:string)=>void went.push(to)})
+  server.signOuts=[]
+  await logout()
+  expect(server.signOuts).toEqual([{scope:'local'}])
+  expect([...kept.keys(),...went]).toEqual(['/'])
  })
 })
 describe('pull: what other paired devices did', () => {

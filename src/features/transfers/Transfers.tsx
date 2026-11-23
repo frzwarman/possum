@@ -76,7 +76,7 @@ export default function Transfers() {
       )}
       <div className="category-tabs">
         {[["incoming", `Masuk (${incoming.filter((t) => t.status === "sent").length})`], ["outgoing", "Keluar"], ["all", "Semua"]].map(([id, label]) => (
-          <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+          <button key={id} className={tab === id ? "active" : ""} aria-pressed={tab === id} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}

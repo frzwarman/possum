@@ -61,7 +61,8 @@ the relaxed shift rules. Apply it with `supabase db push`; `pnpm test:db` runs e
 Each owner and manager signs in once and sets a 6-digit approval PIN in *Lainnya → PIN persetujuan*.
 At the till the cashier stays signed in; the manager picks their name and types the PIN. The server
 checks it (bcrypt via `pgcrypto`) and issues an approval that works once, for that person, action,
-order or count, and amount, within an hour. Three wrong PINs in five minutes pause approvals.
+order or count, and amount, within an hour. Three wrong PINs in five minutes pause approvals for that
+person (the one asking) and nobody else.
 
 Staff accounts use a 6-digit PIN as their password: `pnpm staff add kasir@ziggy.local cashier "Budi"
 --restaurant <uuid> --pin 482915`. The email is stored in `memberships.login`, so after an owner or

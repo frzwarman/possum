@@ -55,8 +55,9 @@ export default function Accounting() {
   const valid = DATE.test(from) && DATE.test(to) && from <= to && Date.parse(to) - Date.parse(from) < DAYS * 864e5;
   const key = `${from}|${to}|${again}`, local = user.demo || !supabase;
   // The store's first day: history before the range is walked from there, so the balance sheet and the average cost of
-  // stock start where the store did. Without one on record the range stands by itself.
-  const start = local ? "2000-01-01" : DATE.test(settings?.goLive ?? "") ? settings!.goLive : from, marks = `takar-books-1-${user.restaurantId}-${start}`;
+  // stock start where the store did. Without one on record the range stands by itself. The number in the key of the kept
+  // months goes up whenever what a month leaves behind is worked out differently, so no laptop builds on months kept the old way.
+  const start = local ? "2000-01-01" : DATE.test(settings?.goLive ?? "") ? settings!.goLive : from, marks = `takar-books-2-${user.restaurantId}-${start}`;
   useEffect(() => {
     if (!valid || !settings) return;
     let live = true;

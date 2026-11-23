@@ -46,6 +46,7 @@ test('the cashier has a Stock tab: low and sold-out menu, waste, batches and cou
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Jumlah', { exact: true }).fill('1')
   await dialog.getByRole('button', { name: 'Jatuh' }).click()
+  await expect(dialog.getByRole('button', { name: 'Jatuh' })).toHaveAttribute('aria-pressed', 'true')
   await dialog.getByRole('button', { name: 'Simpan pergerakan' }).click()
   await expect(page.getByText('Pergerakan stok tersimpan')).toBeVisible()
   // Figma C8: prep is recorded from Stok; a short batch puts the real yield in (50 demo portions + 18).

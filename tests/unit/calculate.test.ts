@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_MONEY, businessDay, change, consumption, convert, discountFor, discountRunning, expectedCash, money, niceStep, refundStock, rupiah, stamp, totals, when } from '../../src/domain/calculate'
+import { MAX_MONEY, businessDay, change, consumption, convert, discountFor, discountRunning, expectedCash, money, niceStep, quantity, refundStock, rupiah, stamp, totals, when } from '../../src/domain/calculate'
 import { defaultSettings } from '../../src/domain/sample'
 import type { CashMovement, Line, Modifier, Order, Settings, Shift } from '../../src/domain/types'
 
@@ -211,6 +211,28 @@ describe('restaurant timezone',()=>{
   expect(stamp(evening)).toBe('2026-03-16 02:30:00')
   expect(stamp('2026-03-15T00:00:00.000Z')).toBe('2026-03-15 07:00:00')
   expect(stamp(evening,'')).toBe('2026-03-16 02:30:00')
+ })
+})
+
+// Screens format every row on every render (500 orders, thousands of movements): building a new Intl formatter
+// per call froze the till for hundreds of ms per keystroke. A second batch of rows must build none.
+describe('formatters reuse their Intl objects',()=>{
+ it('formats more rows without building another DateTimeFormat or NumberFormat',()=>{
+  const rows=()=>{for(let i=0;i<50;i++){const iso=new Date(Date.UTC(2026,2,15,i)).toISOString();businessDay(iso);businessDay(iso,'Asia/Jayapura');when(iso,'Asia/Jakarta',{hour:'2-digit',minute:'2-digit'});when(iso);stamp(iso);rupiah(i*1000);quantity(i*250)}}
+  rows()
+  const real={DateTimeFormat:Intl.DateTimeFormat,NumberFormat:Intl.NumberFormat};let built=0
+  const counted=(C:object)=>new Proxy(C,{construct(t,a,n){built++;return Reflect.construct(t as never,a,n)},apply(t,self,a){built++;return Reflect.apply(t as never,self,a)}})
+  Object.assign(Intl,{DateTimeFormat:counted(real.DateTimeFormat),NumberFormat:counted(real.NumberFormat)})
+  try{rows()}finally{Object.assign(Intl,real)}
+  expect(built).toBe(0)
+ })
+ it('keeps the output of each option set apart',()=>{
+  const evening='2026-03-15T19:30:00.000Z'
+  expect(when(evening,'Asia/Jakarta',{hour:'2-digit',minute:'2-digit'})).toBe('02.30')
+  expect(when(evening,'Asia/Jakarta',{day:'numeric',month:'short'})).toBe('16 Mar')
+  expect(when(evening,'Asia/Jayapura',{hour:'2-digit',minute:'2-digit'})).toBe('04.30')
+  expect(quantity(1_234_567)).toBe('1.234,567')
+  expect(quantity(2_500)).toBe('2,5')
  })
 })
 

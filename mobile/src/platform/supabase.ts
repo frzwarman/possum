@@ -25,6 +25,10 @@ if (supabase) {
 // Every failure goes through classify(): a refusal from Postgres is final, anything else is worth another try.
 async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   if (!supabase) throw new Error('Koneksi restoran belum diatur.');
+  // Without a session the call would run as nobody, and the server's "no permission" would set valid work aside
+  // as refused. A plain error keeps it queued until the person signs in again (as the web till does).
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sesi masuk berakhir. Masuk lagi untuk mengirim.');
   const { data, error } = await supabase.rpc(fn, args);
   if (error) throw classify(error);
   return data as T;
@@ -56,7 +60,8 @@ export async function signIn(email: string, secret: string): Promise<string> {
 }
 
 export async function signOut(): Promise<void> {
-  await supabase?.auth.signOut();
+  // This phone only: the default global sign-out would also end the person's sessions on the till and the laptop.
+  await supabase?.auth.signOut({ scope: 'local' });
 }
 
 // Whose session is saved on this phone. After about an hour the session has to be refreshed, which needs signal:

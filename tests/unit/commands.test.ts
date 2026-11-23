@@ -514,6 +514,17 @@ describe('cashless: EDC, compliments, line voids and the settlement',()=>{
   expect((await commands.pay(family.id,'none',0,true)).payment?.method).toBe('none')
   await expect(commands.save(draft([line()],{mode:'compliment'}))).rejects.toThrow('untuk siapa')
  })
+ // The server prices a compliment by the catalog version on the line. A line rung up while Es teh was still filed under
+ // Makanan keeps that type after the laptop corrects it to a drink, or the server turns the order down and halts the outbox.
+ it("prices a staff meal by the type each line was rung up with, not the item's newer version",async()=>{
+  const {db,commands}=await cashless('cashier')
+  await db.menu.update('es-teh',{type:'beverage',version:2})
+  const o=await made(commands,[{...tea(),type:'food'},line()],{mode:'compliment',compliment:{kind:'staff',who:'Raka'}})
+  expect(o.discount).toBe(3000+12500)
+  const rice=o.lines.find(l=>l.itemId==='nasi-goreng')!
+  const after=await commands.voidLine(o.id,rice.id,'Salah menu',await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:o.id}))
+  expect(after.discount).toBe(3000)
+ })
  it('voids one made line with a PIN, keeps it on the order, and recomputes the total',async()=>{
   const {db,commands}=await cashless('cashier')
   const o=await made(commands)

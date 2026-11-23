@@ -66,6 +66,29 @@ describe('accounting',()=>{
   expect(short.stock.x).toEqual([90,540,6])
   expect(balances(short.entries)).toMatchObject({inventory:590,outside:-600,shrink:10})
  })
+ it('values stock carried in at no worth at the price it gets later, as an opening adjustment',()=>{
+  // 10 L of syrup imported without a price on Nov 1 and 3 L used: November is kept at Rp0. In December 2 L is used, then 1 L bought for Rp50.000.
+  const nov:Range={...range,from:'2026-11-01',to:'2026-11-30'},dec:Range={...range,from:'2026-12-01',to:'2026-12-20'}
+  const kept=journal({...empty,moves:[move('2026-11-01','s','opening',10000000),move('2026-11-05','s','preparation',-3000000)]},menu,nov)
+  expect(kept.stock.s).toEqual([7000000,0,0])
+  const later={...empty,opening:{s:7000000},costs:{s:0.05},moves:[move('2026-12-05','s','preparation',-2000000),move('2026-12-10','s','purchase',1000000,50000)]}
+  const done=journal(later,menu,dec,kept.stock),opening=balances(kept.entries),period=balances(done.entries)
+  expect(done.stock.s).toEqual([6000000,300000,0.05])
+  expect(period).toMatchObject({inventory:300000,equity:-350000,cogs:100000,outside:-50000})
+  const sheet=position(opening,period)
+  expect(sheet.totalAssets).toBe(sheet.totalLiabilities+sheet.totalEquity)
+  expect(stockLedger(later,[],kept.stock,done.stock,done.unseen)[0]).toMatchObject({opening:7000000,closing:6000000,before:350000,value:300000})
+ })
+ it('posts an outlet transfer at its own value both ways, so a cancelled one clears the account between outlets',()=>{
+  // 1 kg worth Rp5.000 (average 5) while the latest price is 7: 100 g leaves at the transfer's Rp700 and comes back when it is cancelled.
+  const sent=move(D1,'x','transfer',-100,-700),back=move(D2,'x','transfer',100,700),held:Stock={x:[1000,5000,5]}
+  expect(balances(journal({...empty,opening:{x:1000},moves:[sent]},menu,range,held).entries)).toEqual({...zero(),transit:700,inventory:-500,shrink:-200})
+  const trip=journal({...empty,opening:{x:1000},moves:[sent,back]},menu,range,held)
+  expect(trip.stock.x).toEqual([1000,5200,5.2])
+  expect(balances(trip.entries)).toEqual({...zero(),inventory:200,shrink:-200})
+  // The outlet it arrives at owes what the sender is owed.
+  expect(balances(journal({...empty,moves:[back]},menu,range).entries).transit).toBe(-700)
+ })
  it('lists sales per menu item that add up to the gross sales, with ingredient cost at the average',()=>{
   const {stock}=valuation(books,before),items=itemSales(orders,menu,range,stock)
   expect(items.map(i=>[i.name,i.type,i.qty,i.gross,Math.round(i.cost),i.known])).toEqual([['Nasi goreng','food',2,60000,3867,true],['Es teh','beverage',2,20000,120,true]])

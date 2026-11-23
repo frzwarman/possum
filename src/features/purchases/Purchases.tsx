@@ -319,7 +319,7 @@ export default function Purchases() {
             ["suppliers", "Pemasok", suppliers.length],
           ] as const
         ).map(([id, label, n]) => (
-          <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+          <button key={id} className={tab === id ? "active" : ""} aria-pressed={tab === id} onClick={() => setTab(id)}>
             {label} <span>{n}</span>
           </button>
         ))}

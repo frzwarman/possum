@@ -72,8 +72,12 @@ export function refundStock():Ingredient[]{return []}
 export function expectedCash(shift:Shift,orders:Order[],moves:CashMovement[]) {
  return shift.opening+orders.filter(o=>o.shiftId===shift.id&&o.payment?.method==='cash'&&o.status!=='refunded').reduce((n,o)=>n+o.totals.total,0)+moves.filter(m=>m.shiftId===shift.id).reduce((n,m)=>n+m.amount,0)
 }
+// Screens format every row on every render, and building an Intl formatter costs 40-150 µs: build each one once.
+// ponytail: the map never shrinks; its keys are the option sets the screens use times the restaurant's timezone.
+const formats=new Map<string,Intl.DateTimeFormat>()
+const dtf=(locale:string,o:Intl.DateTimeFormatOptions)=>{const k=locale+JSON.stringify(o);let f=formats.get(k);if(!f)formats.set(k,f=new Intl.DateTimeFormat(locale,o));return f}
 export function businessDay(iso:string,timezone='Asia/Jakarta',cutoff=4) {
- const parts=new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date(iso))
+ const parts=dtf('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date(iso))
  const get=(key:string)=>parts.find(p=>p.type===key)!.value
  const date=new Date(`${get('year')}-${get('month')}-${get('day')}T12:00:00Z`)
  if(Number(get('hour'))<cutoff)date.setUTCDate(date.getUTCDate()-1)
@@ -84,10 +88,11 @@ export function businessDay(iso:string,timezone='Asia/Jakarta',cutoff=4) {
 export const JAKARTA='Asia/Jakarta'
 // Setiap waktu yang dibaca orang memakai zona restoran (bawaan WIB, UTC+7), bukan zona perangkat:
 // ponsel yang zonanya meleset atau kasir yang sedang bepergian tidak boleh menggeser jam di layar.
-export const when=(iso:string|number|Date,timezone=JAKARTA,options:Intl.DateTimeFormatOptions={dateStyle:'medium',timeStyle:'short'})=>new Intl.DateTimeFormat('id-ID',{timeZone:timezone||JAKARTA,...options}).format(new Date(iso))
+export const when=(iso:string|number|Date,timezone=JAKARTA,options:Intl.DateTimeFormatOptions={dateStyle:'medium',timeStyle:'short'})=>dtf('id-ID',{timeZone:timezone||JAKARTA,...options}).format(new Date(iso))
 // Untuk CSV: satu kolom yang urut secara leksikografis dan terbaca Excel, tetap zona restoran.
-export const stamp=(iso:string,timezone=JAKARTA)=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:timezone||JAKARTA,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date(iso)).map(x=>[x.type,x.value]));return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`}
-export const rupiah=(v:number)=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(v).replace(/\s/g,'')
+export const stamp=(iso:string,timezone=JAKARTA)=>{const p=Object.fromEntries(dtf('en-CA',{timeZone:timezone||JAKARTA,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date(iso)).map(x=>[x.type,x.value]));return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`}
+const IDR=new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0})
+export const rupiah=(v:number)=>IDR.format(v).replace(/\s/g,'')
 // Back office arithmetic, mirroring received_value/received_qty/paid_value/unit_cost on the server.
 export const receivedQty=(po:{receipts:{lines:{stockId:string;qty:number}[]}[]},stockId:string)=>po.receipts.flatMap(r=>r.lines).filter(l=>l.stockId===stockId).reduce((n,l)=>n+l.qty,0)
 export const receivedValue=(po:{receipts:{lines:{cost:number}[]}[]})=>po.receipts.flatMap(r=>r.lines).reduce((n,l)=>n+l.cost,0)
@@ -99,7 +104,8 @@ export function unitCosts(movements:{stockId:string;qty:number;cost:number;kind:
  for(const m of movements)if(m.qty>0&&m.cost>0&&['purchase','production','transfer'].includes(m.kind)&&(latest.get(m.stockId)?.at??'')<=m.at)latest.set(m.stockId,{at:m.at,unit:m.cost/m.qty})
  const costs=new Map(Object.entries(seed));for(const [id,{unit}] of latest)costs.set(id,unit);return costs
 }
-export const quantity=(v:number)=>new Intl.NumberFormat('id-ID',{maximumFractionDigits:3}).format(v/1000)
+const QTY=new Intl.NumberFormat('id-ID',{maximumFractionDigits:3})
+export const quantity=(v:number)=>QTY.format(v/1000)
 // Takar catalog defaults: older catalog versions have no type/station, so every reader goes through these.
 export const menuType=(m:Pick<MenuItem,'type'|'category'>):MenuType=>m.type??(/minum|drink|kopi|coffee|tea|teh|juice|jus/i.test(m.category)?'beverage':/camilan|snack|tambahan|side/i.test(m.category)?'snack':'food')
 export const typeLabel:Record<MenuType,string>={food:'Makanan',beverage:'Minuman',snack:'Camilan'}

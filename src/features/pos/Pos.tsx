@@ -96,8 +96,9 @@ export default function Pos() {
     if (initialized.current && gone) void update(fresh(pager));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gone?.id, gone?.status]);
-  // A line's menu type, for discounts that cover one type (Commands.save reads it the same way).
-  const lineType = (l: Line): MenuType => { const m = menu.find((x) => x.id === l.itemId); return m ? menuType(m) : l.station === "bar" ? "beverage" : "food"; };
+  // A line's menu type, for compliments and discounts that cover one type (Commands.save reads it the same way): the type
+  // of the version it was rung up from, or for an older line the item's current one.
+  const lineType = (l: Line): MenuType => { const m = menu.find((x) => x.id === l.itemId); return l.type ?? (m ? menuType(m) : l.station === "bar" ? "beverage" : "food"); };
   // Figma Cashier 2: a saved discount goes on in one tap. A manual one, a saved one the manager marked, or taking the discount
   // off an order already saved needs a manager's PIN from a cashier (Commands.save asks the same).
   function pickDiscount(p: DiscountPick) {
@@ -111,10 +112,12 @@ export default function Pos() {
     // A discount belongs to the order it was given for: once a new cart is emptied, drop it so it
     // cannot slide onto the next customer's order.
     if (!next.orderId && !next.lines.length) next = { ...next, discount: 0, discountReason: "", discountApproval: undefined, discountId: undefined };
-    // A saved discount follows the cart by its own rule, priced the same way Commands.save and the server price it.
+    // A saved discount follows the cart by its own rule, priced the same way Commands.save and the server price it. One
+    // deleted meanwhile comes off a new cart; a saved order keeps it until the cashier picks another or takes it off
+    // (Commands.save says so), since taking it off a saved order needs a reason and, from a cashier, a manager's PIN.
     if (next.discountId) {
       const saved = settings?.discounts?.find((d) => d.id === next.discountId);
-      next = saved ? { ...next, discount: discountFor(saved, next.lines, lineType), discountReason: saved.name } : { ...next, discountId: undefined, discount: 0, discountReason: "" };
+      next = saved ? { ...next, discount: discountFor(saved, next.lines, lineType), discountReason: saved.name } : next.orderId ? next : { ...next, discountId: undefined, discount: 0, discountReason: "" };
     }
     // State first, storage second: a quick second tap or keystroke must see this draft, not the
     // one from before IndexedDB answered.
@@ -128,7 +131,7 @@ export default function Pos() {
   const comp = draft.mode === "compliment" ? draft.compliment : undefined;
   const saved_ = orders.find((o) => o.id === draft.orderId);
   const clock = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { timeZone: settings?.timezone, hour: "2-digit", minute: "2-digit" });
-  const drink = (l: Line) => { const m = menu.find((x) => x.id === l.itemId); return m ? menuType(m) === "beverage" : l.station === "bar"; };
+  const drink = (l: Line) => lineType(l) === "beverage";
   const setCompliment = (c: Compliment) => void update({ ...draft, mode: "compliment", compliment: c });
   const names = comp?.kind === "staff" ? staff : family;
   const other = Boolean(comp) && (typing || !names.length || (comp!.who !== "" && !names.includes(comp!.who)));
@@ -178,7 +181,7 @@ export default function Pos() {
     const same = draft.lines.find((l) => !l.prepared && !l.cancelled && l.itemId === item.id && l.catalogVersion === item.version && l.note === notes && key(l.modifiers) === key(picked) && l.qty < 999);
     if (same) await update({ ...draft, lines: draft.lines.map((l) => (l === same ? { ...l, qty: Math.min(999, l.qty + n) } : l)) });
     else {
-      const line: Line = { id: uid(), itemId: item.id, name: item.name, price: item.price, qty: n, modifiers: picked, note: notes, recipe: item.recipe, catalogVersion: item.version, prepared: false, cancelled: false, station: itemStation(item) };
+      const line: Line = { id: uid(), itemId: item.id, name: item.name, price: item.price, qty: n, modifiers: picked, note: notes, recipe: item.recipe, catalogVersion: item.version, prepared: false, cancelled: false, station: itemStation(item), type: menuType(item) };
       await update({ ...draft, lines: [...draft.lines, line] });
     }
     setSelected(undefined);
@@ -272,9 +275,9 @@ export default function Pos() {
       </div>
       <div className="cart-body">
         <div className="segmented mode-switch">
-          <button className={draft.mode === "dinein" ? "active" : ""} onClick={() => void update({ ...draft, mode: "dinein", compliment: undefined })}>Makan di sini</button>
-          <button className={draft.mode === "takeaway" ? "active" : ""} onClick={() => void update({ ...draft, mode: "takeaway", compliment: undefined })}>Bungkus</button>
-          <button className={draft.mode === "compliment" ? "active" : ""} onClick={() => { setTyping(false); setCompliment(draft.compliment ?? { kind: "staff", who: "" }); }}>Compliment</button>
+          <button className={draft.mode === "dinein" ? "active" : ""} aria-pressed={draft.mode === "dinein"} onClick={() => void update({ ...draft, mode: "dinein", compliment: undefined })}>Makan di sini</button>
+          <button className={draft.mode === "takeaway" ? "active" : ""} aria-pressed={draft.mode === "takeaway"} onClick={() => void update({ ...draft, mode: "takeaway", compliment: undefined })}>Bungkus</button>
+          <button className={draft.mode === "compliment" ? "active" : ""} aria-pressed={draft.mode === "compliment"} onClick={() => { setTyping(false); setCompliment(draft.compliment ?? { kind: "staff", who: "" }); }}>Compliment</button>
         </div>
         {comp && (
           <div className="compliment-panel">
@@ -395,7 +398,7 @@ export default function Pos() {
         </div>
         <div className="category-tabs" aria-label="Jenis menu">
           {TYPES.map(([id, label]) => (
-            <button key={id} className={type === id ? "active" : ""} onClick={() => setType(id)}>
+            <button key={id} className={type === id ? "active" : ""} aria-pressed={type === id} onClick={() => setType(id)}>
               {label}<span>{id === "all" ? active.length : active.filter((m) => menuType(m) === id).length}</span>
             </button>
           ))}

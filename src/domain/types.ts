@@ -39,8 +39,10 @@ export interface Settings {
  complimentBudget?: number
  // The owner's family by name (not staff accounts): one-tap names when the cashier records a family compliment.
  family?: string[]
- // Saved discounts and vouchers the cashier applies in one tap (Figma Manager 7). The server compares an order's copy of
- // the settings without this list, so a discount edited mid-shift never clashes with the till's next order.
+ // Saved discounts and vouchers the cashier applies in one tap (Figma Manager 7). An order's copy of the settings is
+ // compared without this list. The server accepts an order priced by the live definition or by one changed, ended or
+ // deleted since the till's shift opened (kept 13 hours), so an edit on the laptop does not turn down an order the till
+ // priced before its next pull.
  discounts?: Discount[]
 }
 // A saved discount: a percent or a rupiah amount off the whole order, one menu type or chosen items, between two
@@ -89,6 +91,9 @@ export interface Line {
  voidReason?: string; voidApprovedBy?: string
  // Where the ticket goes, when it was sent, and when that station marked it ready.
  station?: Station; preparedAt?: string; readyAt?: string
+ // The menu type of the catalog version it was rung up from: the server prices a staff meal or a saved discount by that
+ // version, not a newer one. Older lines without it read the item's current type.
+ type?: MenuType
 }
 export interface Totals { subtotal: number; discount: number; service: number; tax: number; total: number }
 // Compliment: a staff meal (drinks free, food half price, the staff member pays the food part) or the owner's family

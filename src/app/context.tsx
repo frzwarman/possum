@@ -6,7 +6,7 @@ import { Commands } from '../lib/commands'
 import { defaultSettings,demoOutlet,demoTransfer,sampleMenu,stock } from '../domain/sample'
 import { availability,unitCosts } from '../domain/calculate'
 import { can } from '../domain/permissions'
-import { synchronize } from '../lib/sync'
+import { sessionState,synchronize } from '../lib/sync'
 import { supabase } from '../lib/supabase'
 function useModel(user:Identity){
  const db=useMemo(()=>databaseFor(user),[user]);const commands=useMemo(()=>new Commands(db,user),[db,user]);const [notice,setNotice]=useState('');const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [online,setOnline]=useState(navigator.onLine)
@@ -21,7 +21,10 @@ function useModel(user:Identity){
  const balances=useMemo(()=>{const m=new Map<string,number>();for(const x of movements)m.set(x.stockId,(m.get(x.stockId)||0)+x.qty);return m},[movements])
  const balance=(id:string)=>balances.get(id)||0
  const canMake=(item:MenuItem)=>availability(item,balance,settings?.lowAt??5)
- async function sync(){try{await synchronize(db,user)}catch(e){setError(e instanceof Error?e.message:'Sinkronisasi gagal')}}
+ // A session that is really gone (ended elsewhere, revoked) holds this person's work pending until they sign in again on
+ // this device, from the lock screen or Lainnya; one that only waits for the network clears by itself.
+ const [gone,setGone]=useState(false)
+ async function sync(){try{await synchronize(db,user)}catch(e){setError(e instanceof Error?e.message:'Sinkronisasi gagal')}if(!user.demo&&supabase)setGone(await sessionState(user.id).then(s=>s==='gone',()=>false))}
  useEffect(()=>{let active=true;void(async()=>{if(user.demo&&!await db.meta.get('initialized')){await db.transaction('rw',db.tables,async()=>{await db.settings.put(defaultSettings);await db.menu.bulkPut(sampleMenu);await db.stock.bulkPut(stock);for(const item of stock)await db.movements.add({id:uid(),stockId:item.id,qty:item.unit==='pcs'?50000:10000000,kind:'opening',reason:'Saldo awal contoh demo',actor:user.id,at:new Date().toISOString(),recordId:'demo-opening',cost:0});await db.meta.put({id:'initialized',value:'yes'})})}
  // Demo installs made before the sample pictures existed get them filled in; anything the demo user set stays.
  if(user.demo)await db.transaction('rw',db.menu,db.stock,async()=>{for(const m of sampleMenu)if(m.photo)await db.menu.where('id').equals(m.id).modify(x=>{if(!x.photo)x.photo=m.photo});for(const s of stock)if(s.photo)await db.stock.where('id').equals(s.id).modify(x=>{if(!x.photo)x.photo=s.photo})})
@@ -30,7 +33,7 @@ function useModel(user:Identity){
  const timer=setInterval(()=>{if(document.visibilityState==='visible')void sync()},user.mode==='station'?5000:user.primary?10000:30000);return()=>{active=false;clearInterval(timer);window.removeEventListener('online',network);window.removeEventListener('offline',network);document.removeEventListener('visibilitychange',foreground)}},[db,user])
  async function act<T>(action:()=>Promise<T>,message?:string):Promise<T|undefined>{if(busy)return;setBusy(true);setError('');try{const value=await action();if(!user.demo)await sync();if(message)setNotice(message);return value}catch(e){setError(e instanceof Error?e.message:'Tindakan gagal. Data belum tersimpan.');return undefined}finally{setBusy(false)}}
  useEffect(()=>{if(notice){const t=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(t)}},[notice])
- return {user,db,commands,logo,menu,hydrating:[menuRows,orderRows,shiftRows,movementRows,stockRows].includes(undefined),settings,orders,purchaseOrders,suppliers,salesOrders,transfers,counts,outlets,costs,shifts,shift,movements,stockItems,cash,outbox,lastSync:lastSync?.value,device,balances,balance,canMake,station,setStation,notice,error,busy,online,act,sync,setNotice,setError,
+ return {user,db,commands,logo,menu,hydrating:[menuRows,orderRows,shiftRows,movementRows,stockRows].includes(undefined),settings,orders,purchaseOrders,suppliers,salesOrders,transfers,counts,outlets,costs,shifts,shift,movements,stockItems,cash,outbox,lastSync:lastSync?.value,device,balances,balance,canMake,station,setStation,notice,error,busy,online,gone,act,sync,setNotice,setError,
   // manager = may approve (owner, manager); office = may open the back office (owner, manager, admin, chef).
   manager:can(user.role,'approve'),office:can(user.role,'backoffice')}
 }
@@ -44,4 +47,6 @@ export async function signOutBlockers(db:MejaDB,user:Identity){
  const s=await db.shifts.where('status').equals('open').first(),d=await db.drafts.get('current')
  return {shift:Boolean(s&&s.actor===user.id),cart:Boolean(d&&!d.orderId&&d.lines.some(l=>!l.cancelled)),unsent:await db.outbox.where('state').anyOf('pending','rejected').count()}
 }
-export async function logout(){await supabase?.auth.signOut();localStorage.removeItem('meja-identity');localStorage.removeItem('takar-locked');location.assign('/')}
+// Only this device's session ends: the default (global) would also sign the same person out on the laptop. The PIN hash
+// goes too: it would crack offline to the account password long after its owner left the device.
+export async function logout(){await supabase?.auth.signOut({scope:'local'});localStorage.removeItem('meja-identity');localStorage.removeItem('takar-locked');localStorage.removeItem('takar-pin-hash');location.assign('/')}

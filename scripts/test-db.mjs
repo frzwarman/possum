@@ -431,7 +431,7 @@ await test("Cash out by a cashier needs an approval for that amount; cash in doe
   await send(op("shift.cash", { shiftId: shift, amount: -5000, reason: "Es batu", approval: granted.id }));
   await send(op("shift.cash", { shiftId: shift, amount: 5000, reason: "Kembalian ditukar" }));
 });
-await test("Wrong PINs lock approvals for the restaurant, even with the right PIN", async () => {
+await test("Wrong PINs lock the asker's approvals, even with the right PIN", async () => {
   // One wrong PIN already failed above; the third failure in five minutes locks.
   for (let i = 0; i < 2; i++) assert.equal((await approve(owner, "000002", "void", order.id)).error, "wrong-pin");
   assert.deepEqual(await approve(owner, "482915", "void", order.id), { error: "locked" });
@@ -476,7 +476,7 @@ await test("Owner moves the till device to any other device, shift and audit fol
   await db.query("select public.enroll_device($1)", [phone]);
   assert.equal(
     (
-      await db.query(
+      await read(
         "select primary_device_id from public.restaurants where id=$1",
         [rid],
       )
@@ -723,7 +723,7 @@ const snap = async (id) => (await read("select revision,snapshot from public.ord
 await test("Pairing a station or office device never moves the till; only owners and managers pair", async () => {
   await db.query("select public.enroll_device($1,'station')", [station]);
   await db.query("select public.enroll_device($1,'office')", [laptop]);
-  assert.equal((await db.query("select primary_device_id from public.restaurants where id=$1", [rid])).rows[0].primary_device_id, device);
+  assert.equal((await read("select primary_device_id from public.restaurants where id=$1", [rid])).rows[0].primary_device_id, device);
   assert.deepEqual((await read("select mode from public.devices where restaurant_id=$1 and id in ($2,$3) order by mode", [rid, station, laptop])).rows, [{ mode: "office" }, { mode: "station" }]);
   await login(kitchen);
   await assert.rejects(db.query("select public.enroll_device($1,'station')", [randomUUID()]), /Manager required/);
@@ -816,6 +816,18 @@ await test("A count becomes stock only with a manager's PIN, and every line leav
   await login(owner);
   await send(op("count.record", { id: randomUUID(), area: "Dry store", lines: [{ stockId: "rice", counted: await qty("rice") }] }));
 });
+await test("Nobody approves their own request with their own PIN; the admin's count needs someone else", async () => {
+  await login(admin);
+  try {
+    await db.query("select public.set_approval_pin('730416')");
+    const id = randomUUID();
+    await assert.rejects(approve(admin, "730416", "count", id), /Cannot approve your own request/);
+    await login(kitchen);
+    assert.equal((await approve(admin, "730416", "count", id)).by, "Admin");
+  } finally {
+    await login(owner);
+  }
+});
 await test("A cashier's gap over the limit needs a PIN; an owner closes anyone's shift, also after the 12 hours", async () => {
   await send(op("shift.close", { id: ownerShift, counted: 0 }));
   await login(cashier);
@@ -905,12 +917,34 @@ await test("The cashier records waste and batches and submits a count; the manag
   assert.deepEqual((await read("select status,approver from public.counts where id=$1", [id])).rows, [{ status: "approved", approver: "Owner" }]);
   assert.equal(await qty("egg"), eggs - 1000);
 });
-await test("Three wrong PINs lock approvals for five minutes", async () => {
-  for (let i = 0; i < 3; i++) assert.equal((await approve(owner, "000002", "void", tid)).error, "wrong-pin");
-  assert.deepEqual(await approve(owner, "482915", "void", tid), { error: "locked" });
-  await db.exec("reset role");
-  await db.query("delete from public.approval_failures");
-  await login(owner);
+await test("Three wrong PINs pause that person's approvals for five minutes, and nobody else's", async () => {
+  try {
+    // The kitchen guessing at the owner's PIN pauses the kitchen, not the cashier at the till.
+    await login(kitchen);
+    for (let i = 0; i < 3; i++) assert.equal((await approve(owner, "000002", "void", tid)).error, "wrong-pin");
+    assert.deepEqual(await approve(owner, "482915", "void", tid), { error: "locked" });
+    await login(cashier);
+    assert.equal((await approve(owner, "482915", "void", tid)).by, "Owner");
+    for (let i = 0; i < 3; i++) assert.equal((await approve(owner, "000002", "void", tid)).error, "wrong-pin");
+    assert.deepEqual(await approve(owner, "482915", "void", tid), { error: "locked" });
+  } finally {
+    await db.exec("reset role");
+    await db.query("delete from public.approval_failures");
+    await login(owner);
+  }
+});
+await test("An approval is spent within 12 hours of when it was given, whatever time the operation claims", async () => {
+  await login(cashier);
+  try {
+    const target = randomUUID(), kept = await approve(owner, "482915", "void", target), fresh = await approve(owner, "482915", "void", target);
+    await read("update public.approvals set created_at=now()-interval '13 hours' where id=$1", [kept.id]);
+    // An operation backdated to half an hour after the approval was given, sent 13 hours later.
+    const use = (id, at) => read(`select public.use_approval($1,$2,'void',$3,null,$4,${at},$5) as by`, [rid, cashier, target, randomUUID(), id]);
+    await assert.rejects(use(kept.id, "(select a.created_at+interval '30 minutes' from public.approvals a where a.id=$5)"), /Manager approval required/);
+    assert.equal((await use(fresh.id, "now()")).rows[0].by, "Owner");
+  } finally {
+    await login(owner);
+  }
 });
 await test("The audit log names who did what, from which device, and who approved it", async () => {
   const rows = (await db.query("select public.audit_log($1,$2) as a", [new Date(Date.now() - 86400000).toISOString().slice(0, 10), new Date(Date.now() + 86400000).toISOString().slice(0, 10)])).rows[0].a;
@@ -981,6 +1015,40 @@ await test("The accountant reads the books for a range, complete, and the audit 
   await assert.rejects(books(), /Manager or accountant required/);
   await assert.rejects(db.query("select public.ledger_save($1::jsonb)", [JSON.stringify(rent)]), /Manager or accountant required/);
   await login(owner);
+});
+await test("The accountant marks no station ticket ready either", async () => {
+  await db.query("select public.manage_staff($1,$2,$3)", [cashier, "accountant", true]);
+  await login(cashier);
+  try {
+    await assert.rejects(send(op("order.ready", { id: tid })), /permission required/);
+  } finally {
+    await login(owner);
+    await db.query("select public.manage_staff($1,$2,$3)", [cashier, "cashier", true]);
+  }
+});
+const dayOf = (ms) => new Date(ms + 3 * 3600000).toISOString().slice(0, 10); // business day: Jakarta (UTC+7) minus the 04:00 cutoff
+const backdated = (o, ms) => ({ ...o, occurredAt: new Date(ms).toISOString() });
+await test("A past range prices stock at what was known by its end; a later purchase does not move it", async () => {
+  const then = Date.now() - 3 * 86400000;
+  await send(op("catalog.publish", { menu: [], stock: [{ id: "gula", name: "Gula", unit: "g", threshold: 0 }] }));
+  await send(backdated(op("stock.record", { stockId: "gula", kind: "purchase", qty: 1000, cost: 10000, fromDrawer: false, reason: "Pasar" }), then));
+  await send(op("stock.record", { stockId: "gula", kind: "purchase", qty: 1000, cost: 20000, fromDrawer: false, reason: "Pasar" }));
+  assert.equal((await db.query("select public.accounting_data($1,$1) as b", [dayOf(then)])).rows[0].b.costs.gula, 10);
+});
+await test("The first shift after go-live brings its whole float in from outside the drawer", async () => {
+  const current = (await read("select settings from public.restaurants where id=$1", [rid])).rows[0].settings;
+  // A trial shift three days before go-live left 500.000 in the drawer; the books start the day before today.
+  const trial = randomUUID(), then = Date.now() - 3 * 86400000;
+  await send(backdated(op("shift.open", { id: trial, opening: 500000 }), then));
+  await send(backdated(op("shift.close", { id: trial, counted: 500000 }), then + 3600000));
+  await send(op("settings.update", { settings: { ...current, goLive: dayOf(Date.now() - 86400000) } }));
+  try {
+    const opened = (await db.query("select public.accounting_data($1,$2) as b", [dayOf(Date.now() - 86400000), dayOf(Date.now() + 86400000)])).rows[0].b.opened;
+    assert.equal(opened[0].prior, 0);
+    assert.ok(opened.slice(1).some((o) => o.prior > 0));
+  } finally {
+    await send(op("settings.update", { settings: current }));
+  }
 });
 await test("A manager manages staff below the owner; the owner stays out of reach", async () => {
   await login(mgr);
@@ -1074,6 +1142,114 @@ await test("A store that takes cash and EDC: cash needs no machine, card does, a
   await login(owner);
   await send(op("settings.update", { settings: current }));
 });
+// A sale the cashier rings up in a given shift, and a cleanup that leaves no shift open whatever a test got to.
+const line = (item, version, price) => ({ id: randomUUID(), itemId: item.id, name: item.name, price, qty: 1, modifiers: [], note: "", recipe: item.recipe, catalogVersion: version, prepared: false, cancelled: false });
+const sale = (shiftId, lines, totals, extra = {}) => {
+  const o = op("order.save", {});
+  o.payload = { order: { id: randomUUID(), restaurantId: rid, shiftId, actor, cashier: "Kasir", revision: 1, receiptId: "MJ-" + o.id.toUpperCase(), label: "Pager 5", mode: "dinein", status: "open", prep: "new", discount: 0, discountReason: "", settings, createdAt: o.occurredAt, updatedAt: o.occurredAt, lines, totals, ...extra }, expectedRevision: 0 };
+  return o;
+};
+async function closeShift(id) {
+  await login(owner);
+  for (const o of (await read("select id,revision from public.orders where shift_id=$1 and status='open'", [id])).rows) await send(op("order.void", { id: o.id, expectedRevision: o.revision, reason: "Uji selesai" }));
+  if ((await read("select 1 from public.shifts where id=$1 and closed_at is null", [id])).rows.length) await send(op("shift.close", { id, counted: 0 }));
+}
+await test("A settings save on the laptop mid-shift never turns the till's next order down; tax, service and packaging still must match", async () => {
+  await login(owner);
+  const current = (await read("select settings from public.restaurants where id=$1", [rid])).rows[0].settings;
+  await login(cashier);
+  const sS = randomUUID();
+  await send(op("shift.open", { id: sS, opening: 0 }));
+  try {
+    // The laptop sets a tagline, the owner's family and a budget; the till has not pulled them yet.
+    await login(owner);
+    await send(op("settings.update", { settings: { ...current, tagline: "Cabang Dago", family: ["Rino"], complimentBudget: 500000 } }));
+    await login(cashier);
+    const o = sale(sS, [line(nasiV2, 2, 35000)], { subtotal: 35000, discount: 0, service: 0, tax: 0, total: 35000 }, { settings: current });
+    await send(o);
+    await send(op("order.save", { order: { ...o.payload.order, label: "Pager 6", revision: 2 }, expectedRevision: 1 }));
+    // A copy that prices the order or moves stock differently, each one priced right by that copy, is still refused.
+    for (const [stale, service, tax] of [[{ taxBps: 1000 }, 0, 3500], [{ serviceBps: 500 }, 1750, 0], [{ packaging: [{ stockId: "rice", qty: 1000 }] }, 0, 0]])
+      await assert.rejects(send(sale(sS, [line(nasiV2, 2, 35000)], { subtotal: 35000, discount: 0, service, tax, total: 35000 + service + tax }, { settings: { ...current, ...stale } })), /Invalid initial snapshot/);
+  } finally {
+    await closeShift(sS);
+    await send(op("settings.update", { settings: current }));
+  }
+});
+await test("A saved discount changed, ended or deleted on the laptop still prices the till's orders of that shift; the next shift has only the new one", async () => {
+  await login(owner);
+  const current = (await read("select settings from public.restaurants where id=$1", [rid])).rows[0].settings;
+  const happy = { id: "happy", name: "Happy hour", note: "", kind: "percent", value: 10, scope: "order", from: "2026-01-01", to: "2099-12-31" };
+  const copy = { ...current, discounts: [happy] }, now15 = { ...current, discounts: [{ ...happy, value: 15 }] };
+  // n nasi at 35.000, with Happy hour taking pct off by the till's copy of the settings.
+  const priced = (shiftId, n, pct, settings = copy) => {
+    const sub = 35000 * n, off = Math.floor((sub * pct) / 100);
+    return sale(shiftId, Array.from({ length: n }, () => line(nasiV2, 2, 35000)), { subtotal: sub, discount: off, service: 0, tax: 0, total: sub - off }, { settings, discount: off, discountReason: "Happy hour", discountId: "happy" });
+  };
+  await send(op("settings.update", { settings: copy }));
+  await login(cashier);
+  const sD = randomUUID();
+  await send(op("shift.open", { id: sD, opening: 0 }));
+  try {
+    const open = priced(sD, 1, 10);
+    await send(open);
+    await login(owner);
+    await send(op("settings.update", { settings: now15 }));
+    // Until its next pull the till rings Happy hour up at 10%, and adds a line to the open order at 10%.
+    await login(cashier);
+    await send(priced(sD, 1, 10));
+    await send(op("order.save", { order: { ...open.payload.order, lines: [...open.payload.order.lines, line(nasiV2, 2, 35000)], revision: 2, discount: 7000, totals: { subtotal: 70000, discount: 7000, service: 0, tax: 0, total: 63000 } }, expectedRevision: 1 }));
+    await send(priced(sD, 1, 15, now15));
+    await assert.rejects(send(priced(sD, 1, 20)), /Invalid saved discount/);
+    // The manager now wants a PIN for it; the till that has not pulled that yet rings it up without one.
+    await login(owner);
+    await send(op("settings.update", { settings: { ...current, discounts: [{ ...happy, value: 15, approval: true }] } }));
+    await login(cashier);
+    await send(priced(sD, 1, 15, now15));
+    await login(owner);
+    await send(op("settings.update", { settings: { ...current, discounts: [{ ...happy, value: 15, ended: true }] } }));
+    // Ended at the same 15%: the till's copy, still running, prices it, not the ended one.
+    await login(cashier);
+    await send(priced(sD, 1, 15, now15));
+    await send(priced(sD, 1, 10));
+    await login(owner);
+    await send(op("settings.update", { settings: current }));
+    await login(cashier);
+    await send(priced(sD, 1, 10));
+  } finally {
+    await closeShift(sD);
+    await send(op("settings.update", { settings: current }));
+  }
+  await login(cashier);
+  const sE = randomUUID();
+  await send(op("shift.open", { id: sE, opening: 0 }));
+  try {
+    await assert.rejects(send(priced(sE, 1, 10)), /Unknown saved discount/);
+  } finally {
+    await closeShift(sE);
+  }
+  // A changed or deleted discount is kept 13 hours; the next settings save drops older ones.
+  await read("update public.restaurants set retired_discounts=(select jsonb_agg(r.value||jsonb_build_object('until',now()-interval '14 hours')) from jsonb_array_elements(retired_discounts) r) where id=$1", [rid]);
+  await send(op("settings.update", { settings: current }));
+  assert.deepEqual((await read("select retired_discounts from public.restaurants where id=$1", [rid])).rows[0].retired_discounts, []);
+});
+await test("A cash close expects what the orders came to after a line was voided, not what was paid before it", async () => {
+  await login(cashier);
+  const sV = randomUUID();
+  await send(op("shift.open", { id: sV, opening: 100000 }));
+  try {
+    const o = sale(sV, [line(nasiV2, 2, 35000), line(latte, 2, 31000)], { subtotal: 66000, discount: 0, service: 0, tax: 0, total: 66000 }), id = o.payload.order.id;
+    await send(o);
+    await send(op("order.prepare", { id, expectedRevision: 1, lineIds: o.payload.order.lines.map((l) => l.id) }));
+    await send(op("payment.record", { id, expectedRevision: 2, method: "cash", tendered: 66000, verified: true }));
+    await send(op("order.voidline", { id, lineId: o.payload.order.lines[1].id, reason: "Salah menu", expectedRevision: 3, approval: (await approve(owner, "482915", "void", id)).id }));
+    // The latte's 31.000 went back to the guest: the drawer holds the float plus 35.000, so the till sees no gap.
+    await send(op("shift.close", { id: sV, counted: 135000 }));
+    assert.deepEqual((await read("select expected::int as e,variance::int as v from public.shifts where id=$1", [sV])).rows, [{ e: 135000, v: 0 }]);
+  } finally {
+    await closeShift(sV);
+  }
+});
 await test("A menu item never sold can be removed for good; a sold one cannot, and devices drop it on their next pull", async () => {
   await login(owner);
   const tmp = { ...menu, id: "tmp-import", name: "TEST Kopi", price: 20000, recipe: [], modifiers: [], version: 1 };
@@ -1085,11 +1261,27 @@ await test("A menu item never sold can be removed for good; a sold one cannot, a
   await assert.rejects(send(op("catalog.remove", { ids: ["nope"] })), /Unknown menu item/);
   const before = new Date(Date.now() - 1000).toISOString();
   await send(op("catalog.remove", { ids: ["tmp-import"] }));
-  assert.equal((await read("select count(*)::int n from public.catalog_versions where item_id='tmp-import'")).rows[0].n, 0);
+  assert.equal((await read("select count(*)::int n from public.catalog_items where id='tmp-import'")).rows[0].n, 0);
   const pulled = (await db.query("select public.pull($1,$2) as p", [before, device])).rows[0].p;
   assert.ok(pulled.catalog && !pulled.catalog.menu.some((m) => m.id === "tmp-import") && pulled.catalog.menu.some((m) => m.id === "nasi"));
   const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10), tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
   assert.ok((await db.query("select public.audit_log($1,$2) as a", [today, tomorrow])).rows[0].a.some((r) => r.kind === "catalog.remove" && r.actorName === "Owner"));
+});
+await test("An item removed on the laptop while it sits in the till's cart still sells: the removal keeps its versions", async () => {
+  await login(owner);
+  const cart = { ...menu, id: "tmp-cart", name: "TEST Teh", price: 8000, recipe: [], modifiers: [], version: 1 };
+  await send(op("catalog.publish", { menu: [cart], stock: [] }));
+  await login(cashier);
+  const sR = randomUUID();
+  await send(op("shift.open", { id: sR, opening: 0 }));
+  try {
+    await login(owner);
+    await send(op("catalog.remove", { ids: ["tmp-cart"] }));
+    await login(cashier);
+    await send(sale(sR, [line(cart, 1, 8000)], { subtotal: 8000, discount: 0, service: 0, tax: 0, total: 8000 }));
+  } finally {
+    await closeShift(sR);
+  }
 });
 await test("Only an owner or manager sets the store logo, and only a small WebP", async () => {
   const logo = "data:image/webp;base64,UklGRg==";
@@ -1104,6 +1296,20 @@ await test("Only an owner or manager sets the store logo, and only a small WebP"
   await login(owner);
   await db.query("select public.set_logo('')");
   assert.equal((await read("select logo from public.restaurants where id=$1", [rid])).rows[0].logo, null);
+});
+await test("Device ids stay with owners and managers: other members read no device and no till id, and still sign in, pull and see the logo", async () => {
+  for (const who of [cashier, kitchen, admin]) {
+    await login(who);
+    assert.equal((await db.query("select count(*)::int as n from public.devices")).rows[0].n, 0);
+    await assert.rejects(db.query("select primary_device_id from public.restaurants"), /permission denied/);
+    assert.equal((await db.query("select logo,logo_at from public.restaurants where id=$1", [rid])).rows.length, 1);
+    assert.equal((await db.query("select public.bootstrap($1) as b", [device])).rows[0].b.device.primary, true);
+    assert.ok((await db.query("select public.pull($1,$2) as p", [new Date(Date.now() - 60000).toISOString(), device])).rows[0].p.now);
+  }
+  for (const who of [mgr, owner]) {
+    await login(who);
+    assert.equal((await db.query("select count(*)::int as n from public.devices where id=$1", [device])).rows[0].n, 1);
+  }
 });
 // Telegram: the edge function calls these as the service role; nobody else may.
 async function asService(sql, params) {
@@ -1137,7 +1343,7 @@ await test("A Telegram answer becomes the same one-use approval a PIN gives; the
   const orderId = randomUUID();
   const id = await ask("void", orderId, null, "Batalkan pesanan A-1043");
   assert.deepEqual(await status(id), { status: "pending", id: null, by: null });
-  assert.deepEqual(await one("select public.telegram_request($1)", [id]), { action: "void", amount: null, what: "Batalkan pesanan A-1043", by: "Kasir", chats: [222] });
+  assert.deepEqual(await one("select public.telegram_request($1)", [id]), { action: "void", amount: null, what: "Batalkan pesanan A-1043", by: "Kasir", order: null, count: null, chats: [222] });
   assert.deepEqual(await one("select public.decide_approval($1,999,true)", [id]), { error: "role" });
   assert.deepEqual(await one("select public.decide_approval($1,111,true)", [id]), { status: "approved", by: "Owner" });
   assert.deepEqual(await one("select public.decide_approval($1,111,false)", [id]), { status: "approved", by: "Owner", already: true });
@@ -1150,6 +1356,18 @@ await test("A Telegram answer becomes the same one-use approval a PIN gives; the
   await assert.rejects(use(), /Manager approval required/);
   await login(outsider);
   await assert.rejects(db.query("select public.approval_request($1)", [id]), /not found|No active/);
+});
+await test("A Telegram request shows the manager the order or count it is bound to, from the server, beside the cashier's own note", async () => {
+  await login(cashier);
+  const c = (await read("select id,area,jsonb_array_length(lines)::int as n from public.counts where restaurant_id=$1 order by occurred_at limit 1", [rid])).rows[0];
+  const refund = await ask("refund", order.id, null, "Refund es teh Rp8.000"), recount = await ask("count", c.id, null, "Hitung ulang");
+  try {
+    const facts = await one("select public.telegram_request($1)", [refund]);
+    assert.deepEqual([facts.what, facts.order, facts.count], ["Refund es teh Rp8.000", { receipt: order.receiptId, label: "Meja 03", status: "paid", total: 30000, items: "1× Nasi uji" }, null]);
+    assert.deepEqual((await one("select public.telegram_request($1)", [recount])).count, { area: c.area, lines: c.n });
+  } finally {
+    for (const id of [refund, recount]) await one("select public.decide_approval($1,111,false)", [id]);
+  }
 });
 await test("Telegram requests can be rejected, expire after five minutes, and stay capped at three open", async () => {
   await login(cashier);

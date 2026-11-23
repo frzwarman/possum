@@ -81,15 +81,16 @@ export function recap(orders: BookOrder[], r: Range): DayRow[] {
 export type Stock = Record<string, [qty: number, value: number, average: number]>;
 // Moving average, worked a day at a time: the day's deliveries first (each joins the stock at what was paid for it),
 // then what left, at the average. A batch made in-house takes the worth of what went into it. An ingredient that has
-// never come in with a price starts at the latest known price. Returns what every movement added to or took from the
-// stock's worth, in whole rupiah, so the ledger's stock account and the stock list always agree.
+// never come in with a price, or was carried in at no worth because it had none then, starts at the latest known
+// price; unseen holds what that added. Returns what every movement added to or took from the stock's worth, in whole
+// rupiah, so the ledger's stock account and the stock list always agree.
 export function valuation(books: Pick<Books, "moves" | "opening" | "costs">, before: Stock = {}) {
   const stock: Stock = {}, worth = new Map<Move, number>(), unseen: Record<string, number> = {};
   const at = (id: string) => {
     if (!stock[id]) {
       const qty = books.opening[id] ?? 0, known = before[id], average = known?.[2] || books.costs[id] || 0;
-      stock[id] = [qty, known ? known[1] : Math.round(Math.max(0, qty) * average), average];
-      if (!known && stock[id][1]) unseen[id] = stock[id][1];
+      stock[id] = [qty, known?.[2] ? known[1] : Math.round(Math.max(0, qty) * average), average];
+      if (stock[id][1] !== (known?.[1] ?? 0)) unseen[id] = stock[id][1] - (known?.[1] ?? 0);
     }
     return stock[id];
   };
@@ -144,7 +145,7 @@ export function stockLedger(books: Pick<Books, "moves" | "opening">, items: Pick
   const names = new Map(items.map((s) => [s.id, s])), rows = new Map<string, StockRow>();
   const row = (id: string) => {
     let x = rows.get(id);
-    if (!x) rows.set(id, (x = { id, name: names.get(id)?.name ?? id, unit: names.get(id)?.unit ?? "", opening: 0, purchase: 0, production: 0, transfer: 0, used: 0, waste: 0, count: 0, other: 0, closing: 0, average: after[id]?.[2] ?? 0, before: before[id]?.[1] ?? unseen[id] ?? 0, value: after[id]?.[1] ?? 0 }));
+    if (!x) rows.set(id, (x = { id, name: names.get(id)?.name ?? id, unit: names.get(id)?.unit ?? "", opening: 0, purchase: 0, production: 0, transfer: 0, used: 0, waste: 0, count: 0, other: 0, closing: 0, average: after[id]?.[2] ?? 0, before: (before[id]?.[1] ?? 0) + (unseen[id] ?? 0), value: after[id]?.[1] ?? 0 }));
     return x;
   };
   for (const [id, qty] of Object.entries(books.opening)) row(id).opening = qty;
@@ -240,7 +241,7 @@ export function journal(books: Books, menu: MenuItem[], r: Range, before: Stock 
     }
   }
 
-  // Stock that was already on hand before anything Takar has seen comes in at the latest known price.
+  // Stock on hand that Takar had no price for (never seen, or carried in at no worth) comes in at the latest known price.
   for (const v of Object.values(unseen)) pair(r.from, "SALDO", "Saldo awal & penyesuaian stok", "inventory", "equity", v);
   const bought = new Map<string, number>();
   for (const m of books.moves) {
@@ -251,9 +252,10 @@ export function journal(books: Books, menu: MenuItem[], r: Range, before: Stock 
     else if (m.kind === "opening" || m.kind === "adjustment") pair(m.day, "SALDO", "Saldo awal & penyesuaian stok", "inventory", "equity", w);
     else if (m.kind === "production") pair(m.day, "PRODUKSI", "Selisih nilai produksi", "inventory", "shrink", w);
     else if (m.kind === "transfer") {
-      // What arrived is worth what the sending outlet valued it at; what left goes at this outlet's average.
-      pair(m.day, "TRANSFER", "Transfer antar outlet", "inventory", "transit", m.qty > 0 ? m.cost : w);
-      if (m.qty > 0) pair(m.day, "TRANSFER", "Transfer antar outlet", "inventory", "shrink", w - m.cost);
+      // Both ways at the transfer's own value (negative for stock that left), so a cancelled one clears the account and
+      // the outlet it reaches owes what this one is owed. Where this outlet's average differs, that is a stock difference.
+      pair(m.day, "TRANSFER", "Transfer antar outlet", "inventory", "transit", m.cost);
+      pair(m.day, "TRANSFER", "Transfer antar outlet", "inventory", "shrink", w - m.cost);
     } else {
       // A delivery is worth what was paid for it. When it lands in a stock that had run below zero the average moves
       // what was there too; that part is a stock difference, not something owed to anyone.
