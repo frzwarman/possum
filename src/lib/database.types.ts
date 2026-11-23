@@ -37,6 +37,14 @@ export interface Database { public: { Tables: {
     created_at: string
     operation_id: string | null
   }; Insert: never; Update: never; Relationships: [] }
+  barcodes: { Row: {
+    restaurant_id: string
+    code: string
+    stock_id: string
+    pack: string
+    linked_by: string
+    linked_at: string
+  }; Insert: never; Update: never; Relationships: [] }
   cash_movements: { Row: {
     restaurant_id: string
     id: string
@@ -297,4 +305,4 @@ export interface Database { public: { Tables: {
     created_at: string
     updated_at: string
   }; Insert: never; Update: never; Relationships: [] }
-}; Views: Record<string, never>; Functions: { accounting_data: { Args: { from_day: string; to_day: string }; Returns: Json }; apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; ledger_remove: { Args: { entry_id: string }; Returns: undefined }; ledger_save: { Args: { entry: Json }; Returns: undefined }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined }; request_approval: { Args: { action: string; order_id?: string; amount?: number; what: string }; Returns: string }; approval_request: { Args: { request: string }; Returns: Json }; telegram_code: { Args: Record<string, never>; Returns: string }; telegram_status: { Args: Record<string, never>; Returns: boolean }; telegram_unlink: { Args: Record<string, never>; Returns: undefined } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }
+}; Views: Record<string, never>; Functions: { accounting_data: { Args: { from_day: string; to_day: string }; Returns: Json }; apply_operation: { Args: { operation: Json }; Returns: Json }; bootstrap: { Args: { device_id: string }; Returns: Json }; enroll_device: { Args: { device_id: string; mode?: string }; Returns: undefined }; pull: { Args: { since: string }; Returns: Json }; audit_log: { Args: { from_day: string; to_day: string }; Returns: Json }; ledger_remove: { Args: { entry_id: string }; Returns: undefined }; ledger_save: { Args: { entry: Json }; Returns: undefined }; manage_staff: { Args: { target: string; new_role: string; new_active: boolean }; Returns: undefined }; set_approval_pin: { Args: { pin: string }; Returns: undefined }; outlet_transfers: { Args: Record<string, never>; Returns: Json }; approve: { Args: { approver: string; pin: string; action: string; order_id?: string; amount?: number }; Returns: Json }; sales_report: { Args: { from_day: string; to_day: string }; Returns: Json }; set_logo: { Args: { image: string }; Returns: undefined }; request_approval: { Args: { action: string; order_id?: string; amount?: number; what: string }; Returns: string }; approval_request: { Args: { request: string }; Returns: Json }; telegram_code: { Args: Record<string, never>; Returns: string }; telegram_status: { Args: Record<string, never>; Returns: boolean }; telegram_unlink: { Args: Record<string, never>; Returns: undefined }; enroll_phone: { Args: { device_id: string }; Returns: undefined }; link_barcode: { Args: { device_id: string; barcode: string; item: string; pack_name?: string }; Returns: undefined }; unlink_barcode: { Args: { device_id: string; barcode: string }; Returns: undefined }; stock_app: { Args: { device_id: string }; Returns: Json } }; Enums: Record<string, never>; CompositeTypes: Record<string, never> } }

@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Panduan Takar Stok</title>
+<!--
+  The user guide for staff, in Bahasa Indonesia. This file is the source; docs/Panduan-Takar-Stok.pdf is printed
+  from it and the pictures in shots/ are taken from the running app, both by scripts/panduan.mjs.
+  Every page is one A4 sheet (.page). Keep the words on the buttons exactly as the app shows them.
+-->
+<style>
+  @font-face { font-family: "Jakarta"; font-weight: 500; src: url("../../mobile/node_modules/@expo-google-fonts/plus-jakarta-sans/500Medium/PlusJakartaSans_500Medium.ttf"); }
+  @font-face { font-family: "Jakarta"; font-weight: 600; src: url("../../mobile/node_modules/@expo-google-fonts/plus-jakarta-sans/600SemiBold/PlusJakartaSans_600SemiBold.ttf"); }
+  @font-face { font-family: "Jakarta"; font-weight: 700; src: url("../../mobile/node_modules/@expo-google-fonts/plus-jakarta-sans/700Bold/PlusJakartaSans_700Bold.ttf"); }
+  :root { --ink: #1B1D21; --lime: #D3F26A; --lime-soft: #F2FBD3; --canvas: #EEF0F2; --subtle: #F6F7F8; --line: #E2E4E7; --muted: #6E737B; --warn-bg: #FEF6E1; --warn-fg: #7A5208; }
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { font-family: "Jakarta", system-ui, -apple-system, "Segoe UI", sans-serif; font-weight: 500; font-size: 10.5pt; line-height: 1.5; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { position: relative; width: 210mm; height: 297mm; background: #fff; padding: 16mm 16mm 18mm; overflow: hidden; break-after: page; display: flex; flex-direction: column; gap: 4.5mm; }
+  .page:last-child { break-after: auto; }
+  /* Nothing on a sheet may squeeze: if a sheet is too full it should show as overflow, not as squashed pictures. */
+  .page > * { flex-shrink: 0; }
+  h1 { margin: 0; font-size: 21pt; line-height: 1.2; font-weight: 700; }
+  h2 { margin: 2mm 0 0; font-size: 12.5pt; font-weight: 700; }
+  p { margin: 0; }
+  .kicker { font-size: 8.5pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .lead { font-size: 11.5pt; color: #33373d; }
+  /* A word exactly as it is written on a button or a label in the app. */
+  b { font-weight: 700; }
+  .ui { font-weight: 700; background: var(--canvas); border-radius: 1.2mm; padding: 0 .9mm; white-space: nowrap; }
+  ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2.4mm; counter-reset: step var(--from, 0); }
+  ol.steps li { counter-increment: step; display: grid; grid-template-columns: 7mm 1fr; column-gap: 3.2mm; align-items: start; }
+  ol.steps li::before { content: counter(step); width: 7mm; height: 7mm; border-radius: 50%; background: var(--lime); font-weight: 700; font-size: 9.5pt; display: grid; place-items: center; }
+  ul { margin: 0; padding-left: 5mm; display: grid; gap: 1.4mm; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .card { background: var(--subtle); border: 1px solid var(--line); border-radius: 3mm; padding: 4mm 4.5mm; }
+  .card h3 { margin: 0 0 1mm; font-size: 11.5pt; font-weight: 700; }
+  .note { background: var(--subtle); border: 1px solid var(--line); border-radius: 3mm; padding: 3mm 4mm; font-size: 9.6pt; line-height: 1.45; }
+  .note.warn { background: var(--warn-bg); border-color: #F0DCA4; color: var(--warn-fg); }
+  .notes { display: grid; gap: 2.4mm; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.6pt; line-height: 1.4; }
+  th, td { text-align: left; vertical-align: top; padding: 2mm 2.6mm; border-bottom: 1px solid var(--line); }
+  th { font-weight: 700; background: var(--subtle); }
+  td.yes, td.no, th.c { text-align: center; }
+  td.yes { font-weight: 700; color: #23855A; }
+  td.no { color: #9A9EA5; }
+  /* Screenshots, framed like the phone they come from. They sit at the bottom of the sheet. */
+  .phones { margin-top: auto; display: flex; justify-content: center; gap: 7mm; }
+  figure { margin: 0; width: 55mm; }
+  .phones.two figure { width: 60mm; }
+  .phones.small figure { width: 50mm; }
+  figure img { display: block; width: 100%; border: 1.1mm solid var(--ink); border-radius: 4.6mm; background: var(--canvas); }
+  figcaption { margin-top: 2mm; font-size: 8.4pt; line-height: 1.35; color: var(--muted); text-align: center; }
+  .foot { position: absolute; left: 16mm; right: 16mm; bottom: 8mm; display: flex; justify-content: space-between; font-size: 8pt; color: #9A9EA5; }
+  /* Cover */
+  .cover { background: var(--ink); color: #fff; padding: 22mm 18mm 16mm; gap: 6mm; }
+  .cover .kicker { color: var(--lime); }
+  .cover h1 { font-size: 44pt; letter-spacing: -.01em; }
+  .cover .lead { color: #D5D8DC; font-size: 14pt; max-width: 125mm; }
+  .cover figure img { border-color: #3A3F46; }
+  .cover .foot { color: #9A9EA5; }
+  .mark { width: 16mm; height: 16mm; }
+</style>
+</head>
+<body>
+
+<section class="page cover">
+  <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#2C3036"/><path d="M10 13h35a7 7 0 0 1 0 14H38v20a7 7 0 0 1-14 0V27H10z" fill="#fff"/><circle cx="48.5" cy="40" r="5.5" fill="#D3F26A"/></svg>
+  <div class="kicker">Panduan pemakaian</div>
+  <h1>Takar Stok</h1>
+  <p class="lead">Hitung stok dan terima barang dari ponsel, cukup dengan memindai barcode.</p>
+  <div class="phones">
+    <figure><img src="shots/05-beranda.png" alt="Layar Beranda"></figure>
+    <figure><img src="shots/08-hitung-daftar.png" alt="Layar Hitung stok dengan kamera"></figure>
+    <figure><img src="shots/14-terima-daftar.png" alt="Layar Terima barang"></figure>
+  </div>
+  <div class="foot"><span>Versi 1 · November 2026</span><span>Gambar di panduan ini memakai data contoh.</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">Sekilas</div>
+  <h1>Dua pekerjaan, satu ponsel</h1>
+  <p class="lead">Takar Stok dibuat untuk dua pekerjaan gudang yang paling sering terlewat. Semua yang dicatat di sini masuk ke Takar yang sama dengan kasir dan laporan.</p>
+  <div class="cols">
+    <div class="card"><h3>Hitung stok</h3><p>Pindai bahan, ketik jumlahnya, lanjut ke bahan berikutnya. Hasilnya dikirim ke manajer untuk disetujui.</p></div>
+    <div class="card"><h3>Terima barang</h3><p>Pindai barang yang datang, ketik jumlah dan harganya, lalu masukkan ke stok.</p></div>
+  </div>
+  <h2>Siapa boleh apa</h2>
+  <table>
+    <tr><th>Pekerjaan</th><th class="c">Pemilik</th><th class="c">Manajer</th><th class="c">Admin stok</th><th class="c">Kepala dapur, kasir, barista, dapur</th></tr>
+    <tr><td>Menghitung stok dan mengirimnya</td><td class="yes">Ya</td><td class="yes">Ya</td><td class="yes">Ya</td><td class="yes">Ya</td></tr>
+    <tr><td>Mengenalkan barcode baru ke aplikasi</td><td class="yes">Ya</td><td class="yes">Ya</td><td class="yes">Ya</td><td class="yes">Ya</td></tr>
+    <tr><td>Mencatat barang yang datang</td><td class="yes">Ya</td><td class="yes">Ya</td><td class="yes">Ya</td><td class="no">Tidak</td></tr>
+    <tr><td>Memasangkan ponsel</td><td class="yes">Ya</td><td class="yes">Ya</td><td class="no">Tidak</td><td class="no">Tidak</td></tr>
+    <tr><td>Menyetujui hitungan</td><td colspan="4">Dilakukan di Takar (laptop atau tablet), bukan di ponsel.</td></tr>
+  </table>
+  <h2>Yang perlu disiapkan</h2>
+  <ul>
+    <li>Ponsel berkamera dengan aplikasi Takar Stok terpasang.</li>
+    <li>Nama dan PIN 6 angka Anda. PIN-nya sama dengan yang dipakai di tablet kasir.</li>
+    <li>Ponsel yang sudah dipasangkan oleh pemilik atau manajer (halaman 3).</li>
+  </ul>
+  <div class="note"><b>Angka stok menurut sistem tidak pernah ditampilkan di ponsel.</b> Ini disengaja: hitung apa yang benar-benar ada di rak, bukan apa yang seharusnya ada.</div>
+  <h2>Isi panduan</h2>
+  <div class="cols" style="font-size:9.8pt">
+    <ul style="list-style:none;padding:0"><li>1. Memasangkan ponsel · hal. 3</li><li>2. Masuk · hal. 4</li><li>3. Beranda · hal. 4</li><li>4. Hitung stok · hal. 5</li><li>5. Barcode yang belum dikenal · hal. 7</li></ul>
+    <ul style="list-style:none;padding:0"><li>6. Terima barang · hal. 8</li><li>7. Kalau tidak ada sinyal · hal. 9</li><li>8. Perlu perhatian · hal. 9</li><li>9. Selesai bekerja · hal. 10</li><li>Jika ada masalah · hal. 10</li></ul>
+  </div>
+  <div class="foot"><span>Panduan Takar Stok</span><span>2</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">Sekali saja · pemilik atau manajer</div>
+  <h1>1. Memasangkan ponsel</h1>
+  <p class="lead">Takar hanya menerima catatan dari ponsel yang sudah dipasangkan. Ini dilakukan satu kali untuk setiap ponsel.</p>
+  <ol class="steps">
+    <li><span>Buka Takar Stok. Di ponsel yang belum pernah dipakai, layar pertamanya adalah <span class="ui">Masuk dengan email</span>.</span></li>
+    <li><span>Isi email dan kata sandi pemilik atau manajer, lalu ketuk <span class="ui">Masuk</span>.</span></li>
+    <li><span>Ketuk <span class="ui">Pasangkan ponsel ini</span>. Beranda terbuka: ponsel sudah siap.</span></li>
+    <li><span>Ketuk <span class="ui">Ganti</span> di kanan atas, supaya staf masuk dengan namanya sendiri.</span></li>
+  </ol>
+  <div class="notes">
+    <div class="note">Selain pemilik dan manajer, staf yang masuk di ponsel yang belum dipasangkan hanya melihat pesan “Ponsel ini belum dipasangkan. Minta pemilik atau manajer masuk di ponsel ini sekali.”</div>
+    <div class="note">Setelah seseorang pernah masuk, ponsel mengingat daftar nama staf. Sejak itu layar pertamanya adalah pilihan nama (halaman 4).</div>
+  </div>
+  <div class="phones two">
+    <figure><img src="shots/01-masuk-email.png" alt="Layar Masuk dengan email"><figcaption>Langkah 1 dan 2: masuk dengan email</figcaption></figure>
+    <figure><img src="shots/02-pasangkan.png" alt="Layar Pasangkan ponsel"><figcaption>Langkah 3: pasangkan ponsel</figcaption></figure>
+  </div>
+  <div class="foot"><span>Panduan Takar Stok</span><span>3</span></div>
+</section>
+
+<section class="page">
+  <div class="cols">
+    <div style="display:grid;gap:3.5mm;align-content:start">
+      <h1>2. Masuk</h1>
+      <ol class="steps">
+        <li><span>Ketuk nama Anda.</span></li>
+        <li><span>Ketik PIN 6 angka. Angka keenam langsung membawa Anda masuk.</span></li>
+      </ol>
+      <div class="note">Salah pilih nama? Ketuk <span class="ui">Bukan Anda? Pilih nama</span>. Nama Anda belum ada? Minta pemilik atau manajer menambahkannya di Takar.</div>
+    </div>
+    <div style="display:grid;gap:3.5mm;align-content:start">
+      <h1>3. Beranda</h1>
+      <ul>
+        <li><b>Nama dan peran Anda</b> di atas. Semua yang Anda catat tersimpan atas nama ini.</li>
+        <li><span class="ui">Tersinkron</span> berarti semua catatan sudah terkirim.</li>
+        <li><span class="ui">Hitung stok</span> dan <span class="ui">Terima barang</span>: dua pekerjaan utama.</li>
+        <li><b>Dijeda</b>: hitungan yang belum selesai. Ketuk untuk melanjutkan.</li>
+        <li><b>Terkirim hari ini</b>: yang sudah Anda kirim hari ini.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="phones">
+    <figure><img src="shots/03-masuk-nama.png" alt="Daftar nama staf"><figcaption>Ketuk nama Anda</figcaption></figure>
+    <figure><img src="shots/04-masuk-pin.png" alt="Layar PIN"><figcaption>Ketik PIN 6 angka</figcaption></figure>
+    <figure><img src="shots/05-beranda.png" alt="Layar Beranda"><figcaption>Beranda</figcaption></figure>
+  </div>
+  <div class="foot"><span>Panduan Takar Stok</span><span>4</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">Semua staf</div>
+  <h1>4. Hitung stok</h1>
+  <p class="lead">Hitung per area simpan. Cukup satu orang dengan satu ponsel.</p>
+  <ol class="steps">
+    <li><span>Di Beranda ketuk <span class="ui">Hitung stok</span>, pilih areanya (misalnya <span class="ui">Kulkas bar</span>), lalu ketuk <span class="ui">Mulai menghitung</span>.</span></li>
+    <li><span>Arahkan kamera ke barcode bahan sampai garis hijau mengenai barcode. Bahannya terbuka sendiri.</span></li>
+    <li><span>Bahan tanpa barcode: ketuk namanya di daftar <b>Belum dihitung</b>, atau ketik namanya di kolom <span class="ui">Ketik kode atau cari nama bahan</span>.</span></li>
+    <li><span>Ketik jumlah kemasan yang masih penuh, lalu isi kemasan yang sudah terbuka. Tombol <span class="ui">ml</span> <span class="ui">L</span> atau <span class="ui">g</span> <span class="ui">kg</span> mengganti satuannya.</span></li>
+    <li><span>Ketuk <span class="ui">Simpan, pindai berikutnya</span>. Ulangi sampai daftar <b>Belum dihitung</b> habis.</span></li>
+  </ol>
+  <div class="phones">
+    <figure><img src="shots/06-hitung-area.png" alt="Memilih area simpan"><figcaption>Langkah 1: pilih area</figcaption></figure>
+    <figure><img src="shots/08-hitung-daftar.png" alt="Kamera dan daftar bahan"><figcaption>Langkah 2 dan 3: kamera di atas, daftar bahan di bawah</figcaption></figure>
+    <figure><img src="shots/07-hitung-isi.png" alt="Mengisi jumlah"><figcaption>Langkah 4: 2 karton penuh, ditambah 5 L dari karton terbuka</figcaption></figure>
+  </div>
+  <div class="foot"><span>Panduan Takar Stok</span><span>5</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">Hitung stok, lanjutan</div>
+  <h1>Mengirim hitungan</h1>
+  <ol class="steps" style="--from:5">
+    <li><span>Setelah selesai, ketuk <span class="ui">Kirim untuk ditinjau</span>, lalu <span class="ui">Kirim</span>.</span></li>
+    <li><span>Hitungan muncul di <b>Terkirim hari ini</b> dengan tulisan “Menunggu persetujuan manajer”. Stok di Takar baru berubah setelah manajer menyetujuinya.</span></li>
+  </ol>
+  <h2>Yang perlu diingat</h2>
+  <div class="notes">
+    <div class="note"><b>Kotak kosong berarti belum dihitung.</b> Kalau barangnya memang habis, ketik <span class="ui">0</span> di kotaknya. Yang belum dihitung tidak ikut terkirim.</div>
+    <div class="note"><b>Boleh berhenti kapan saja.</b> Ketuk <span class="ui">Jeda</span> di kanan atas. Semua yang sudah diketik tersimpan di ponsel, juga bila aplikasinya tertutup. Lanjutkan dari <b>Dijeda</b> di Beranda.</div>
+    <div class="note"><b>Kamera tidak membuka bahan yang sama dua kali.</b> Setelah menyimpan, arahkan kamera ke barang berikutnya. Untuk membuka lagi bahan tadi, ketuk namanya di daftar <b>Sudah dihitung</b>.</div>
+    <div class="note"><b>Memindai bahan dari area lain?</b> Aplikasi bertanya dulu sebelum menambahkannya ke hitungan ini (lihat halaman 7).</div>
+  </div>
+  <div class="phones">
+    <figure><img src="shots/11-hitung-kirim.png" alt="Konfirmasi mengirim hitungan"><figcaption>Langkah 6: periksa, lalu Kirim</figcaption></figure>
+    <figure><img src="shots/12-hitung-terkirim.png" alt="Beranda setelah hitungan terkirim"><figcaption>Langkah 7: sudah terkirim, menunggu manajer</figcaption></figure>
+  </div>
+  <div class="foot"><span>Panduan Takar Stok</span><span>6</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">Semua staf</div>
+  <h1>5. Barcode yang belum dikenal</h1>
+  <p class="lead">Pertama kali sebuah barcode dipindai, aplikasi belum tahu itu bahan apa. Cukup beri tahu satu kali. Setelah itu semua ponsel di toko mengenalnya.</p>
+  <ol class="steps">
+    <li><span>Pindai barcode-nya, atau ketik angka di bawah barcode. Muncul <span class="ui">Kode … belum dikenal</span>.</span></li>
+    <li><span>Cari nama bahannya, lalu ketuk.</span></li>
+    <li><span>Pilih kode itu tercetak di mana: <span class="ui">satuan</span> untuk satu botol atau satu bungkus, atau kemasannya, misalnya <span class="ui">dus 6 pcs</span>.</span></li>
+    <li><span>Ketuk <span class="ui">Simpan</span>.</span></li>
+  </ol>
+  <div class="notes">
+    <div class="note"><b>Salah menautkan?</b> Buka bahan itu saat menghitung, lihat <b>Kode terpasang</b>, ketuk <span class="ui">Lepas</span>, lalu pindai lagi dan pilih bahan yang benar.</div>
+    <div class="note"><b>Bahan tanpa barcode</b> seperti buah, es batu atau sirup racikan tidak perlu ditautkan. Cari namanya saja.</div>
+  </div>
+  <div class="phones two">
+    <figure><img src="shots/09-kode-baru.png" alt="Menautkan barcode baru"><figcaption>Langkah 2 sampai 4: pilih bahan dan kemasannya</figcaption></figure>
+    <figure><img src="shots/10-area-lain.png" alt="Bahan dari area lain"><figcaption>Bahan dari area lain: aplikasi bertanya dulu</figcaption></figure>
+  </div>
+  <div class="foot"><span>Panduan Takar Stok</span><span>7</span></div>
+</section>
+
+<section class="page">
+  <div class="kicker">Pemilik · manajer · admin stok</div>
+  <h1>6. Terima barang</h1>
+  <ol class="steps">
+    <li><span>Di Beranda ketuk <span class="ui">Terima barang</span>.</span></li>
+    <li><span>Isi <span class="ui">Pemasok / nota</span>, misalnya “CV Susu Jaya, nota 1203”. Bila perlu, ketuk <span class="ui">Foto nota (opsional)</span> untuk melampirkan foto notanya.</span></li>
+    <li><span>Pindai barang yang datang. Isi <b>Jumlah</b> dalam kemasan datangnya (karton, dus, kg) dan <b>Harga per</b> kemasan itu, lalu ketuk <span class="ui">Tambah</span>. Harga terakhir sudah terisi: ubah bila berbeda, kosongkan bila belum tahu.</span></li>
+    <li><span>Ulangi untuk setiap barang. Setiap bahan menjadi satu baris.</span></li>
+    <li><span>Bila muncul kotak kuning, cocokkan dengan nota. Ketuk <span class="ui">Ubah</span> untuk memperbaiki, atau <span class="ui">Ya, … benar</span> bila memang sebanyak itu.</span></li>
+    <li><span>Ketuk <span class="ui">Masukkan ke stok</span>. Stok bertambah saat itu juga.</span></li>
+  </ol>
+  <div class="note warn"><b>Kotak kuning</b> muncul bila jumlahnya lebih dari 5 kali, atau kurang dari seperlima, kiriman biasanya. Hampir selalu ini salah satuan atau salah ketik: 50 bungkus padahal 5.</div>
+  <div class="phones">
+    <figure><img src="shots/13-terima-baris.png" alt="Mengisi jumlah dan harga"><figcaption>Langkah 3: jumlah dan harga per kemasan</figcaption></figure>
+    <figure><img src="shots/14-terima-daftar.png" alt="Daftar kiriman dengan peringatan"><figcaption>Langkah 5: kotak kuning minta dicek</figcaption></figure>
+    <figure><img src="shots/15-beranda-terkirim.png" alt="Beranda setelah kiriman masuk"><figcaption>Langkah 6: kiriman sudah masuk stok</figcaption></figure>
+  </div>
+  <div class="foot"><span>Panduan Takar Stok</span><span>8</span></div>
+</section>
+
+<section class="page">
+  <div class="cols">
+    <div style="display:grid;gap:3mm;align-content:start">
+      <h1>7. Kalau tidak ada sinyal</h1>
+      <p>Tetap bekerja seperti biasa. Hitungan dan kiriman disimpan di ponsel, lalu terkirim sendiri begitu ada sinyal.</p>
+      <ul>
+        <li>Beranda menampilkan <span class="ui">1 belum terkirim</span> sampai semuanya terkirim.</li>
+        <li>Tarik layar Beranda ke bawah untuk mencoba mengirim sekarang.</li>
+        <li><span class="ui">Ganti</span> baru bisa dipakai setelah catatan Anda terkirim.</li>
+        <li>Masuk dengan PIN butuh sinyal. Setelah masuk, pekerjaan bisa dilakukan tanpa sinyal.</li>
+      </ul>
+    </div>
+    <div style="display:grid;gap:3mm;align-content:start">
+      <h1>8. Perlu perhatian</h1>
+      <p>Sesekali Takar menolak sebuah catatan. Catatan itu pindah ke <span class="ui">Perlu perhatian</span> di Beranda, lengkap dengan alasannya. Catatan lain tetap terkirim.</p>
+      <ul>
+        <li><span class="ui">Kirim ulang</span> mengirimnya lagi sebagai catatan baru.</li>
+        <li><span class="ui">Hapus</span> membuangnya.</li>
+      </ul>
+    </div>
+  </div>
+  <table>
+    <tr><th style="width:52%">Alasan yang tertulis</th><th>Yang dilakukan</th></tr>
+    <tr><td>Catatan ini tertunda lebih dari 7 hari, atau jam ponsel salah.</td><td>Betulkan jam ponsel, lalu <b>Kirim ulang</b>.</td></tr>
+    <tr><td>Ponsel ini belum dipasangkan.</td><td>Minta pemilik atau manajer memasangkannya, lalu <b>Kirim ulang</b>.</td></tr>
+    <tr><td>Peran Anda tidak boleh melakukan ini.</td><td><b>Hapus</b>, lalu minta admin stok atau manajer yang mencatat.</td></tr>
+    <tr><td>Hitungan ini sudah disetujui manajer.</td><td><b>Hapus</b>. Tidak perlu dikirim lagi.</td></tr>
+  </table>
+  <div class="phones small">
+    <figure><img src="shots/16-belum-terkirim.png" alt="Beranda saat tidak ada sinyal"><figcaption>Tanpa sinyal: disimpan di ponsel dulu</figcaption></figure>
+    <figure><img src="shots/17-perlu-perhatian.png" alt="Layar Perlu perhatian"><figcaption>Perlu perhatian: alasan dan dua pilihan</figcaption></figure>
+  </div>
+  <div class="foot"><span>Panduan Takar Stok</span><span>9</span></div>
+</section>
+
+<section class="page">
+  <h1>9. Selesai bekerja</h1>
+  <p class="lead">Ketuk <span class="ui">Ganti</span> di Beranda, supaya orang berikutnya masuk dengan namanya sendiri.</p>
+  <div class="note warn"><b>Ponsel tidak mengunci sendiri.</b> Jangan tinggalkan ponsel dalam keadaan masuk: apa pun yang dicatat sesudahnya tersimpan atas nama Anda.</div>
+  <h1 style="margin-top:4mm">Jika ada masalah</h1>
+  <table>
+    <tr><th style="width:40%">Yang terjadi</th><th>Yang dilakukan</th></tr>
+    <tr><td>Kamera tidak muncul, ada tombol <b>Izinkan kamera</b></td><td>Ketuk tombol itu dan pilih izinkan. Bila tertulis kamera diblokir, izinkan kamera untuk Takar Stok di pengaturan ponsel.</td></tr>
+    <tr><td>Barcode tidak terbaca</td><td>Dekatkan atau jauhkan sedikit. Ketuk <b>Senter</b> bila gelap. Bisa juga ketik angka di bawah barcode, atau cari nama bahannya.</td></tr>
+    <tr><td>“PIN salah atau akun tidak aktif”</td><td>Ketik ulang dengan teliti. Lupa PIN? Minta manajer menggantinya.</td></tr>
+    <tr><td>“Perlu internet untuk masuk.”</td><td>Cari sinyal dulu. Setelah masuk, menghitung dan menerima barang bisa tanpa sinyal.</td></tr>
+    <tr><td>“Ponsel ini belum dipasangkan”</td><td>Minta pemilik atau manajer memasangkannya (halaman 3).</td></tr>
+    <tr><td>Daftar bahan kosong, atau “Belum ada bahan di ponsel ini”</td><td>Saat ada sinyal, tarik layar Beranda ke bawah untuk memuat daftar bahan dari Takar.</td></tr>
+    <tr><td>Bahan baru belum muncul di daftar</td><td>Bahan ditambahkan di Takar oleh admin stok atau manajer. Setelah itu tarik layar Beranda ke bawah.</td></tr>
+    <tr><td>Salah mengetik, tetapi sudah terkirim</td><td>Hitungan: beri tahu manajer sebelum ia menyetujuinya. Kiriman: minta manajer mengoreksi stoknya di Takar.</td></tr>
+  </table>
+  <h2>Belum ada di versi ini</h2>
+  <ul>
+    <li>Menerima barang berdasarkan PO, dan membayar kiriman dari laci kas. Keduanya tetap dilakukan di Takar lewat laptop.</li>
+    <li>Menyetujui hitungan dari ponsel.</li>
+    <li>Mencatat bahan terbuang dan batch olahan.</li>
+    <li>Kunci layar otomatis.</li>
+  </ul>
+  <div class="foot"><span>Panduan Takar Stok</span><span>10</span></div>
+</section>
+
+</body>
+</html>

@@ -7,6 +7,8 @@ English, with the on-screen labels quoted so you can match them.
 
 For a one-page map of the whole project (purpose, users, PRD coverage, architecture, design, how to run and ship, open items) read [docs/PROJECT.md](docs/PROJECT.md).
 
+Takar Stok, the phone app for counting stock and recording deliveries by scanning barcodes, lives in [`mobile/`](mobile); how to run, pair and build it is in [docs/MOBILE.md](docs/MOBILE.md).
+
 The product requirements are in [docs/superpowers/specs/2026-11-06-takar-prd.md](docs/superpowers/specs/2026-11-06-takar-prd.md);
 the decisions that map them onto this codebase are in
 [docs/superpowers/specs/2026-11-06-takar-design-decisions.md](docs/superpowers/specs/2026-11-06-takar-design-decisions.md).
