@@ -122,25 +122,34 @@ cp .env.example .env
 The Mac has the Android SDK (Homebrew's `android-commandlinetools`) and JDK 17 (`openjdk@17`) since 23 Nov 2026, so no
 account is needed. From `mobile/`:
 
-1. Copy the store's two values from the web app's `.env` into `mobile/.env.local` (git-ignored) as
+1. `npm ci` once (the app has its own lockfile; it is not part of the web app's pnpm install).
+2. Copy the store's two values from the web app's `.env` into `mobile/.env.local` (git-ignored) as
    `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. They are baked into the APK.
-2. `npx expo prebuild -p android --no-install` writes the git-ignored `mobile/android/`. It also rewrites the
+3. Raise `version` and `android.versionCode` in `app.json` for every build you hand out.
+4. `npx expo prebuild -p android --no-install` writes the git-ignored `mobile/android/`. It also rewrites the
    `android` and `ios` scripts in `package.json`; put them back with `git checkout mobile/package.json`.
-3. Build:
+5. Build, signed with the store's private key (Gradle's `android.injected.signing.*` properties, the same ones
+   Android Studio uses, so the generated `android/` is never edited):
 
 ```bash
 cd android
+K=~/Documents/takar-android/keystore-stok.properties; PW="$(sed -n 's/^storePassword=//p' $K)"
 JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
 ANDROID_HOME=/opt/homebrew/share/android-commandlinetools \
-./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a \
+  -Pandroid.injected.signing.store.file="$(sed -n 's/^storeFile=//p' $K)" \
+  -Pandroid.injected.signing.store.password="$PW" \
+  -Pandroid.injected.signing.key.alias=takar-stok -Pandroid.injected.signing.key.password="$PW"
 ```
 
 The APK is `mobile/android/app/build/outputs/apk/release/app-release.apk` (about 47 MB). The first build takes about
 12 minutes and fills about 9 GB of Gradle and SDK caches.
 
-It is signed with React Native's public debug key. That is fine for trying it on the store's phones. Before real use,
-build with a private key (Expo's servers below make one), and sync every phone first: an app signed with a different
-key installs only after uninstalling this one, which deletes counts and deliveries not yet sent.
+**The key.** `~/Documents/takar-android/takar-stok-release.jks`, with its passwords in `keystore-stok.properties` next
+to it (the POS key lives in the same folder). Neither is in the repository. Back the folder up: every update must be
+signed with the same key, so a lost key means uninstalling the app on every phone (which deletes counts and
+deliveries not yet sent) before a newly keyed one installs. Without the four `-P` lines the build is signed with React
+Native's public debug key: fine on the emulator, never for staff phones.
 
 ### On Expo's servers
 
