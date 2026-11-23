@@ -1,12 +1,12 @@
 // The few building blocks every screen uses. Sizes are for a thumb in a storeroom: 52-point buttons, 16-point text.
 import { useRef, type ReactNode } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
   type StyleProp, type TextInputProps, type TextProps, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../state';
-import { color, font, radius, space } from './theme';
+import { color, font, layout, radius, space } from './theme';
 
 type Tone = 'title' | 'heading' | 'body' | 'strong' | 'small' | 'label';
 export function T({ tone = 'body', style, ...rest }: TextProps & { tone?: Tone }) {
@@ -82,19 +82,26 @@ export function Row({ title, note, right, onPress, tone }: { title: string; note
   ) : body;
 }
 
-// A panel that slides up from the bottom, above the keyboard.
-export function Sheet({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title: string; children: ReactNode }) {
+// A panel that slides up from the bottom, above the keyboard. Android draws edge to edge, so its window no longer
+// shrinks for the keyboard: "padding" lifts the sheet on both platforms. A body taller than the room left (a small
+// phone with the keyboard open) scrolls instead of pushing the title off the top; `scroll={false}` leaves that to a
+// list inside, so a search field above it stays in view.
+export function Sheet({ visible, onClose, title, children, scroll = true }: { visible: boolean; onClose: () => void; title: string; children: ReactNode; scroll?: boolean }) {
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.sheetWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.sheetWrap} behavior="padding">
         <Pressable style={styles.sheetShade} onPress={onClose} accessibilityLabel="Tutup" />
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, space.l) }]}>
           <View style={styles.sheetHead}>
             <Text style={[styles.heading, styles.grow]}>{title}</Text>
             <Button label="Tutup" kind="ghost" small onPress={onClose} />
           </View>
-          {children}
+          {scroll ? (
+            <ScrollView style={styles.sheetBody} contentContainerStyle={styles.sheetBodyContent} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+          ) : (
+            <View style={[styles.sheetBody, styles.sheetBodyContent]}>{children}</View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -146,7 +153,8 @@ export function Screen({ title, note, onBack, backLabel = 'Kembali', right, chil
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <KeyboardAvoidingView style={[styles.screen, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    // "padding" on Android too: edge to edge, nothing else keeps the footer (Simpan, Kirim) above the keyboard.
+    <KeyboardAvoidingView style={[styles.screen, { paddingTop: insets.top }]} behavior="padding">
       {title || onBack ? (
         <View style={styles.header}>
           {onBack ? (
@@ -213,7 +221,9 @@ export const styles = StyleSheet.create({
   chipOn: { backgroundColor: color.limeSubtle, borderColor: color.ink },
   sheetWrap: { flex: 1, justifyContent: 'flex-end' },
   sheetShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(27,29,33,0.45)' },
-  sheet: { backgroundColor: color.canvas, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: space.l, paddingTop: space.l, gap: space.m, maxHeight: '88%', width: '100%', maxWidth: 480, alignSelf: 'center' },
+  sheet: { backgroundColor: color.canvas, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: space.l, paddingTop: space.l, gap: space.m, maxHeight: '88%', width: '100%', maxWidth: layout.maxWidth, alignSelf: 'center' },
+  sheetBody: { flexShrink: 1, minHeight: 0 },
+  sheetBodyContent: { gap: space.m },
   sheetHead: { flexDirection: 'row', alignItems: 'center', gap: space.m },
   toast: { marginHorizontal: space.l, marginBottom: space.s, backgroundColor: color.ink, borderRadius: radius.m, borderWidth: 1, borderColor: color.ink, paddingHorizontal: space.l, paddingVertical: space.m, gap: 2 },
 });

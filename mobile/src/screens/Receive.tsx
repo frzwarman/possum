@@ -7,7 +7,7 @@ import { BackHandler, Image, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { quantity, rupiah, search } from '../../../src/domain/calculate';
 import { can } from '../../../src/domain/permissions';
-import { lookup, normalizeCode } from '../../../src/stok/barcode';
+import { lookup, normalizeCode, unitOf } from '../../../src/stok/barcode';
 import { flag, lineCost, lineQty, suggestedPrice, units } from '../../../src/stok/delivery';
 import type { DeliveryLine, PhoneStock } from '../../../src/stok/types';
 import { shrinkNote } from '../platform/photo';
@@ -75,7 +75,7 @@ export function Receive({ back }: { back: () => void }) {
   };
   const onCode = (code: string) => {
     const hit = lookup(code, app.links, app.stock);
-    if (hit) arrive(hit.item, hit.pack?.name);
+    if (hit) arrive(hit.item, unitOf(hit));
     else setUnknown(code);
   };
   const submitQuery = () => {
@@ -224,7 +224,8 @@ export function Receive({ back }: { back: () => void }) {
         code={unknown} onClose={() => setUnknown(undefined)}
         onPick={(picked, pack) => {
           setUnknown(undefined);
-          arrive(picked, pack || undefined);
+          // A code just taught as "satuan" stands for the base unit, as unitOf says for a scan.
+          arrive(picked, pack || picked.unit);
         }}
       />
     </Screen>

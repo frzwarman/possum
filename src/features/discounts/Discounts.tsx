@@ -24,7 +24,6 @@ export default function Discounts() {
   const list = settings?.discounts ?? [];
   const [show, setShow] = useState<"all" | "active" | "ended">("all");
   const [query, setQuery] = useState("");
-  const [menuFor, setMenuFor] = useState<string>();
   const [removing, setRemoving] = useState<Discount>();
   const [editing, setEditing] = useState<{ d: Discount; fresh: boolean }>();
   if (!can(user.role, "settings")) return <section className="page-content"><h1>Diskon</h1><p className="muted">Hanya pemilik dan manajer yang mengatur diskon tersimpan.</p></section>;
@@ -54,7 +53,7 @@ export default function Discounts() {
             <table className="data-table plain-table discounts-table">
               <thead><tr><th>Nama</th><th>Jumlah</th><th>Berlaku untuk</th><th>Aturan</th><th>Masa berlaku</th><th>Status</th><th className="num">Dipakai</th><th aria-label="Aksi" /></tr></thead>
               <tbody>
-                {shown.map((d) => {
+                {shown.map((d, i) => {
                   const st = stateOf(d, today);
                   return (
                     <tr key={d.id}>
@@ -66,18 +65,16 @@ export default function Discounts() {
                       <td><span className={`dot-chip ${stateLabel[st][1]}`}>{stateLabel[st][0]}</span></td>
                       <td className="num">{used(d)}</td>
                       <td className="row-menu-cell">
-                        <button type="button" className="row-menu-button" aria-label={`Aksi ${d.name}`} aria-expanded={menuFor === d.id} onClick={() => setMenuFor(menuFor === d.id ? undefined : d.id)}><Ellipsis size={18} /></button>
-                        {menuFor === d.id && (
-                          <div className="row-menu" onKeyDown={(e) => e.key === "Escape" && setMenuFor(undefined)}>
-                            <button type="button" onClick={() => { setMenuFor(undefined); setEditing({ fresh: false, d: { ...d } }); }}>Ubah</button>
+                        <button type="button" className="row-menu-button" aria-label={`Aksi ${d.name}`} popoverTarget={`row-menu-${i}`}><Ellipsis size={18} /></button>
+                        <div id={`row-menu-${i}`} popover="auto" className="row-menu" onClick={(e) => { if ((e.target as HTMLElement).closest("button") && e.currentTarget.matches(":popover-open")) e.currentTarget.hidePopover(); }}>
+                            <button type="button" onClick={() => { setEditing({ fresh: false, d: { ...d } }); }}>Ubah</button>
                             {st === "ended" ? (
-                              <button type="button" onClick={() => { setMenuFor(undefined); setEditing({ fresh: false, d: { ...d, ended: false, from: today, to: addDays(today, Math.max(0, (Date.parse(d.to) - Date.parse(d.from)) / 86400000)) } }); }}>Jalankan lagi</button>
+                              <button type="button" onClick={() => { setEditing({ fresh: false, d: { ...d, ended: false, from: today, to: addDays(today, Math.max(0, (Date.parse(d.to) - Date.parse(d.from)) / 86400000)) } }); }}>Jalankan lagi</button>
                             ) : (
-                              <button type="button" onClick={() => { setMenuFor(undefined); void save(list.map((x) => (x.id === d.id ? { ...x, ended: true } : x)), `${d.name} diakhiri. Hilang dari daftar kasir.`); }}>Akhiri sekarang</button>
+                              <button type="button" onClick={() => { void save(list.map((x) => (x.id === d.id ? { ...x, ended: true } : x)), `${d.name} diakhiri. Hilang dari daftar kasir.`); }}>Akhiri sekarang</button>
                             )}
-                            <button type="button" className="danger" onClick={() => { setMenuFor(undefined); setRemoving(d); }}><Trash2 size={15} /> Hapus</button>
+                            <button type="button" className="danger" onClick={() => { setRemoving(d); }}><Trash2 size={15} /> Hapus</button>
                           </div>
-                        )}
                       </td>
                     </tr>
                   );

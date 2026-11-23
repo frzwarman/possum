@@ -339,7 +339,11 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       if (new Set(rows.map((r) => r.name.toLowerCase())).size !== rows.length)
         errs.push("Nama duplikat dalam impor");
       const taken = rows.filter((r) => (type === "menu" ? menu : stockItems).some((m) => m.name.toLowerCase() === r.name.toLowerCase())).map((r) => r.name);
-      if (taken.length) errs.push(`Nama sudah ada: ${taken.join(", ")}. Edit menu/bahan yang ada; impor hanya menambah.`);
+      // A COGS tab picked again brings recipes for menus already made from it: those menus get the recipe and nothing
+      // else changes. Any other file only adds, so a name already taken stops it.
+      if (taken.length && found?.kind === "menu")
+        setSheet((s) => s && { ...s, note: `${s.note} ${taken.length} menu sudah ada: resepnya diganti dari COGS; nama, harga dan lainnya tetap.` });
+      else if (taken.length) errs.push(`Nama sudah ada: ${taken.join(", ")}. Edit menu/bahan yang ada; impor hanya menambah.`);
       setPreview(rows);
       setImportErrors(errs);
     } catch (e) {
@@ -353,7 +357,9 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       if (importErrors.length || !preview.length)
         throw new Error("Perbaiki CSV dahulu");
       if (importType === "menu") {
-        const added = preview.map((r, i) => {
+        const existing = new Map(menu.map((m) => [m.name.toLowerCase(), m]));
+        const updated = new Map<string, MenuItem>();
+        const added = preview.flatMap((r, i) => {
           const parsed = menuImportSchema.parse(r);
           // Two sheet lines that land on one bahan (Milk and Steam Milk → Fresh Milk) add up to one recipe line.
           const recipe = new Map<string, number>();
@@ -361,7 +367,15 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             const s = linked(l.name);
             if (s) recipe.set(s.id, (recipe.get(s.id) ?? 0) + Math.round(l.qty * 1000));
           }
-          return {
+          const lines = [...recipe].filter(([, qty]) => qty > 0).map(([stockId, qty]) => ({ stockId, qty }));
+          // Only a COGS file gets this far with a taken name: the menu keeps everything but takes the new recipe, as a
+          // new version. With no line linked it is left as it is rather than emptied.
+          const old = existing.get(r.name.toLowerCase());
+          if (old) {
+            if (lines.length) updated.set(old.id, { ...old, recipe: lines, version: old.version + 1 });
+            return [];
+          }
+          return [{
             id: uid(),
             name: r.name,
             category: typeLabel[parsed.type],
@@ -377,15 +391,15 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             favorite: false,
             version: 1,
             modifiers: [],
-            recipe: [...recipe].filter(([, qty]) => qty > 0).map(([stockId, qty]) => ({ stockId, qty })),
-          };
+            recipe: lines,
+          }];
         });
         // Each name linked in the preview becomes that bahan's "nama lain", so the next COGS file finds it by itself.
         const stock = stockItems.map((s) => {
           const more = Object.entries(links).filter(([n, v]) => n.length <= 50 && bahan.get(key(v))?.id === s.id).map(([n]) => n);
           return more.length ? { ...s, aliases: [...new Set([...(s.aliases ?? []), ...more])].slice(0, 20) } : s;
         });
-        await commands.publish([...menu, ...added], stock, approval);
+        await commands.publish([...menu.map((m) => updated.get(m.id) ?? m), ...added], stock, approval);
       } else {
         // "0" and "10,5" are amounts the file may hold; convert() takes only a positive one.
         const positive = (v: string) => Number(v.replace(",", ".")) > 0;

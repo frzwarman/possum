@@ -22,7 +22,7 @@ export function ItemPicker({ code, onPick, onClose }: { code?: string; onPick: (
   }, [code]);
   const found = search(app.stock, query).slice(0, 40);
   return (
-    <Sheet visible={Boolean(code)} onClose={onClose} title={`Kode ${code ?? ''} belum dikenal`}>
+    <Sheet visible={Boolean(code)} onClose={onClose} title={`Kode ${code ?? ''} belum dikenal`} scroll={false}>
       {item ? (
         <>
           <Row title={item.name} note={item.area} right={<Button label="Ganti" kind="ghost" small onPress={() => setItem(undefined)} />} />
@@ -45,7 +45,8 @@ export function ItemPicker({ code, onPick, onClose }: { code?: string; onPick: (
       ) : (
         <>
           <Field label="Cari bahan" value={query} onChangeText={setQuery} autoFocus placeholder="Nama bahan" autoCorrect={false} />
-          <ScrollView style={{ maxHeight: 300 }} keyboardShouldPersistTaps="handled">
+          {/* The list shrinks to the room left above the keyboard; the search field above it stays in view. */}
+          <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
             <View style={{ gap: space.s }}>
               {found.map((s) => (
                 <Row key={s.id} title={s.name} note={s.area} onPress={() => setItem(s)} />

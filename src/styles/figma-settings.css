@@ -247,8 +247,14 @@ a.team-row:hover{background:var(--bg-muted)}
 .discounts-table td small{display:block;font-size:12px;color:var(--text-secondary)}
 .row-menu-cell{position:relative;width:44px}
 .row-menu-button{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:8px;background:transparent;color:var(--text-secondary);cursor:pointer}
-.row-menu-button[aria-expanded=true]{background:var(--bg-subtle);color:var(--ink)}
-.row-menu{position:absolute;right:6px;top:calc(100% - 4px);z-index:30;display:grid;min-width:170px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 30px #1b1d2124}
+.row-menu-button:has(+ .row-menu:popover-open){background:var(--bg-subtle);color:var(--ink)}
+/* The row menu is a popover in the top layer: the table's scroll box (overflow-x, which clips vertically too) can no
+   longer cut it off. Each row scopes the anchor name, so a menu sits under its own ⋯ and flips above near the bottom. */
+.discounts-table tbody tr{anchor-scope:--row-menu}
+.row-menu-button{anchor-name:--row-menu}
+.row-menu{position:fixed;inset:auto;margin:4px 0;position-anchor:--row-menu;position-area:bottom span-left;position-try-fallbacks:flip-block;min-width:170px;padding:6px;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 30px #1b1d2124}
+.row-menu:popover-open{display:grid}
+@supports not (anchor-name:--a){.row-menu{inset:0;margin:auto;height:fit-content}}
 .row-menu button{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .row-menu button:hover{background:var(--bg-subtle)}
 .row-menu button.danger{color:#B42318}

@@ -100,11 +100,19 @@ test("the owner's market list becomes bahan and a COGS tab becomes menus with re
   await expect(page.getByRole('region', { name: 'Edit menu' }).locator('tr').filter({ hasText: 'Fresh Milk Diary 1L' })).toContainText('132,5 ml')
   await page.getByRole('region', { name: 'Edit menu' }).getByRole('button', { name: 'Buang perubahan' }).click()
 
-  // The links were saved as nama lain: picking the file again leaves only the name that was skipped.
+  // The links were saved as nama lain: picking the file again leaves only the name that was skipped. The menus made
+  // from it last time are not refused: they take the file's recipe, which now links gula aren too.
   await page.getByRole('button', { name: 'Impor CSV' }).click()
   await file.setInputFiles('docs/samples/sheet-import/cogs-beverage.csv')
   await expect(page.getByText('1 nama bahan di resep belum ada di Stok')).toBeVisible()
-  await expect(page.getByText(/Nama sudah ada: Americano, Vegan Latte/)).toBeVisible()
+  await expect(page.getByText(/Nama sudah ada/)).toHaveCount(0)
+  await expect(page.getByText(/4 menu sudah ada: resepnya diganti dari COGS/)).toBeVisible()
+  await link('gula aren').fill('Palm Sugar')
+  await page.getByRole('button', { name: 'Konfirmasi impor 4 baris' }).click()
+  await expect(page.getByText(/Impor tersimpan/)).toBeVisible()
+  await page.getByRole('button', { name: 'Menu & resep' }).click()
+  await row('Vegan Latte').getByRole('button', { name: 'Edit' }).click()
+  await expect(page.getByRole('region', { name: 'Edit menu' }).locator('tr').filter({ hasText: 'Palm Sugar' })).toContainText('15 g')
 })
 
 test('a CSV dropped on the import field is read like a picked one; another kind of file is turned away', async ({ page }) => {

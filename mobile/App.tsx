@@ -13,7 +13,7 @@ import { Pair } from './src/screens/Pair';
 import { Receive } from './src/screens/Receive';
 import { SignIn } from './src/screens/SignIn';
 import { AppProvider, useApp } from './src/state';
-import { color } from './src/ui/theme';
+import { color, layout } from './src/ui/theme';
 
 // Six screens, switched by state: who is signed in decides the first three, a route the rest. No router.
 function Root() {
@@ -52,12 +52,12 @@ function Root() {
 export default function App() {
   const [fonts] = useFonts({ PlusJakartaSans_500Medium, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold });
   if (!fonts) return <View style={{ flex: 1, backgroundColor: color.canvas }} />;
-  // A phone fills its screen. In a browser (the demo, or a check on a laptop) the app keeps a phone's width.
+  // A phone fills its screen, a tablet gets a wide centred column, a browser (the demo) keeps a phone's width.
   return (
     <SafeAreaProvider>
       <AppProvider>
         <View style={{ flex: 1, backgroundColor: color.canvas, alignItems: 'center' }}>
-          <View style={{ flex: 1, width: '100%', maxWidth: 480 }}>
+          <View style={{ flex: 1, width: '100%', maxWidth: layout.maxWidth }}>
             <Root />
           </View>
         </View>

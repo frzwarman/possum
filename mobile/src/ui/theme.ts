@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 // Takar's own tokens (src/styles.css in the web app), so the phone looks like the tablet and the laptop.
 export const color = {
   ink: '#1B1D21', onInk: '#FFFFFF', lime: '#D3F26A', limeSubtle: '#F2FBD3',
@@ -9,3 +11,6 @@ export const color = {
 export const font = { medium: 'PlusJakartaSans_500Medium', semibold: 'PlusJakartaSans_600SemiBold', bold: 'PlusJakartaSans_700Bold' };
 export const space = { xs: 4, s: 8, m: 12, l: 16, xl: 24 };
 export const radius = { s: 10, m: 14, pill: 999 };
+// How wide the content may grow: a phone fills its screen, a tablet gets a wide centred column (Android 16 also shows
+// the app in landscape there, whatever the portrait setting), and the web demo on a laptop keeps a phone's width.
+export const layout = { maxWidth: Platform.OS === 'web' ? 480 : 720 };

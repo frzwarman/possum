@@ -24,6 +24,10 @@ export function admit(gate: ScanGate, code: string, now: number, quiet = 1500): 
 // so the bahan just saved is not opened again the moment the list returns.
 export const rearm = (gate: ScanGate, now: number): ScanGate => ({ ...gate, seenAt: now })
 
+// The unit a scanned code stands for: the pack it is printed on, or the bahan's base unit when it was taught as
+// "satuan" (or its pack is gone). Never the bahan's first pack: a bottle's code must not open a delivery in dus.
+export const unitOf = (hit: { item: PhoneStock; pack?: Pack }): string => hit.pack?.name ?? hit.item.unit
+
 // The bahan a code belongs to and, when the code is printed on a pack that still exists, that pack.
 // A pack renamed or removed in Takar leaves the code pointing at the bahan in its base unit.
 export function lookup(code: string, links: Record<string, BarcodeLink>, stock: PhoneStock[]): { item: PhoneStock; pack?: Pack } | undefined {

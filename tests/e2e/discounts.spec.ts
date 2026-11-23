@@ -48,7 +48,11 @@ test('a saved discount is made under Diskon and goes on at the till in one tap, 
   // As on the manager's laptop: a till with its shift open shows no back office in its menu.
   await page.goto('/discounts')
   await page.getByRole('button', { name: 'Aksi Hari Guru' }).click()
-  await page.getByRole('button', { name: 'Hapus' }).click()
+  // The row menu opens above the table's scroll box (a popover), so its last item is on screen and on top, not clipped.
+  const remove = page.getByRole('button', { name: 'Hapus' })
+  await expect(remove).toBeInViewport()
+  expect(await remove.evaluate((el) => { const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)) })).toBe(true)
+  await remove.click()
   await page.getByRole('dialog', { name: /Hapus Hari Guru/ }).getByRole('button', { name: 'Hapus' }).click()
   await expect(page.getByText('Hari Guru dihapus')).toBeVisible()
   await page.goto('/pos')

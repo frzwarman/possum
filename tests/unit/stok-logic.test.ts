@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { START, admit, lookup, normalizeCode, rearm } from '../../src/stok/barcode'
+import { START, admit, lookup, normalizeCode, rearm, unitOf } from '../../src/stok/barcode'
 import { ALL_AREAS, areas, countJob, setCounted, startCount } from '../../src/stok/count'
 import { deliveryJobs, flag, lineCost, lineQty, suggestedPrice, units } from '../../src/stok/delivery'
 import type { Delivery, PhoneStock } from '../../src/stok/types'
@@ -25,6 +25,11 @@ describe('barcode', () => {
     expect(lookup('1', { '1': { stockId: 'milk', pack: 'karton' } }, stock)).toEqual({ item: milk, pack: milk.packs![0] })
     expect(lookup('1', { '1': { stockId: 'milk', pack: 'dus' } }, stock)).toEqual({ item: milk, pack: undefined })
     expect(lookup('1', { '1': { stockId: 'gone', pack: '' } }, stock)).toBeUndefined()
+  })
+  it('opens a scanned code in the unit it stands for: its pack, else the base unit, never the first pack', () => {
+    expect(unitOf(lookup('1', { '1': { stockId: 'milk', pack: 'karton' } }, stock)!)).toBe('karton')
+    expect(unitOf(lookup('1', { '1': { stockId: 'milk', pack: '' } }, stock)!)).toBe('ml')
+    expect(unitOf(lookup('1', { '1': { stockId: 'milk', pack: 'dus' } }, stock)!)).toBe('ml')
   })
   it('reports a code once while the camera keeps seeing it, and again only after it has left the frame', () => {
     // The camera reports the same code many times a second.

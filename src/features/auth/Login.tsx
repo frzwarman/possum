@@ -92,7 +92,7 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
    {error&&<p role="alert" className="error">{error}</p>}
    <div className="separator"><span>Ingin mencoba terlebih dahulu?</span></div>
    {demoBox}
-   <p className="small muted">Akun dan PIN disediakan pemilik atau manajer. Lupa PIN? Minta diganti.</p>
+   <p className="small muted">Akun dan PIN dibuat oleh pemilik. Lupa PIN? Minta pemilik menggantinya.</p>
   </section>
  </main>
 }
