@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { configured } from '../../lib/supabase'
 import type { Role } from '../../domain/types'
 import { access,roleTitle } from '../../domain/permissions'
+import { signInError } from '../../lib/signin'
 // Klien sendiri, sesinya hanya di memori: /admin tidak pernah melihat, memakai, mengakhiri, atau mengganti sesi kasir atau
 // laptop tempat ia dibuka (layar terkunci tidak bisa dilewati lewat sini), jadi selalu meminta sandi pemilik atau manajer.
 const admin=configured?createClient(import.meta.env.VITE_SUPABASE_URL,import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:'takar-admin'}}):null
@@ -24,14 +25,16 @@ export default function Admin(){
   const rows=data as Staff[],mine=rows.find(r=>r.user_id===session.user.id)
   if(!mine||!mine.active||!['owner','manager'].includes(mine.role)){await admin!.auth.signOut({scope:'local'});setMe(null);throw new Error('Area ini hanya untuk pemilik dan manajer. Staf masuk lewat halaman kasir.')}
   setMe(mine);setStaff(rows)}
- async function run(action:()=>Promise<void>,message?:string){if(busy)return;setBusy(true);setError('');setNotice('');try{await action();if(message)setNotice(message)}catch(e){setError(e instanceof Error?e.message:'Tindakan gagal')}finally{setBusy(false)}}
+ // AUTH-14: a PostgREST error is not an Error; the server's reasons are shown in Indonesian.
+ const said=(e:unknown)=>{const m=e instanceof Error?e.message:(e as {message?:string})?.message;return m==='Owner required'?'Hanya pemilik yang bisa mengubah akun pemilik':m||'Tindakan gagal'}
+ async function run(action:()=>Promise<void>,message?:string){if(busy)return;setBusy(true);setError('');setNotice('');try{await action();if(message)setNotice(message)}catch(e){setError(said(e))}finally{setBusy(false)}}
  // busy mulai true: daftar staf tampil sebagai skeleton sampai pembacaan pertama selesai.
- useEffect(()=>{if(!configured){setBusy(false);setError('Koneksi restoran belum diatur. Isi VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY.');return}void load().catch(e=>setError(e instanceof Error?e.message:'Gagal memuat')).finally(()=>setBusy(false))},[])
- function signIn(e:FormEvent<HTMLFormElement>){e.preventDefault();const form=new FormData(e.currentTarget);void run(async()=>{const {error:e2}=await admin!.auth.signInWithPassword({email:String(form.get('email')),password:String(form.get('password'))});if(e2)throw e2;await load()})}
+ useEffect(()=>{if(!configured){setBusy(false);setError('Koneksi restoran belum diatur. Isi VITE_SUPABASE_URL dan VITE_SUPABASE_PUBLISHABLE_KEY.');return}void load().catch(e=>setError(said(e))).finally(()=>setBusy(false))},[])
+ function signIn(e:FormEvent<HTMLFormElement>){e.preventDefault();const form=new FormData(e.currentTarget);void run(async()=>{const {error:e2}=await admin!.auth.signInWithPassword({email:String(form.get('email')),password:String(form.get('password'))});if(e2)throw signInError(e2,'Email atau kata sandi salah, atau akun tidak aktif');await load()})}
  const change=(s:Staff,patch:Partial<Staff>)=>{setPending(s.user_id);void run(async()=>{const {error:e}=await admin!.rpc('manage_staff',{target:s.user_id,new_role:patch.role??s.role,new_active:patch.active??s.active});if(e)throw e;await load()},'Akun staf diperbarui').finally(()=>setPending(''))}
  if(!me)return <main className="login-page"><div className="login-brand"><span className="brand-mark"><ShieldCheck size={28}/></span><span>admin<span className="brand-dot">.</span></span></div>
   <section className="login-card"><span className="eyebrow">Area pemilik restoran</span><h1>Kelola akun,<br/>bukan kasir.</h1><p className="muted">Masuk dengan akun pemilik untuk mengatur peran dan izin masuk staf. Halaman ini tidak membuka kasir, sif, atau data penjualan.</p>
-  <form onSubmit={signIn}><label>Email pemilik<input name="email" type="email" required autoComplete="username"/></label><label>Kata sandi<input name="password" type="password" required minLength={8} autoComplete="current-password"/></label><Button className="full" loading={busy} disabled={!configured}>Masuk sebagai pemilik <ArrowRight size={18}/></Button></form>
+  <form onSubmit={signIn}><label>Email pemilik<input name="email" type="email" required autoComplete="username"/></label><label>Kata sandi{/* SEC-7: the password may be the 6-digit PIN the till accepts (GoTrue's minimum); the server decides. */}<input name="password" type="password" required minLength={6} autoComplete="current-password"/></label><Button className="full" loading={busy} disabled={!configured}>Masuk sebagai pemilik <ArrowRight size={18}/></Button></form>
   {error&&<p role="alert" className="error">{error}</p>}
   <div className="separator"><span>Bukan pemilik?</span></div><a href="/"><Button variant="secondary" className="full">Ke halaman kasir <ArrowRight size={18}/></Button></a>
   <p className="small muted"><ShieldCheck size={15}/> Akun staf ditolak di sini. Peran dan izin diperiksa ulang oleh server pada setiap perubahan.</p></section>
@@ -48,8 +51,9 @@ export default function Admin(){
    <span className="staff-avatar" aria-hidden>{s.name.split(/\s+/).slice(0,2).map(w=>w[0]??'').join('').toUpperCase()}</span>
    <div><div className="staff-name">{s.name}{s.user_id===me.user_id&&<span className="chip">Anda</span>}</div>
     <div className="staff-meta"><span className={`status-dot ${s.active?'':'offline'}`}/>{s.active?'Aktif':'Nonaktif'}{s.user_id===me.user_id?' · peran dan akses sendiri diubah lewat terminal':s.active?'':' · ditolak server saat masuk'}</div></div>
-   <div className="staff-controls"><Select ariaLabel={`Peran ${s.name}`} disabled={busy||s.user_id===me.user_id} value={s.role} onChange={v=>change(s,{role:v as Role})} options={(Object.keys(roleTitle) as Role[]).map(r=>({value:r,label:roleTitle[r]}))}/>
-   {s.user_id===me.user_id?<span className="chip">Dikunci</span>:<Button variant={s.active?'destructive':'secondary'} loading={pending===s.user_id} disabled={busy} onClick={()=>change(s,{active:!s.active})}>{s.active?'Nonaktifkan':'Aktifkan'}</Button>}</div></div>)}</article>
+   {/* AUTH-14: manage_staff lets a manager change everyone but the owner, and never into an owner: offer only that. */}
+   <div className="staff-controls"><Select ariaLabel={`Peran ${s.name}`} disabled={busy||s.user_id===me.user_id||(me.role!=='owner'&&s.role==='owner')} value={s.role} onChange={v=>change(s,{role:v as Role})} options={(Object.keys(roleTitle) as Role[]).filter(r=>me.role==='owner'||r!=='owner'||r===s.role).map(r=>({value:r,label:roleTitle[r]}))}/>
+   {s.user_id===me.user_id?<span className="chip">Dikunci</span>:me.role!=='owner'&&s.role==='owner'?<span className="chip">Hanya pemilik</span>:<Button variant={s.active?'destructive':'secondary'} loading={pending===s.user_id} disabled={busy} onClick={()=>change(s,{active:!s.active})}>{s.active?'Nonaktifkan':'Aktifkan'}</Button>}</div></div>)}</article>
   <article className="panel"><div className="panel-heading"><h2>Hak akses per peran</h2><span className="badge">Diperiksa server</span></div>
    <div className="table-scroll"><table className="data-table"><thead><tr><th>Tindakan</th>{(Object.keys(roleTitle) as Role[]).map(r=><th key={r}>{roleTitle[r]}</th>)}</tr></thead>
    <tbody>{access.map(([what,...grants])=><tr key={what}><td>{what}</td>{grants.map((g,i)=><td key={i}>{g}</td>)}</tr>)}</tbody></table></div>

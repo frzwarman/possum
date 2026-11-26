@@ -7,7 +7,7 @@
 .menu-area .search-box input{font-size:16px}
 .menu-area .search-box input::placeholder{color:var(--text-secondary)}
 .menu-area .category-tabs{margin:16px 0 14px;gap:8px}
-.menu-area .category-tabs>button{min-height:40px;padding:0 16px;gap:8px;border:0;font-size:15px;font-weight:500;color:var(--text);background:var(--surface)}
+.menu-area .category-tabs>button{min-height:44px;padding:0 16px;gap:8px;border:0;font-size:15px;font-weight:500;color:var(--text);background:var(--surface)}
 .menu-area .category-tabs>button span{padding:0;font-size:12px;font-weight:400;color:var(--text-secondary);background:none}
 .menu-area .category-tabs>button.active{background:var(--ink);color:var(--on-ink)}
 .menu-area .category-tabs>button.active span{color:var(--text-disabled)}
@@ -34,7 +34,7 @@
 .cart-heading .small{display:block;font-size:12px;line-height:16px}
 .cart-more>.cart-glyph{margin-right:-8px;color:var(--ink)}
 .mode-switch.segmented{padding:4px;gap:4px;border-radius:12px;background:var(--bg-subtle)}
-.mode-switch.segmented>button{min-height:42px;padding:0 6px;border-radius:10px;font-size:13px;font-weight:500;color:var(--text-secondary)}
+.mode-switch.segmented>button{min-height:44px;padding:0 6px;border-radius:10px;font-size:13px;font-weight:500;color:var(--text-secondary)}
 .mode-switch.segmented>button.active{background:var(--surface);color:var(--text);font-size:15px;font-weight:500;box-shadow:0 1px 3px color-mix(in srgb,var(--ink) 8%,transparent)}
 .order-who{grid-template-columns:104px minmax(0,1fr);gap:12px}
 .order-who .table-label{margin:16px 0 0;gap:4px;font-size:12px;line-height:16px;font-weight:400;color:var(--text-secondary)}
@@ -47,11 +47,11 @@
 :is(.desktop-cart,.mobile-cart) .line-heading strong{max-width:none;font-size:14px;line-height:20px;font-weight:500}
 :is(.desktop-cart,.mobile-cart) .line-heading>span{font-size:16px;line-height:24px;font-weight:700;color:var(--text)}
 :is(.desktop-cart,.mobile-cart) .line-options{max-width:72%;margin-top:0;font-size:12px;line-height:16px;color:var(--text-secondary)}
-:is(.desktop-cart,.mobile-cart) .line-bottom{min-height:40px;margin-top:0;gap:10px}
+:is(.desktop-cart,.mobile-cart) .line-bottom{min-height:44px;margin-top:0;gap:10px}
 :is(.desktop-cart,.mobile-cart) .line-bottom .badge{padding:3px 9px 3px 8px;gap:5px;line-height:18px}
 /* The stepper draws 24px circles (- outline, + black) inside 40px hit areas. */
-:is(.desktop-cart,.mobile-cart) .quantity-control{height:40px;gap:4px;margin-right:-8px;font-size:16px;font-weight:500}
-:is(.desktop-cart,.mobile-cart) .quantity-control>button{position:relative;width:40px;height:40px;min-width:0;padding:0;border:0;border-radius:50%;background:none;color:var(--text)}
+:is(.desktop-cart,.mobile-cart) .quantity-control{height:44px;gap:4px;margin-right:-10px;font-size:16px;font-weight:500}
+:is(.desktop-cart,.mobile-cart) .quantity-control>button{position:relative;width:44px;height:44px;min-width:0;padding:0;border:0;border-radius:50%;background:none;color:var(--text)}
 :is(.desktop-cart,.mobile-cart) .quantity-control>button::before{content:'';position:absolute;inset:8px;border-radius:50%;border:1px solid var(--border-strong);background:var(--surface)}
 :is(.desktop-cart,.mobile-cart) .quantity-control>button:last-child{color:var(--on-ink)}
 :is(.desktop-cart,.mobile-cart) .quantity-control>button:last-child::before{border-color:var(--ink);background:var(--ink)}
@@ -85,7 +85,7 @@
 .person-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
 /* 32px pills as drawn; the ::after stretches each tap target to 40px. */
 .person-pills>button{position:relative;min-height:32px;padding:0 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);font-size:13px;font-weight:500}
-.person-pills>button::after{content:'';position:absolute;inset:-4px 0}
+.person-pills>button::after{content:'';position:absolute;inset:-6px 0}
 .person-pills>button.on{border-color:var(--ink);background:var(--ink);color:var(--on-ink)}
 .compliment-panel .comp-who{margin-top:8px;min-height:44px;font-size:15px}
 
@@ -141,7 +141,7 @@
 .item-dialog .note-field{margin:16px 0 0}
 .item-dialog .option-footer{flex:0 0 auto;gap:10px;padding-top:16px}
 .item-dialog .qty-stepper{gap:4px;margin-left:-8px}
-.item-dialog .qty-stepper>button{position:relative;width:40px;height:40px;border:0;background:none;color:var(--ink)}
+.item-dialog .qty-stepper>button{position:relative;width:44px;height:44px;border:0;background:none;color:var(--ink)}
 .item-dialog .qty-stepper>button::before{content:'';position:absolute;inset:8px;border-radius:50%;border:1px solid var(--border-strong);background:var(--surface)}
 .item-dialog .qty-stepper>button.plus{color:var(--on-ink)}
 .item-dialog .qty-stepper>button.plus::before{border-color:var(--ink);background:var(--ink)}
@@ -166,7 +166,7 @@
 }
 /* Discounts at the till (Figma Cashier 2): an entry point beside the order menu, and the Tersimpan / Manual dialog. */
 .cart-more{display:flex;align-items:center;gap:6px}
-.cart-discount{display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:10px;background:var(--bg-subtle);color:var(--ink);cursor:pointer}
+.cart-discount{display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:10px;background:var(--bg-subtle);color:var(--ink);cursor:pointer}
 .cart-discount[aria-pressed=true]{background:var(--lime);color:var(--ink)}
 .discount-dialog{max-width:520px}
 .discount-dialog .segmented{display:grid;grid-template-columns:1fr 1fr;margin-bottom:12px}
@@ -184,8 +184,14 @@
 .discount-icon.amount{background:#DCE8FB}
 .discount-kinds{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px}
 .pill-row{display:flex;flex-wrap:wrap;gap:8px}
-.pill-row button{min-height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--bg-muted);background:var(--surface);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+.pill-row button{min-height:44px;padding:0 16px;border-radius:999px;border:1px solid var(--bg-muted);background:var(--surface);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
 .pill-row button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
 .discount-sum{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin:12px 0;padding:12px 14px;border-radius:10px;background:var(--bg-subtle)}
 .discount-sum>span:first-child,.discount-sum>b{color:#3F6212}
 .discount-sum>strong{font-size:16px}
+/* QA LF-7: names with no space and a full-width price wrap inside their card instead of spilling over the next one. */
+.signin-person strong,.menu-card h3,.line-heading strong,.receipt-name strong,.person-pills>button{overflow-wrap:anywhere}
+.menu-card-bottom>strong{min-width:0;overflow-wrap:anywhere}
+.person-pills>button{max-width:100%}
+/* QA LF-3: with the on-screen keyboard (or a landscape phone) the screen is too short to pin heading, footer and buttons; the cart sheet and the item dialog scroll as one block so the field being typed in keeps room. */
+@media(max-height:520px){.dialog-wide,.dialog-content.item-dialog{overflow-y:auto}.mobile-cart{flex:none;overflow:visible}.mobile-cart .cart-body{overflow:visible;flex:none}.item-options{flex:none;overflow:visible}}

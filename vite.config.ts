@@ -9,7 +9,8 @@ export default defineConfig({
  workbox: { globPatterns: ['**/*.{js,css,html,svg,woff2}'], navigateFallback: '/index.html', cleanupOutdatedCaches: true, runtimeCaching: [{ urlPattern: /^https:\/\/images\.unsplash\.com\//, handler: 'CacheFirst', options: { cacheName: 'photos', expiration: { maxEntries: 120, maxAgeSeconds: 2592000 } } }] }
  })],
  // Playwright's server pre-bundles into its own folder: a shared node_modules/.vite gets rewritten under a running
- // `pnpm dev`, whose open tab then fails with 500s on HMR ("Failed to reload ...").
- cacheDir: process.env.E2E ? 'node_modules/.vite-e2e' : undefined,
+ // `pnpm dev`, whose open tab then fails with 500s on HMR ("Failed to reload ..."). Test servers running side by
+ // side (other checkouts, other ports) each pass their own VITE_CACHE_DIR for the same reason.
+ cacheDir: process.env.VITE_CACHE_DIR || (process.env.E2E ? 'node_modules/.vite-e2e' : undefined),
  build: {rollupOptions:{output:{manualChunks:{supabase:['@supabase/supabase-js']}}}}
 })

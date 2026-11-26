@@ -8,7 +8,8 @@ export interface BookLine { itemId: string; name: string; qty: number; price: nu
 export type BookOrder = Pick<Order, "id" | "receiptId" | "mode" | "status" | "cashier" | "totals" | "payment" | "refund" | "createdAt"> & { lines: BookLine[] };
 // Stock movements summed per business day, ingredient and kind. comp = used for a compliment instead of a sale.
 // cost = the rupiah written on the movements (purchases, batches, transfers), negative where stock left.
-export interface Move { day: string; stockId: string; kind: Movement["kind"]; comp: boolean; qty: number; cost: number }
+// batch/at: a production run keeps its own rows (id and time), so one that uses what another made the same day is valued in order.
+export interface Move { day: string; stockId: string; kind: Movement["kind"]; comp: boolean; qty: number; cost: number; batch?: string; at?: string }
 // A shift opening: its float, and what the drawer held when the shift before it closed (0 when there was none, null
 // when that one closed without a count). The difference is cash that left the drawer for the safe or the bank.
 export interface Opened { at: string; opening: number; prior: number | null }
@@ -34,8 +35,9 @@ export function sumMoves(movements: Movement[], compliments: Set<string>, r: Ran
     const day = r.dayOf(m.at);
     if (day < r.from) opening[m.stockId] = (opening[m.stockId] ?? 0) + m.qty;
     if (day < r.from || day > r.to) continue;
-    const comp = m.kind === "preparation" && compliments.has(m.recordId), key = [day, m.stockId, m.kind, comp].join("|");
-    const row = moves.get(key) ?? { day, stockId: m.stockId, kind: m.kind, comp, qty: 0, cost: 0 };
+    const comp = m.kind === "preparation" && compliments.has(m.recordId), batch = m.kind === "production" ? m.recordId : undefined, unpriced = (m.kind === "purchase" || m.kind === "transfer" || m.kind === "opening") && m.qty > 0 && m.cost === 0, key = [day, m.stockId, m.kind, comp, batch, unpriced].join("|");
+    const row = moves.get(key) ?? { day, stockId: m.stockId, kind: m.kind, comp, qty: 0, cost: 0, ...(batch && { batch }) };
+    if (batch && (!row.at || m.at < row.at)) row.at = m.at;
     row.qty += m.qty;
     row.cost += m.qty < 0 ? -m.cost : m.cost;
     moves.set(key, row);
@@ -103,13 +105,19 @@ export function valuation(books: Pick<Books, "moves" | "opening" | "costs">, bef
   };
   const issue = (m: Move) => { const s = at(m.stockId), qty = s[0] + m.qty; put(m, s, qty, qty === 0 ? 0 : s[1] + Math.round(m.qty * s[2])); };
   for (const day of [...new Set(books.moves.map((m) => m.day))].sort()) {
-    const today = books.moves.filter((m) => m.day === day), made = today.filter((m) => m.kind === "production"), outs = made.filter((m) => m.qty > 0);
+    const today = books.moves.filter((m) => m.day === day);
     for (const m of today) if (m.kind !== "production" && m.qty > 0) receive(m, m.kind === "purchase" || m.kind === "transfer" || m.kind === "opening" ? m.cost : 0);
-    for (const m of made) if (m.qty <= 0) issue(m);
-    // What the day's batches used is shared between what they made, by the cost the kitchen recorded for each.
-    const spent = -made.filter((m) => m.qty <= 0).reduce((n, m) => n + worth.get(m)!, 0), noted = outs.reduce((n, m) => n + m.cost, 0);
-    let left = spent;
-    outs.forEach((m, i) => { const share = spent <= 0 ? m.cost : i === outs.length - 1 ? left : Math.floor(spent * (noted > 0 ? m.cost / noted : 1 / outs.length)); left -= share; receive(m, share); });
+    // Batches in the order they were made (rows without a batch id, from an older server, are one batch); what a batch
+    // used is shared between what it made, by the cost the kitchen recorded for each.
+    const batches = new Map<string, Move[]>();
+    for (const m of today) if (m.kind === "production") batches.set(m.batch ?? "", [...(batches.get(m.batch ?? "") ?? []), m]);
+    for (const made of [...batches.values()].sort((a, b) => (a[0].at ?? "").localeCompare(b[0].at ?? ""))) {
+      const outs = made.filter((m) => m.qty > 0);
+      for (const m of made) if (m.qty <= 0) issue(m);
+      const spent = -made.filter((m) => m.qty <= 0).reduce((n, m) => n + worth.get(m)!, 0), noted = outs.reduce((n, m) => n + m.cost, 0);
+      let left = spent;
+      outs.forEach((m, i) => { const share = spent <= 0 ? m.cost : i === outs.length - 1 ? left : Math.floor(spent * (noted > 0 ? m.cost / noted : 1 / outs.length)); left -= share; receive(m, share); });
+    }
     for (const m of today) if (m.kind !== "production" && m.qty <= 0) issue(m);
   }
   return { stock, worth, unseen };
@@ -271,6 +279,9 @@ export function journal(books: Books, menu: MenuItem[], r: Range, before: Stock 
     for (const x of p.payments) { if (x.from === "drawer") documents.add(Date.parse(x.at)); const d = within(r, x.at); if (d) pair(d, "BAYAR", "Pembayaran pemasok", "payable", x.from === "drawer" ? "cash" : "outside", x.amount); }
   }
   for (const s of books.salesOrders) {
+    // CAT-2: what a cancelled order keeps (down payment not given back) is income on the day it was cancelled; the receivable ends at 0.
+    const kept = s.status === "cancelled" ? within(r, s.updatedAt) : "", keep = s.payments.reduce((n, x) => n + x.amount, 0);
+    if (kept && keep > 0) pair(kept, "KATERING", "Uang muka katering hangus", "receivable", "catering", keep);
     const d = s.status === "delivered" ? within(r, s.deliveredAt) : "";
     if (d) { post(d, "KATERING", "Pesanan katering terkirim", "receivable", s.totals.total); post(d, "KATERING", "Pesanan katering terkirim", "catering", s.totals.discount - s.totals.subtotal); post(d, "KATERING", "Pesanan katering terkirim", "service", -s.totals.service); post(d, "KATERING", "Pesanan katering terkirim", "tax", -s.totals.tax); }
     for (const x of s.payments) { if (x.from === "drawer") documents.add(Date.parse(x.at)); const paid = within(r, x.at); if (paid) pair(paid, "TERIMA", "Pembayaran katering", x.from === "drawer" ? "cash" : "outside", "receivable", x.amount); }

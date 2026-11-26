@@ -16,8 +16,8 @@ android {
     applicationId 'app.takar.pos'
     minSdk 24
     targetSdk 36
-    versionCode 2
-    versionName '1.0.1'
+    versionCode 3
+    versionName '1.0.2'
     resValue 'string', 'launchUrl', "https://${host}/"
     resValue 'string', 'assetStatements', "[{\\\"relation\\\":[\\\"delegate_permission/common.handle_all_urls\\\"],\\\"target\\\":{\\\"namespace\\\":\\\"web\\\",\\\"site\\\":\\\"https://${host}\\\"}}]"
     manifestPlaceholders = [hostName: host]

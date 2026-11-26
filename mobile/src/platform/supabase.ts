@@ -3,7 +3,7 @@
 import 'expo-sqlite/localStorage/install';
 import { createClient, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
-import { classify } from '../../../src/stok/sync';
+import { classify, deadline } from '../../../src/stok/sync';
 import type { Server, Snapshot } from '../../../src/stok/types';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
@@ -11,8 +11,21 @@ const key = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
 // Without both values (mobile/.env) the app only offers the demo.
 export const configured = Boolean(url && key);
 
+// The phone's fetch never gives up by itself (Android's HTTP client is set up without timeouts), and one request
+// with no answer used to hold every later send, the 30-second retry and "Ganti" until the app was restarted. So
+// every request this client makes, for the session as well as for the server functions, gets this long. After that
+// it is cancelled and fails like a lost connection: the work stays queued and goes out again under the same id,
+// which the server answers with its first result, so a request that did arrive is not entered twice.
+// ponytail: one limit for every request, the delivery with its nota photo included (about 70 KB to send). A
+// connection too slow for that in 20 seconds keeps the work queued until it improves; give sends with a photo a
+// longer limit if phones on 2G turn out to need it.
+const TIMEOUT = 20_000;
+
 const supabase = configured
-  ? createClient(url, key, { auth: { storage: localStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false } })
+  ? createClient(url, key, {
+      auth: { storage: localStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
+      global: { fetch: (input, init) => deadline(TIMEOUT, (signal) => fetch(input, { ...init, signal })) },
+    })
   : null;
 // Refreshing the session only makes sense while the app is in front.
 if (supabase) {

@@ -26,6 +26,11 @@ export function discountFor<L extends Priced&Pick<Line,'itemId'>>(d:Discount,lin
  const base=live.filter(l=>d.scope==='order'||(d.scope==='items'?(d.items??[]).includes(l.itemId):type(l)===d.scope)).reduce((n,l)=>n+value(l),0)
  return Math.min(base,d.kind==='percent'?Math.floor(base*d.value/100):d.value)
 }
+// What an order's discount is after a made line was voided (CT-02, SQL-08, DSC-4, TILL-13). `own` is what the discount's own rule gives
+// on the lines left (the compliment rule, the saved discount as the order was sold with it, a manual discount's rule; for a manual
+// discount without a rule, the amount it had). A void never raises what the guest owes: at least the old discount less the voided
+// line's value, at most the old discount and the subtotal left. public.apply_operation (order.voidline) does the same sum.
+export const afterVoid=(old:number,voided:number,left:number,own:number)=>Math.max(0,Math.min(left,old,Math.max(own,old-voided)))
 // Running on a business day: not stopped early, and the day falls between its first and last day.
 export const discountRunning=(d:Discount,day:string)=>!d.ended&&d.from<=day&&day<=d.to
 export const discountAmount=(d:Pick<Discount,'kind'|'value'>)=>d.kind==='percent'?`${d.value}%`:rupiah(d.value)
@@ -83,6 +88,9 @@ export function businessDay(iso:string,timezone='Asia/Jakarta',cutoff=4) {
  if(Number(get('hour'))<cutoff)date.setUTCDate(date.getUTCDate()-1)
  return date.toISOString().slice(0,10)
 }
+// STN-06: a station ticket belongs to the open shift, or to today's business day while none is open; what was paid and served
+// before the tablets were turned on is not a late ticket.
+export const onBoard=(o:Pick<Order,'shiftId'|'createdAt'>,shift:Pick<Shift,'id'>|undefined,settings:Pick<Settings,'timezone'|'cutoff'>|undefined,at:number)=>shift?o.shiftId===shift.id:businessDay(o.createdAt,settings?.timezone,settings?.cutoff)===businessDay(new Date(at).toISOString(),settings?.timezone,settings?.cutoff)
 // PUEBI: Rp menempel pada angka (Rp50.000), ribuan bertitik, desimal berkoma. ICU menyisipkan
 // spasi tak-putus setelah Rp, jadi dibuang; rupiah tidak memakai pecahan sen.
 export const JAKARTA='Asia/Jakarta'
@@ -91,8 +99,12 @@ export const JAKARTA='Asia/Jakarta'
 export const when=(iso:string|number|Date,timezone=JAKARTA,options:Intl.DateTimeFormatOptions={dateStyle:'medium',timeStyle:'short'})=>dtf('id-ID',{timeZone:timezone||JAKARTA,...options}).format(new Date(iso))
 // Untuk CSV: satu kolom yang urut secara leksikografis dan terbaca Excel, tetap zona restoran.
 export const stamp=(iso:string,timezone=JAKARTA)=>{const p=Object.fromEntries(dtf('en-CA',{timeZone:timezone||JAKARTA,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date(iso)).map(x=>[x.type,x.value]));return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`}
+// <input type="datetime-local"> has no zone: its wall-clock text means the restaurant's zone, never the device's (CAT-5).
+export const zonedLocal=(iso:string,timezone=JAKARTA)=>stamp(iso,timezone).slice(0,16).replace(' ','T')
+export const zonedTime=(local:string,timezone=JAKARTA)=>{const as=Date.parse(local+':00Z'),off=(t:number)=>Date.parse(stamp(new Date(t).toISOString(),timezone).replace(' ','T')+'Z')-t;return as-off(as-off(as))}
 const IDR=new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0})
-export const rupiah=(v:number)=>IDR.format(v).replace(/\s/g,'')
+// A zero never carries a minus sign (-0 from a negated empty sum, or -0.4 rounded).
+export const rupiah=(v:number)=>IDR.format(v).replace(/\s/g,'').replace(/^-(?=Rp0$)/,'')
 // Back office arithmetic, mirroring received_value/received_qty/paid_value/unit_cost on the server.
 export const receivedQty=(po:{receipts:{lines:{stockId:string;qty:number}[]}[]},stockId:string)=>po.receipts.flatMap(r=>r.lines).filter(l=>l.stockId===stockId).reduce((n,l)=>n+l.qty,0)
 export const receivedValue=(po:{receipts:{lines:{cost:number}[]}[]})=>po.receipts.flatMap(r=>r.lines).reduce((n,l)=>n+l.cost,0)
@@ -107,7 +119,7 @@ export function unitCosts(movements:{stockId:string;qty:number;cost:number;kind:
 const QTY=new Intl.NumberFormat('id-ID',{maximumFractionDigits:3})
 export const quantity=(v:number)=>QTY.format(v/1000)
 // Takar catalog defaults: older catalog versions have no type/station, so every reader goes through these.
-export const menuType=(m:Pick<MenuItem,'type'|'category'>):MenuType=>m.type??(/minum|drink|kopi|coffee|tea|teh|juice|jus/i.test(m.category)?'beverage':/camilan|snack|tambahan|side/i.test(m.category)?'snack':'food')
+export const menuType=(m:Pick<MenuItem,'type'|'category'>):MenuType=>m.type??(/\b(minum(an)?|drinks?|kopi|coffee|tea|teh|juice|jus)\b/i.test(m.category)?'beverage':/camilan|snack|tambahan|side/i.test(m.category)?'snack':'food')
 export const typeLabel:Record<MenuType,string>={food:'Makanan',beverage:'Minuman',snack:'Camilan'}
 export const itemStation=(m:Pick<MenuItem,'station'|'type'|'category'>):Station=>m.station??(menuType(m)==='beverage'?'bar':'kitchen')
 // "Can make": the lowest whole number of portions any recipe line allows from stock on hand.
@@ -151,10 +163,18 @@ export function countGap(expected:number,counted:number,unitCost=0) {
  const gap=counted-expected
  return {gap,value:Math.round(gap*unitCost),flagged:expected<=0?gap!==0:Math.abs(gap)>expected*0.05}
 }
+// QA PERF-6: usagePerDay and expiring ask for one ingredient's rows once per ingredient; filtering every movement each time
+// was items x movements. Group once per array (a live query hands over a new array on every change; the length check
+// covers one that grew), keeping each ingredient's rows in their original order so the sums come out the same.
+const grouped=new WeakMap<object,{n:number;by:Map<string,unknown[]>}>()
+export function movesOf<M extends {stockId:string}>(movements:M[],stockId:string):M[]{
+ let g=grouped.get(movements);if(!g||g.n!==movements.length){g={n:movements.length,by:new Map()};for(const m of movements){const a=g.by.get(m.stockId);if(a)a.push(m);else g.by.set(m.stockId,[m])}grouped.set(movements,g)}
+ return (g.by.get(stockId)??[]) as M[]
+}
 // TDY-2: how fast an ingredient leaves stock (sales and batches), and how many days the balance lasts.
 export function usagePerDay(movements:{stockId:string;qty:number;kind:string;at:string}[],stockId:string,days=7) {
  const since=Date.now()-days*86_400_000
- return movements.filter(m=>m.stockId===stockId&&m.qty<0&&['preparation','production'].includes(m.kind)&&Date.parse(m.at)>=since).reduce((n,m)=>n-m.qty,0)/days
+ return movesOf(movements,stockId).filter(m=>m.qty<0&&['preparation','production'].includes(m.kind)&&Date.parse(m.at)>=since).reduce((n,m)=>n-m.qty,0)/days
 }
 export const daysLeft=(balance:number,perDay:number)=>perDay>0?Math.max(0,Math.round(balance/perDay)):Infinity
 // PREP-3: prep items at or below par, with the batches that bring them back to twice par, most urgent first.
@@ -166,8 +186,8 @@ export function prepList(stock:StockItem[],balance:(id:string)=>number) {
 export function expiring(stock:StockItem[],movements:{id:string;stockId:string;qty:number;kind:string;at:string}[],warnHours=2,now=Date.now()) {
  const out:{item:StockItem;movement:{id:string;stockId:string;qty:number;kind:string;at:string};remaining:number;expiresAt:number;expired:boolean}[]=[]
  for(const s of stock){if(!s.shelfLife)continue
-  let left=movements.filter(m=>m.stockId===s.id).reduce((n,m)=>n+m.qty,0)
-  for(const b of movements.filter(m=>m.stockId===s.id&&m.kind==='production'&&m.qty>0).sort((a,b)=>b.at.localeCompare(a.at))){
+  const mine=movesOf(movements,s.id);let left=mine.reduce((n,m)=>n+m.qty,0)
+  for(const b of mine.filter(m=>m.kind==='production'&&m.qty>0).sort((a,b)=>b.at.localeCompare(a.at))){
    if(left<=0)break;const remaining=Math.min(left,b.qty);left-=remaining;const expiresAt=Date.parse(b.at)+s.shelfLife*3_600_000
    if(expiresAt-now<=warnHours*3_600_000)out.push({item:s,movement:b,remaining,expiresAt,expired:expiresAt<=now})}}
  return out.sort((a,b)=>a.expiresAt-b.expiresAt)

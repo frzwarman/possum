@@ -31,9 +31,11 @@ import { Money } from "../../components/ui/money";
 import { Select } from "../../components/ui/select";
 import { SkeletonRows } from "../../components/ui/loading";
 import { Dialog } from "../../components/ui/dialog";
-import { csv, download, exportData, uid } from "../../lib/db";
+import { csv, download, exportData, jsonParts, uid } from "../../lib/db";
 import {
   parseCSV,
+  decodeCSV,
+  importAmount,
   menuImportSchema,
   stockImportSchema,
 } from "../../lib/import";
@@ -47,7 +49,7 @@ import { supabase } from "../../lib/supabase";
 import { demoApprovers } from "../../lib/commands";
 import { compressLogo, compressMenuPhoto, menuPicture } from "../../lib/menu-photo";
 import { bootstrap, pinHash, team } from "../auth/Login";
-import { SESSION_GONE, signInAgain } from "../../lib/sync";
+import { SESSION_GONE, discardRejected, signInAgain } from "../../lib/sync";
 import { roleTitle } from "../../domain/permissions";
 import { TelegramLink } from "./TelegramLink";
 // Download links for the Android apps (twa/ and mobile/), set in .env at build time; an empty one hides its button.
@@ -91,6 +93,14 @@ const schema = z.object({
   varianceLimit: z.coerce.number<number>().int().min(0).max(1000000000),
   lowAt: z.coerce.number<number>().int().min(0).max(999),
 });
+// STN-17: supabase-js answers with a plain object, which act() cannot show; the server's reasons, in Indonesian.
+const ENROLL: Record<string, string> = {
+  "Close the shift before re-pairing the till": "Tutup sif dulu sebelum memasangkan ulang kasir utama.",
+  "Owner required to re-pair the till": "Hanya pemilik yang boleh memasangkan ulang kasir utama.",
+  "Primary already assigned: explicit reconciled handover required": "Kasir utama sudah ada di perangkat lain. Pemilik yang memindahkannya.",
+  "Manager required": "Hanya pemilik atau manajer yang boleh memasangkan perangkat.",
+};
+const enrollError = (e: { message?: string }) => new Error(ENROLL[e.message ?? ""] ?? e.message ?? "Perangkat belum bisa dipasangkan.");
 const SIGNS = [{ value: "add", label: "tambah" }, { value: "remove", label: "kurangi / ganti" }];
 const KINDS: [OptionGroup["kind"], string][] = [["add", "Tambahan (boleh beberapa)"], ["swap", "Ganti (pilih satu)"], ["level", "Tingkat (pilih satu)"], ["size", "Ukuran (pilih satu)"]];
 const words = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
@@ -133,6 +143,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
     outbox,
     sync,
     setError,
+    setNotice,
     busy,
     gone,
   } = useApp();
@@ -146,6 +157,14 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   const [pack, setPack] = useState({ name: "", amount: "", unit: "" });
   const [ask, setAsk] = useState<ApprovalRequest>();
   const [mode, setMode] = useState<"pos" | "station" | "office">(user.role === "owner" ? "pos" : "station");
+  // AUTH-06: pairing the till itself as a station or back office asks first; the till has no one-tap way to stop being the till.
+  const [repair, setRepair] = useState(false);
+  const pair = () => act(async () => {
+    const { error } = await supabase!.rpc("enroll_device", { device_id: user.deviceId, mode });
+    if (error) throw enrollError(error);
+    localStorage.setItem("meja-identity", JSON.stringify(await bootstrap(user.id, user.deviceId)));
+    location.reload();
+  });
   const areas = [...new Set(stockItems.map((x) => x.area).filter((a): a is string => Boolean(a)))];
   const tags = [...new Set(menu.flatMap((m) => m.tags ?? []))];
   const [storage, setStorage] = useState("Belum diperiksa");
@@ -170,6 +189,9 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   // A recipe name with no bahan of that name or "nama lain" → the bahan the owner picked for it ("" = leave it out).
   const [links, setLinks] = useState<Record<string, string>>({});
   const key = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+  // menu/F11: the menu and bahan lists, by name and narrowed by the search field (name or nama lain).
+  const [find, setFind] = useState("");
+  const listed = <T extends { name: string; aliases?: string[] }>(rows: T[]) => rows.filter((r) => !find.trim() || [r.name, ...(r.aliases ?? [])].some((n) => key(n).includes(key(find)))).sort((a, b) => a.name.localeCompare(b.name, "id"));
   const bahan = new Map(stockItems.flatMap((s) => [s.name, ...(s.aliases ?? [])].map((n) => [key(n), s] as const)));
   const linked = (n: string) => bahan.get(key(n)) ?? bahan.get(key(links[key(n)] ?? ""));
   const unknown = Object.values(links).filter((v) => v.trim() && !bahan.has(key(v)));
@@ -178,8 +200,29 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   const [recipeStock, setRecipeStock] = useState("");
   const [recipeQty, setRecipeQty] = useState("");
   const [signout, setSignout] = useState(false);
+  // AUTH-01, SYNC-01: a refused operation is released on this till by whoever owns the queue: the recovery file is saved
+  // first, then an owner or manager approves with their PIN (the owner or manager signed in needs none).
+  const [discarding, setDiscarding] = useState<(typeof outbox)[number]>();
+  const rejectedLeft = outbox.filter((o) => o.state === "rejected").length;
   // Before signing out: send what can be sent, then list what would be stranded (open shift, new cart, unsent work).
   const [blockers, setBlockers] = useState<string[] | null>(null);
+  // The recovery file first (it holds only unsent work, and a failed export never blocks the release); then the PIN of an
+  // owner or manager unless the person at the till is one.
+  async function startDiscard(o: (typeof outbox)[number]) {
+    try {
+      download("takar-pemulihan.json", jsonParts(await exportData(db, true, manager)));
+    } catch {
+      setError("Berkas pemulihan gagal disimpan. Operasi tetap bisa dibuang; catat dulu isi antrean bila perlu.");
+    }
+    if (manager) await releaseOp(o);
+    else setDiscarding(o);
+  }
+  async function releaseOp(o: (typeof outbox)[number]) {
+    await act(async () => {
+      const r = await discardRejected(db, o.id);
+      setNotice(r.paid ? "Pembayaran dibuang. Pesanan kembali terbuka; catat pembayarannya lagi dari Pesanan." : r.dropped > 1 ? `${r.dropped} operasi dibuang; pesanan terkait diambil lagi dari server` : "Operasi dibuang; pesanan terkait diambil lagi dari server");
+    });
+  }
   async function openSignout() {
     setBlockers(null);
     setSignout(true);
@@ -189,6 +232,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       ...(b.shift ? ["Sif Anda masih terbuka. Tutup sif dulu di Sif. Untuk istirahat, cukup kunci layar."] : []),
       ...(b.cart ? ["Ada pesanan baru di keranjang. Simpan atau kosongkan dulu di Kasir."] : []),
       ...(b.unsent ? [`${b.unsent} operasi belum terkirim ke server. Sambungkan internet dan tunggu sampai tersinkron.`] : []),
+      ...(b.rejected ? [`Server menolak ${b.rejected} operasi. Buang di Sinkron & backup: berkas pemulihan disimpan dulu, lalu manajer memasukkan PIN.`] : []),
     ]);
   }
   // Menu items with a sale (till or catering) can only be switched off; the rest can be removed for good.
@@ -252,18 +296,21 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       "Pengaturan tersimpan",
     );
   }
-  // MENU-1 / MENU-7: one form publishes at once; a chef or admin needs a manager's PIN when an active item has no recipe.
+  // MENU-1 / MENU-7: one form publishes the one menu it edits; a chef or admin needs a manager's PIN when that menu is
+  // active and has no recipe (menu/F5: not when any other menu lacks one).
   async function saveItem(approval?: import("../../domain/types").Approval) {
     if (!item) return;
     if (!Number.isInteger(item.price) || item.price < 0) { setError("Harga tidak valid"); return; }
-    const next = { ...item, category: typeLabel[menuType(item)], version: item.version + 1 };
-    const catalog = [...menu.filter((m) => m.id !== item.id), next];
-    if (!manager && !approval && catalog.some((m) => m.active && !m.recipe.length)) {
-      setAsk({ action: "publish", what: `Terbitkan menu dengan ${catalog.filter((m) => m.active && !m.recipe.length).length} menu aktif tanpa resep` });
+    // menu/F2: the editor opened one version; a pull since may have brought a newer one from another device.
+    if (live && live.version !== item.version) { setError(`Menu "${live.name}" diubah di perangkat lain. Buang perubahan, lalu buka dan edit lagi.`); return; }
+    // menu/F16: Android keyboards leave a trailing space, and imports match on the exact name.
+    const next = { ...item, name: item.name.trim().replace(/\s+/g, " "), category: typeLabel[menuType(item)], version: item.version + 1 };
+    if (!manager && !approval && next.active && !next.recipe.length) {
+      setAsk({ action: "publish", what: `Terbitkan menu "${next.name}" aktif tanpa resep` });
       return;
     }
     await act(async () => {
-      await commands.publish(catalog, stockItems, approval);
+      await commands.publish([next], [], approval);
       setItem(undefined);
     }, "Versi menu tersimpan; struk lama tidak berubah");
   }
@@ -291,11 +338,11 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       // A dropped file skips the picker's .csv filter: an Excel file or a photo is turned away here.
       if (!/\.csv$/i.test(file.name) && file.type !== "text/csv") throw new Error("Pilih berkas CSV. Di Google Sheets: File → Download → Comma-separated values (.csv).");
       if (file.size > 200000) throw new Error("CSV maksimal 200 KB");
-      const text = await file.text();
+      const text = decodeCSV(await file.arrayBuffer());
       // The owner's own sheet (a market list or a COGS tab, downloaded as CSV) is read as laid out; anything else
       // follows the template.
       const found = readSheet(text, file.name);
-      const rows: Record<string, string>[] =
+      let rows: Record<string, string>[] =
         found?.kind === "menu" ? found.menus.map((m) => ({ name: m.name, category: m.category, type: m.type, price: String(m.price) })) : found ? found.rows : parseCSV(text);
       setSheet(
         found?.kind === "menu"
@@ -327,6 +374,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       const type: typeof importType = head.includes("price") ? "menu" : head.includes("unit") && head.includes("quantity") ? "stock" : importType;
       if (type !== importType) setImportType(type);
       const errs: string[] = [];
+      // Quantities and pack sizes are kept as the plain number they will be saved as ("1.500" is 1500); the preview shows them back.
+      if (type === "stock" && !found) rows = rows.map((r) => ({ ...r, ...Object.fromEntries(["quantity", "threshold", "pack_qty"].map((k) => [k, importAmount(r[k] ?? "") ?? r[k] ?? ""])) }));
       rows.forEach((r, i) => {
         const parsed = (
           type === "menu" ? menuImportSchema : stockImportSchema
@@ -336,8 +385,14 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             `Baris ${i + 2}: ${parsed.error.issues.map((x) => x.path.join(".") + " " + x.message).join("; ")}`,
           );
       });
-      if (new Set(rows.map((r) => r.name.toLowerCase())).size !== rows.length)
-        errs.push("Nama duplikat dalam impor");
+      const seen = new Set<string>(), twice = new Set<string>();
+      for (const r of rows) (seen.has(r.name.toLowerCase()) ? twice.add(r.name) : seen.add(r.name.toLowerCase()));
+      if (twice.size) errs.push(`Nama duplikat dalam impor: ${[...twice].join(", ")}`);
+      // An opening quantity is recorded by an owner or manager; checked before anything is saved.
+      if (type === "stock" && !can(user.role, "approve")) {
+        const at = rows.findIndex((r) => Number(r.quantity) > 0);
+        if (at >= 0) errs.push(`Baris ${at + 2}: saldo awal hanya bisa dicatat pemilik atau manajer. Kosongkan kolom quantity (isi 0) atau minta manajer mengimpor.`);
+      }
       const taken = rows.filter((r) => (type === "menu" ? menu : stockItems).some((m) => m.name.toLowerCase() === r.name.toLowerCase())).map((r) => r.name);
       // A COGS tab picked again brings recipes for menus already made from it: those menus get the recipe and nothing
       // else changes. Any other file only adds, so a name already taken stops it.
@@ -356,6 +411,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
     await act(async () => {
       if (importErrors.length || !preview.length)
         throw new Error("Perbaiki CSV dahulu");
+      if (importType === "stock" && !can(user.role, "approve") && preview.some((r) => Number(r.quantity) > 0))
+        throw new Error("Saldo awal hanya bisa dicatat pemilik atau manajer. Kosongkan kolom quantity.");
       if (importType === "menu") {
         const existing = new Map(menu.map((m) => [m.name.toLowerCase(), m]));
         const updated = new Map<string, MenuItem>();
@@ -412,15 +469,11 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
           aliases: [],
           packs: r.pack_name ? [{ name: r.pack_name, qty: convert(r.pack_qty, r.unit, r.unit) }] : [],
         }));
+        // Every amount is converted before the first save, so a bad one stops the import with nothing saved.
+        const opening = added.map((a, i) => (positive(preview[i].quantity) ? convert(preview[i].quantity, a.unit, a.unit) : 0));
         await commands.publish(menu, [...stockItems, ...added]);
         for (let i = 0; i < added.length; i++)
-          if (positive(preview[i].quantity))
-            await commands.stockRecord(
-              added[i].id,
-              "opening",
-              convert(preview[i].quantity, added[i].unit, added[i].unit),
-              "Impor saldo awal",
-            );
+          if (opening[i]) await commands.stockRecord(added[i].id, "opening", opening[i], "Impor saldo awal");
       }
       setPreview([]);
       setSheet(undefined);
@@ -688,7 +741,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                 {(item.groups ?? []).map((g, gi) => (
                   <div className="group-row" key={g.id}>
                     <input aria-label="Nama grup" placeholder="Nama grup, mis. Susu" value={g.name} onChange={(e) => setItem({ ...item, groups: item.groups!.map((x, j) => (j === gi ? { ...x, name: e.target.value } : x)) })} />
-                    <Select ariaLabel="Jenis grup" value={g.kind} onChange={(v) => setItem({ ...item, groups: item.groups!.map((x, j) => (j === gi ? { ...x, kind: v as OptionGroup["kind"], required: v !== "add" } : x)) })} options={KINDS.map(([value, label]) => ({ value, label }))} />
+                    {/* menu/F4: an add-on group has no default (the box below is hidden for it), so a default set while the group was "pilih satu" is cleared. */}
+                    <Select ariaLabel="Jenis grup" value={g.kind} onChange={(v) => setItem({ ...item, groups: item.groups!.map((x, j) => (j === gi ? { ...x, kind: v as OptionGroup["kind"], required: v !== "add" } : x)), modifiers: v === "add" ? item.modifiers.map((m) => (m.group === g.id ? { ...m, default: false } : m)) : item.modifiers })} options={KINDS.map(([value, label]) => ({ value, label }))} />
                     <button type="button" className="row-remove" aria-label={`Hapus grup ${g.name}`.trim()} onClick={() => setItem({ ...item, groups: item.groups!.filter((_, j) => j !== gi), modifiers: item.modifiers.map((m) => (m.group === g.id ? { ...m, group: undefined } : m)) })}>
                       <X size={16} />
                     </button>
@@ -789,7 +843,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                   <h2>Di kasir</h2>
                 </div>
                 <div className="opt-pills" role="group" aria-label="Status di kasir">
-                  {([["active", "Aktif"], ["soldOut", "Habis"], ["favorite", "Favorit"], ["ignoreStock", "Tetap jual walau bahan habis"]] as const).map(([key, label]) => (
+                  {/* till/TILL-16: the till no longer reads "favorite" (Figma match), so the box is gone; the stored field stays. */}
+                  {([["active", "Aktif"], ["soldOut", "Habis"], ["ignoreStock", "Tetap jual walau bahan habis"]] as const).map(([key, label]) => (
                     <label key={key} className={`opt-pill ${item[key] ? "on" : ""}`}>
                       <input type="checkbox" checked={Boolean(item[key])} onChange={(e) => setItem({ ...item, [key]: e.target.checked })} />
                       {label}
@@ -1098,7 +1153,9 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       )}
       {catalogRole && tab === "menu" && (
         <article className="panel set-list">
-          {menu.map((m) => (
+          {/* menu/F11: 110 menus in random (id) order with no search is not a list a manager can work; by name, filtered. */}
+          <input type="search" className="set-find" aria-label="Cari menu" placeholder="Cari menu" value={find} onChange={(e) => setFind(e.target.value)} />
+          {listed(menu).map((m) => (
             <div className="admin-row" key={m.id}>
               <img
                 className="admin-menu-thumb"
@@ -1142,7 +1199,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       )}
       {catalogRole && tab === "stock" && (
         <article className="panel set-list">
-          {stockItems.map((s) => (
+          <input type="search" className="set-find" aria-label="Cari bahan" placeholder="Cari bahan" value={find} onChange={(e) => setFind(e.target.value)} />
+          {listed(stockItems).map((s) => (
             <div className="admin-row" key={s.id}>
               <div>
                 <strong>{s.name}</strong>
@@ -1226,7 +1284,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               <div className="import-preview">
                 {preview.map((r, i) =>
                   !sheet ? (
-                    <div key={i}>{Object.values(r).join(" · ")}</div>
+                    <div key={i}>{Object.entries(r).map(([k, v]) => (["quantity", "threshold", "pack_qty"].includes(k) && /^\d+(\.\d+)?$/.test(v) ? Number(v).toLocaleString("id-ID", { maximumFractionDigits: 3 }) : v)).join(" · ")}</div>
                   ) : sheet.lines ? (
                     <div key={i}>
                       {r.name} · {rupiah(Number(r.price))} · {r.category || typeLabel[r.type as MenuType]} · {sheet.lines[i].length} bahan
@@ -1332,10 +1390,9 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                     {o.error && <p className="error">{o.error}</p>}
                     {o.state === "rejected" && (
                       <p className="small">
-                        Ekspor pemulihan. Pemilik perlu membandingkan ID operasi
-                        dengan server, memperbaiki penyebab (misalnya hak akun),
-                        lalu mencoba payload asli kembali. Jangan membuat ulang
-                        pembayaran.
+                        Server menolak operasi ini, dan antrean berhenti di sini. Buang operasi ini: berkas pemulihan
+                        disimpan dulu, lalu pemilik atau manajer memasukkan PIN. Pesanan dan sif yang terkait diambil lagi
+                        dari server; pembayaran yang dibuang bisa dicatat ulang dari Pesanan.
                       </p>
                     )}
                     {/* Every queued operation is this person's: whoever owns it may send it again; the server decides. */}
@@ -1355,17 +1412,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                         Coba ulang operasi asli
                       </Button>
                     )}
-                    {o.state === "rejected" && manager && (
-                      <Button
-                        variant="destructive"
-                        onClick={() =>
-                          act(async () => {
-                            download("takar-pemulihan.json", JSON.stringify(await exportData(db, true), null, 2));
-                            await db.outbox.delete(o.id);
-                            await sync();
-                          }, "Operasi dibuang; catatan lokalnya tetap ada di ekspor pemulihan")
-                        }
-                      >
+                    {o.state === "rejected" && (
+                      <Button variant="destructive" onClick={() => void startDiscard(o)}>
                         Buang operasi ini
                       </Button>
                     )}
@@ -1385,7 +1433,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                     act(async () =>
                       download(
                         "meja-backup-lokal.json",
-                        JSON.stringify(await exportData(db), null, 2),
+                        jsonParts(await exportData(db, false, manager)),
                       ),
                     )
                   }
@@ -1398,7 +1446,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                     act(async () =>
                       download(
                         "meja-pemulihan.json",
-                        JSON.stringify(await exportData(db, true), null, 2),
+                        jsonParts(await exportData(db, true, manager)),
                       ),
                     )
                   }
@@ -1433,7 +1481,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                 </div>
                 <div className="team-list">
                   {people.map((p) => {
-                    const self = p.id === user.id, owner = user.role === "owner" && !user.demo && !self;
+                    // AUTH-14: a manager changes everyone but the owner there (manage_staff); the rest only see the list.
+                    const self = p.id === user.id, owner = manager && !user.demo && !self && (user.role === "owner" || p.role !== "owner");
                     const body = (
                       <>
                         <span className="avatar">{initials(p.name)}</span>
@@ -1506,7 +1555,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                 </span>
                 <span className="dot-chip">Perangkat ini</span>
               </div>
-            {manager && !user.demo && (
+            {manager && !user.demo && !(user.primary && user.role !== "owner") && (
               <>
                 <Select
                   label="Pasangkan perangkat ini sebagai"
@@ -1514,22 +1563,13 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                   onChange={(v) => setMode(v as typeof mode)}
                   options={[{ value: "station", label: "Stasiun (tablet dapur / bar)" }, { value: "office", label: "Back office (laptop)" }, ...(user.role === "owner" ? [{ value: "pos", label: "Kasir utama" }] : [])]}
                 />
-                {mode !== "pos" && (
-                  <Button
-                    className="full"
-                    loading={busy}
-                    onClick={() =>
-                      act(async () => {
-                        const { error } = await supabase!.rpc("enroll_device", { device_id: user.deviceId, mode });
-                        if (error) throw error;
-                        localStorage.setItem("meja-identity", JSON.stringify(await bootstrap(user.id, user.deviceId)));
-                        location.reload();
-                      })
-                    }
-                  >
+                {mode !== "pos" && (user.primary && shift ? (
+                  <p className="small muted">Tutup sif dulu sebelum memasangkan ulang kasir utama.</p>
+                ) : (
+                  <Button className="full" loading={busy} onClick={() => (user.primary ? setRepair(true) : void pair())}>
                     Pasangkan sebagai {mode === "station" ? "stasiun" : "back office"}
                   </Button>
-                )}
+                ))}
               </>
             )}
             {user.role === "owner" ? (
@@ -1657,7 +1697,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             </Button>
           )}
           {manager && !user.demo && <TelegramLink />}
-          {user.role === "owner" && (
+          {manager && !user.demo && (
             <Button asChild variant="secondary" size="sm">
               <a href="/admin">
                 <UserCog size={16} /> Akun staf
@@ -1724,7 +1764,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             </div>
             <label>
               Nama lain untuk pencarian
-              <input value={(stock.aliases ?? []).join(", ")} onChange={(e) => setStock({ ...stock, aliases: words(e.target.value) })} placeholder="fresh milk, susu cair" />
+              {/* menu/F10: the field keeps what is typed (a comma or space is not an alias yet); the state holds the split names. */}
+              <input key={stock.id} defaultValue={(stock.aliases ?? []).join(", ")} onChange={(e) => setStock({ ...stock, aliases: words(e.target.value) })} placeholder="fresh milk, susu cair" />
             </label>
             <h3 className="mt">Kemasan beli</h3>
             <p className="small muted">Kiriman dicatat dalam kemasan, stok tetap dalam {stock.unit}.</p>
@@ -1859,10 +1900,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               disabled={!stock.name || busy}
               onClick={() =>
                 act(async () => {
-                  await commands.publish(menu, [
-                    ...stockItems.filter((s) => s.id !== stock.id),
-                    stock,
-                  ]);
+                  await commands.publish([], [stock]);
                   setStock(undefined);
                   afterStockSave.current?.(stock.id);
                   afterStockSave.current = undefined;
@@ -1894,7 +1932,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               <code>{`pnpm staff add <email> <peran> <nama> --restaurant ${user.restaurantId} --pin <6 angka>`}</code>
             </div>
             <p className="small muted">Peran: owner, manager, admin, chef, cashier, barista, kitchen, accountant. Sandi awal tampil sekali; serahkan langsung ke orangnya. Peran dan akses diubah di area pemilik.</p>
-            {user.role === "owner" && !user.demo && (
+            {manager && !user.demo && (
               <Button asChild variant="secondary">
                 <a href="/admin">
                   <UserCog size={16} /> Buka area pemilik
@@ -1941,7 +1979,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
         <p className="small muted">
           {pinKind === "login"
             ? "Hindari angka kembar dan urutan seperti 123456. Email dan PIN ini juga dipakai untuk masuk di laptop."
-            : "Jangan beri tahu kasir. Server hanya menyimpan sidik PIN, dan lima PIN salah dalam 15 menit menghentikan persetujuan sementara."}
+            : "Jangan beri tahu kasir. Server hanya menyimpan sidik PIN, dan tiga PIN salah dalam 5 menit menghentikan persetujuan untuk kasir itu sementara."}
         </p>
         <Button
           className="full"
@@ -1954,8 +1992,8 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                 if (/^(\d)\1{5}$/.test(pin) || ["123456", "654321", "012345", "123123"].includes(pin)) throw new Error("PIN terlalu mudah ditebak: hindari angka kembar dan urutan seperti 123456");
                 const { error } = await supabase!.auth.updateUser({ password: pin });
                 if (error) throw new Error(error.message);
-                // Staff unlock the idle lock offline with this PIN; owners and managers keep no hash on a shared device.
-                try { if (!can(user.role, "approve")) localStorage.setItem("takar-pin-hash", await pinHash(pin, user.id)); } catch { /* private mode */ }
+                // Everyone unlocks the idle lock offline with the secret they signed in with (AUTH-02): keep up with the new one.
+                try { localStorage.setItem("takar-pin-hash", await pinHash(pin, user.id)); } catch { /* private mode */ }
               }
               setPinDialog(false);
             }, pinKind === "login" ? "PIN masuk tersimpan. Pakai di layar masuk tablet." : "PIN persetujuan tersimpan")
@@ -1971,6 +2009,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
           <Button variant="destructive" loading={busy} disabled={busy} onClick={() => removing && void act(async () => { await commands.removeMenu([removing.id]); setRemoving(undefined); }, `${removing?.name} dihapus`)}>Hapus menu</Button>
         </div>
       </Dialog>
+      <ApprovalDialog request={discarding && { action: "discard", what: `Buang operasi ${discarding.kind} yang ditolak server` }} onClose={() => setDiscarding(undefined)} onApproved={() => { const o = discarding; setDiscarding(undefined); if (o) void releaseOp(o); }} />
       <Dialog open={signout} onOpenChange={setSignout} title="Keluar akun?">
         {blockers === null ? (
           <p className="muted">Memeriksa sif, keranjang, dan sinkronisasi…</p>
@@ -1980,16 +2019,35 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             <ul>{blockers.map((b) => <li key={b}>{b}</li>)}</ul>
           </div>
         ) : (
-          <p>Semua sudah tersinkron. Data di perangkat ini tetap tersimpan untuk akun Anda.</p>
+          <p>Semua sudah tersinkron. Data akun Anda dihapus dari perangkat ini dan dimuat lagi saat masuk.</p>
         )}
         <div className="dialog-actions">
           <Button variant="secondary" onClick={() => setSignout(false)}>
             Batal
           </Button>
-          <Button variant="destructive" disabled={!blockers || blockers.length > 0} onClick={() => logout()}>
+          {Boolean(blockers?.length) && Boolean(rejectedLeft) && (
+            <Button variant="secondary" onClick={() => { setSignout(false); setTab("sync"); }}>
+              Buka Sinkron & backup
+            </Button>
+          )}
+          <Button variant="destructive" disabled={!blockers || blockers.length > 0} onClick={() => logout(db)}>
             Keluar akun
           </Button>
         </div>
+      </Dialog>
+      <Dialog
+        open={repair}
+        onOpenChange={setRepair}
+        title={`Pasangkan kasir utama sebagai ${mode === "station" ? "stasiun" : "back office"}?`}
+        description="Perangkat ini berhenti menjadi kasir utama."
+      >
+        <p className="callout">
+          <AlertTriangle size={18} /> Setelah ini tidak ada kasir utama: tidak ada yang bisa membuka sif atau menjual
+          sampai pemilik menjadikan satu perangkat kasir utama lagi (Lainnya → Printer &amp; perangkat).
+        </p>
+        <Button className="full" loading={busy} onClick={() => void pair()}>
+          Ya, pasangkan sebagai {mode === "station" ? "stasiun" : "back office"}
+        </Button>
       </Dialog>
       <Dialog
         open={claim}
@@ -2011,7 +2069,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
               const { error } = await supabase!.rpc("enroll_device", {
                 device_id: user.deviceId,
               });
-              if (error) throw error;
+              if (error) throw enrollError(error);
               // "Primary" is cached from sign-in; refresh it (and the server's data) now rather
               // than asking for a sign-out in a toast that is gone before anyone reads it.
               localStorage.setItem(

@@ -17,8 +17,10 @@ export interface Snapshot {
 }
 export interface Identity { id: string; name: string; role: Role; restaurantId: string; store: string; timezone: string; deviceId: string; paired: boolean; demo: boolean }
 // One line of a delivery as typed: amount and price are text in `unit` (a pack name, kg, l or the base unit).
-// checked holds the amount the person confirmed after the "is this usual" warning.
-export interface DeliveryLine { id: string; stockId: string; unit: string; amount: string; price: string; checked?: string }
+// checked holds what the person confirmed after the "is this usual" warning: the quantity itself, in thousandths
+// of the base unit, so "300" confirmed as pcs says nothing about 300 dus. The app up to 1.0.3 kept the typed text
+// here; a delivery it left on the phone never equals a quantity, so such a line simply asks once more.
+export interface DeliveryLine { id: string; stockId: string; unit: string; amount: string; price: string; checked?: number }
 export interface Delivery { id: string; note: string; photo?: string; lines: DeliveryLine[] }
 // Unsent work. An op goes through apply_operation; a link or unlink through its own server function.
 export type Job = { id: string; actor: string; occurredAt: string; label: string; state: 'pending' | 'rejected'; error?: string } & (

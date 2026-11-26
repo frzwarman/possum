@@ -6,8 +6,10 @@ export type Station = 'kitchen' | 'bar'
 // A paired device: the one till (pos), a station tablet, or a back-office laptop. null = not paired.
 export type DeviceMode = 'pos' | 'station' | 'office'
 // A manager's or the owner's PIN entered at the till, checked by the server; good for one action.
-export type ApprovalAction = 'discount' | 'void' | 'refund' | 'cashout' | 'count' | 'variance' | 'publish'
-export interface Approval { id: string; by: string; action: ApprovalAction; amount?: number; orderId?: string; at: number }
+// 'voidline' is one line of an order (bound to the order, the line and its value); 'void' is the whole order (bound to its total);
+// 'discard' releases a refused operation from a cashier's queue and carries nothing.
+export type ApprovalAction = 'discount' | 'void' | 'voidline' | 'refund' | 'cashout' | 'count' | 'variance' | 'publish' | 'discard'
+export interface Approval { id: string; by: string; action: ApprovalAction; amount?: number; orderId?: string; lineId?: string; at: number }
 export interface Identity { id: string; name: string; role: Role; restaurantId: string; deviceId: string; primary: boolean; demo: boolean; mode?: DeviceMode | null }
 export interface Ingredient { stockId: string; qty: number }
 // An option changes the recipe: an add-on adds lines, a swap or a level carries negative deltas
@@ -52,6 +54,10 @@ export interface Discount {
  id: string; name: string; note: string; kind: 'percent' | 'amount'; value: number
  scope: 'order' | MenuType | 'items'; items?: string[]; from: string; to: string; minSpend?: number; approval?: boolean; ended?: boolean
 }
+// A manual discount's rule (QA 2026-11-25, TILL-02): kept on the draft and the order so the till re-prices it as the lines
+// change, exactly as it re-prices a saved discount; never beside discountId. Orders and drafts from before carry none and
+// keep their fixed amount. The server checks the amount against the rule the way it checks a saved discount.
+export type DiscountRule = Pick<Discount, 'kind' | 'value' | 'scope' | 'items'>
 // A pack is how an ingredient is bought: "karton = 12 × 1 L" is {name:'karton', qty:12_000_000} in thousandths of ml.
 export interface Pack { name: string; qty: number }
 export interface StockItem {
@@ -109,6 +115,10 @@ export interface Order {
  refund?: { reason: string; at: string; actor: string; approvedBy?: string }; voidReason?: string; voidApprovedBy?: string; discountApprovedBy?: string
  // The saved discount on this order, if any: its amount follows the order's lines by the discount's own rule.
  discountId?: string
+ discountRule?: DiscountRule
+ // Server-written beside discountApprovedBy: the amount the manager's approval covers. A re-priced manual or 'needs PIN'
+ // saved discount under it needs no new approval; above it the till asks again. Absent on orders approved before this.
+ discountApproved?: number
 }
 export interface Shift { id: string; actor: string; cashier: string; openedAt: string; expiresAt: string; opening: number; status: 'open' | 'closed'; closedAt?: string; counted?: number; expected?: number; variance?: number; varianceApprovedBy?: string
  // Cashless close: what Takar recorded on each EDC against the total on that EDC's settlement slip.
@@ -122,13 +132,13 @@ export interface CashMovement { id: string; shiftId: string; amount: number; rea
 // A stock count: started on a tablet for one storage area, paused and resumed locally, then
 // submitted for review and approved into one count.record operation.
 export interface CountSession {
- id: string; area: string; status: 'draft' | 'submitted' | 'approved'; lines: { stockId: string; counted?: number; expected?: number; reason?: string }[]
+ id: string; area: string; status: 'draft' | 'submitted' | 'approved'; lines: { stockId: string; counted?: number; expected?: number; reason?: string; at?: string }[]
  startedBy: string; startedAt: string; submittedAt?: string; approvedAt?: string; approvedBy?: string
 }
 export type OpKind =
  | 'shift.open' | 'shift.close' | 'shift.cash' | 'order.save' | 'order.prepare' | 'order.ready' | 'order.void' | 'order.voidline' | 'payment.record' | 'refund.record'
  | 'stock.record' | 'catalog.publish' | 'catalog.remove' | 'settings.update' | 'purchase.save' | 'purchase.receive' | 'purchase.cancel' | 'purchase.pay' | 'production.record' | 'supplier.save'
  | 'salesorder.save' | 'salesorder.pay' | 'salesorder.deliver' | 'salesorder.cancel' | 'transfer.send' | 'transfer.receive' | 'transfer.cancel' | 'count.record' | 'count.submit'
-export interface Operation { id: string; kind: OpKind; actor: string; restaurantId: string; deviceId: string; occurredAt: string; payload: Record<string, unknown>; state: 'pending' | 'synced' | 'rejected'; attempts: number; nextAttempt: number; error?: string; receivedAt?: string }
+export interface Operation { id: string; kind: OpKind; actor: string; restaurantId: string; deviceId: string; occurredAt: string; payload: Record<string, unknown>; state: 'pending' | 'synced' | 'rejected'; attempts: number; nextAttempt: number; error?: string; receivedAt?: string; seq?: number }
 export interface PrintAttempt { id: string; orderId: string; kind: 'receipt' | 'kitchen' | 'test'; at: string; status: 'requested' | 'confirmed'; reprint: boolean; lineIds: string[] }
-export interface Draft { id: string; orderId?: string; revision: number; label: string; name?: string; mode: OrderMode; compliment?: Compliment; lines: Line[]; discount: number; discountReason: string; discountApproval?: Approval; discountId?: string }
+export interface Draft { id: string; orderId?: string; revision: number; label: string; name?: string; mode: OrderMode; compliment?: Compliment; lines: Line[]; discount: number; discountReason: string; discountApproval?: Approval; discountId?: string; discountRule?: DiscountRule; by?: string }

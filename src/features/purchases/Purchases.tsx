@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { AlertTriangle, Check, FileText, Plus, Store, Trash2, Truck, UserRound, Wallet } from "lucide-react";
-import { useApp } from "../../app/context";
+import { useApp, useMovements } from "../../app/context";
 import { can } from "../../domain/permissions";
 import { DocumentDialog, whatsappNumber } from "../../app/Document";
 import { Button } from "../../components/ui/button";
@@ -28,11 +28,14 @@ function got(r: Row, s?: StockItem) {
     return NaN;
   }
 }
-// An untouched price keeps the PO's exact pro rata cost; a typed price is per unit shown.
-const lineTotal = (l: PurchaseLine, r: Row, qty: number) => Math.round(r.price === r.listed ? (l.cost * qty) / l.qty : (qty / r.per) * Number(r.price || 0));
+// An untouched price keeps the PO's exact pro rata cost, rounded on the running total so parts add up to the whole (STK-11);
+// a typed price is per unit shown.
+const lineTotal = (l: PurchaseLine, r: Row, qty: number, before = 0) =>
+  r.price === r.listed ? Math.round((l.cost * (before + qty)) / l.qty) - Math.round((l.cost * before) / l.qty) : Math.round((qty / r.per) * Number(r.price || 0));
 // Order from a supplier, receive each delivery into stock as it arrives, and pay what is owed.
 export default function Purchases() {
-  const { purchaseOrders, suppliers, stockItems, movements, settings, commands, act, busy, shift, setError, user } = useApp();
+  const { purchaseOrders, suppliers, stockItems, settings, commands, act, busy, shift, setError, user } = useApp();
+  const movements=useMovements();
   const [tab, setTab] = useState("open");
   const [draft, setDraft] = useState<{ id?: string; supplier: string; note: string; lines: PurchaseLine[] }>();
   const [line, setLine] = useState({ stockId: "", amount: "", unit: "", cost: "" });
@@ -51,8 +54,9 @@ export default function Purchases() {
   const shown = purchaseOrders.filter((p) =>
     tab === "open" ? p.status === "ordered" || p.status === "partial" : tab === "owed" ? owed(p) > 0 : true,
   );
+  const own = shift?.actor === user.id; // the server takes drawer cash only for the actor's own shift
   const sources = (allowOwed: boolean) => [
-    { value: "drawer", label: shift ? "Dari laci kas sif aktif" : "Dari laci kas (buka sif dulu)", disabled: !shift },
+    { value: "drawer", label: own ? "Dari laci kas sif aktif" : "Dari laci kas (buka sif Anda dulu)", disabled: !own },
     { value: "outside", label: "Di luar laci (transfer / uang pemilik)" },
     ...(allowOwed ? [{ value: "unpaid", label: "Belum dibayar (tempo)" }] : []),
   ];
@@ -114,7 +118,7 @@ export default function Purchases() {
         // Blank or zero = not delivered; anything else is validated by convert() ("2,5" is fine, "25 kg" is not).
         if (!/[1-9]/.test(r.amount)) return [];
         const qty = convert(r.amount, r.unit, s.unit, s.packs);
-        return [{ stockId: l.stockId, qty, cost: lineTotal(l, r, qty) }];
+        return [{ stockId: l.stockId, qty, cost: lineTotal(l, r, qty, receivedQty(receiving.po, l.stockId)) }];
       });
       if (!lines.length) throw new Error("Isi jumlah yang datang, atau tutup PO");
       await act(async () => {
@@ -135,7 +139,7 @@ export default function Purchases() {
       const qty = got(r, s);
       const history = deliveries(l.stockId);
       const verdict = qty > 0 ? sanity(qty, history) : "ok";
-      return { l, r, s, qty, history, total: lineTotal(l, r, qty), flag: verdict !== "ok" && r.checked !== r.amount ? verdict : undefined };
+      return { l, r, s, qty, history, total: lineTotal(l, r, qty, receivedQty(po, l.stockId)), flag: verdict !== "ok" && r.checked !== r.amount ? verdict : undefined };
     });
     const before = receivedValue(po);
     const changed = rows.filter((r) => r.price !== r.listed).length;

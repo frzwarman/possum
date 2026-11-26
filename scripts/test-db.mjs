@@ -897,9 +897,11 @@ await test("A late Siap on a void order is accepted and changes nothing; a fresh
   await send(op("shift.close", { id: s5, counted: 0 }));
   await send(op("stock.record", { stockId: "egg", kind: "waste", qty: 500, cost: 0, fromDrawer: false, reason: "pecah" }));
   const boot = (await db.query("select public.bootstrap($1) as b", [device])).rows[0].b;
-  const baseline = boot.movements.find((m) => m.stockId === "egg")?.qty ?? 0; // every egg movement may be younger than 10 s here
+  // Recent movements come by id from bootstrap (STK-06) and again from the first pull: the device upserts by id.
+  const egg = new Map(boot.movements.filter((m) => m.stockId === "egg").map((m) => [m.id, m.qty]));
   const pulled = (await db.query("select public.pull($1,$2) as p", [new Date(Date.parse(boot.now) - 10000).toISOString(), device])).rows[0].p;
-  assert.equal(baseline + pulled.movements.filter((m) => m.stockId === "egg").reduce((n, m) => n + m.qty, 0), await qty("egg"));
+  for (const m of pulled.movements.filter((m) => m.stockId === "egg")) egg.set(m.id, m.qty);
+  assert.equal([...egg.values()].reduce((n, q) => n + q, 0), await qty("egg"));
   assert.ok(pulled.movements.some((m) => m.stockId === "egg" && m.qty === -500));
 });
 await test("The cashier records waste and batches and submits a count; the manager approves it from the laptop", async () => {
@@ -1343,7 +1345,7 @@ await test("A Telegram answer becomes the same one-use approval a PIN gives; the
   const orderId = randomUUID();
   const id = await ask("void", orderId, null, "Batalkan pesanan A-1043");
   assert.deepEqual(await status(id), { status: "pending", id: null, by: null });
-  assert.deepEqual(await one("select public.telegram_request($1)", [id]), { action: "void", amount: null, what: "Batalkan pesanan A-1043", by: "Kasir", order: null, count: null, chats: [222] });
+  assert.deepEqual(await one("select public.telegram_request($1)", [id]), { action: "void", amount: null, what: "Batalkan pesanan A-1043", by: "Kasir", order: null, line: null, count: null, chats: [222] });
   assert.deepEqual(await one("select public.decide_approval($1,999,true)", [id]), { error: "role" });
   assert.deepEqual(await one("select public.decide_approval($1,111,true)", [id]), { status: "approved", by: "Owner" });
   assert.deepEqual(await one("select public.decide_approval($1,111,false)", [id]), { status: "approved", by: "Owner", already: true });
@@ -1466,6 +1468,35 @@ await test("A count and a delivery from a paired phone go through apply_operatio
   await assert.rejects(send(opOn(randomUUID(), "count.submit", { id: randomUUID(), area: "Dry store", lines: [{ stockId: "rice", counted: 1, reason: "" }] })), /Device not enrolled/);
   await login(owner);
 });
+// More checks live one file per area in scripts/db-checks/qa-*.mjs, so several can be written at once. Each file
+// default-exports async (ctx) => {...}. world() gives a check a restaurant of its own, so no check leans on another's state.
+async function world(name = "Warung QA", extra = {}) {
+  const id = randomUUID(), till = randomUUID(), people = {}, names = {};
+  for (const role of ["owner", "manager", "admin", "chef", "cashier", "barista", "kitchen", "accountant"]) names[(people[role] = randomUUID())] = role;
+  await read("insert into auth.users select unnest($1::uuid[])", [Object.values(people)]);
+  await read("insert into public.restaurants(id,settings) values($1,$2)", [id, JSON.stringify({ ...settings, name, ...extra })]);
+  for (const [role, user] of Object.entries(people)) await read("insert into public.memberships values($1,$2,$3,$4,true)", [id, user, role, role]);
+  let me = people.owner;
+  const as = async (user) => { me = user; await login(user); };
+  const opOn = (deviceId, kind, payload, opId = randomUUID()) => ({ id: opId, kind, payload, actor: me, restaurantId: id, deviceId, occurredAt: new Date().toISOString() });
+  const w = { rid: id, till, people, as, opOn, op: (kind, payload, opId) => opOn(till, kind, payload, opId), send };
+  await as(people.owner);
+  await db.query("select public.enroll_device($1)", [till]);
+  await send(w.op("catalog.publish", { menu: [menu], stock: [{ id: "rice", name: "Beras", unit: "g", threshold: 1000000 }, { id: "egg", name: "Telur", unit: "pcs", threshold: 1000 }] }));
+  // An order as the till sends it, like sale() above: w.order(shiftId, [line(menu, 1, 25000)], { subtotal: 25000, discount: 0,
+  // service: 0, tax: 0, total: 25000 }). Members are named after their role, and the order names the signed-in one.
+  w.order = (shiftId, lines, totals, more = {}) => {
+    const o = w.op("order.save", {});
+    o.payload = { order: { id: randomUUID(), restaurantId: id, shiftId, actor: me, cashier: names[me], revision: 1, receiptId: "MJ-" + o.id.toUpperCase(), label: "Pager 5", mode: "dinein", status: "open", prep: "new", discount: 0, discountReason: "", settings: { ...settings, name, ...extra }, createdAt: o.occurredAt, updatedAt: o.occurredAt, lines, totals, ...more }, expectedRevision: 0 };
+    return o;
+  };
+  return w;
+}
+for (const file of (await readdir("scripts/db-checks").catch(() => [])).filter((f) => /^qa-.*\.mjs$/.test(f)).sort()) {
+  const { default: run } = await import(`./db-checks/${file}`);
+  await run({ db, test, login, read, send, assert, randomUUID, settings, menu, line, world });
+}
+await login(owner);
 // Independent database restoration, never a live environment.
 await db.exec("reset role");
 const paymentsBefore = (await db.query("select count(*)::int n from public.payments")).rows[0].n;

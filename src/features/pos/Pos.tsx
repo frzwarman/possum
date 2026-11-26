@@ -18,13 +18,23 @@ import { DiscountDialog, type DiscountPick } from "./DiscountDialog";
 // POS-3: a new order is dine-in with the next pager number of the day; one tap switches to take away.
 const fresh = (label: string): Draft => ({ id: "current", revision: 0, label, mode: "dinein", lines: [], discount: 0, discountReason: "" });
 const auto = /^Pager \d+$/;
+// A draft without the name of the window that wrote it.
+const bare = ({ by: _, ...d }: Draft) => JSON.stringify(d);
 const TYPES: [MenuType | "all", string][] = [["all", "Semua"], ["food", "Makanan"], ["beverage", "Minuman"], ["snack", "Camilan"]];
 export default function Pos() {
-  const { menu, hydrating, settings, db, commands, shift, act, busy, user, manager, setError, orders, stockItems, canMake } = useApp();
+  const { menu, hydrating, settings, db, commands, shift, act, busy, user, manager, setError, setNotice, orders, stockItems, canMake, outbox } = useApp();
+  // This window's name on the drafts it writes (TILL-09): another window of the same till follows a draft that is not its own.
+  const me = useRef(uid()).current;
+  const refused = outbox.find((o) => o.state === "rejected");
   const saved = useLiveQuery(() => db.drafts.get("current"), [db]);
   const navigate = useNavigate();
   const [draft, setDraft] = useState<Draft>(() => fresh("Pager 1"));
   const initialized = useRef(false);
+  // STN-02: the cart as it is now. Every await in the send, new-order and pay flows folds its result into this, not into the copy the tap captured.
+  const latest = useRef(draft);
+  latest.current = draft;
+  // TILL-01: whether Bayar is already working.
+  const going = useRef(false);
   const [query, setQuery] = useState("");
   const [type, setType] = useState<MenuType | "all">("all");
   const [cartOpen, setCartOpen] = useState(false);
@@ -40,6 +50,14 @@ export default function Pos() {
   const [approvalCode, setApprovalCode] = useState("");
   const [received, setReceived] = useState("");
   const [verified, setVerified] = useState(false);
+  // TILL-01: the pay sheet takes no confirmation for its first half second, so the second tap of a double tap on Bayar lands on a disabled button.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    setArmed(false);
+    if (!checkout) return;
+    const t = setTimeout(() => setArmed(true), 500);
+    return () => clearTimeout(t);
+  }, [checkout]);
   const [discountDialog, setDiscountDialog] = useState(false);
   // A discount waiting for a manager's PIN: what the cashier picked in the discount dialog.
   const [pending, setPending] = useState<DiscountPick>();
@@ -68,12 +86,22 @@ export default function Pos() {
   const staff = people.filter((m) => m.role !== "owner").map((m) => m.name);
   const family = [...new Set([...people.filter((m) => m.role === "owner").map((m) => m.name), ...(settings?.family ?? []), "Tamu keluarga"])];
   const today = businessDay(new Date().toISOString(), settings?.timezone, settings?.cutoff);
-  const pager = `Pager ${nextPager(orders.filter((o) => businessDay(o.createdAt, settings?.timezone, settings?.cutoff) === today).map((o) => o.label))}`;
+  // QA PERF-5: a business day began less than 36 h ago; a string compare drops the older orders before the zone arithmetic (a tap re-rendered all 500).
+  const since = new Date(Date.now() - 36 * 36e5).toISOString();
+  const pager = `Pager ${nextPager(orders.filter((o) => o.createdAt >= since && businessDay(o.createdAt, settings?.timezone, settings?.cutoff) === today).map((o) => o.label))}`;
   useEffect(() => {
     if (!initialized.current && saved !== undefined) {
       setDraft(saved);
       initialized.current = true;
     }
+  }, [saved]);
+  // TILL-09, STN-09, SYNC-15: one till, one cart. A draft another window of this till wrote replaces this window's copy, so
+  // neither sells the same cart twice, drops the other's lines or hands out the same pager number. A deleted draft
+  // (the other window saved the cart) is not followed: its saved order arrives as the next draft.
+  useEffect(() => {
+    if (!initialized.current || !saved || saved.by === me) return;
+    if (bare(saved) !== bare(draft)) setDraft(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved]);
   useEffect(() => {
     void db.drafts.get("current").then((d) => {
@@ -93,7 +121,12 @@ export default function Pos() {
   // the cart lets go of it instead of failing with "Pesanan sudah berubah" on every try.
   const gone = orders.find((o) => o.id === draft.orderId && o.status !== "open");
   useEffect(() => {
-    if (initialized.current && gone) void update(fresh(pager));
+    if (initialized.current && gone) {
+      // STN-09: lines added here after the other window paid or voided the order are not lost: they become a new cart.
+      const kept = draft.lines.filter((l) => !l.cancelled && !gone.lines.some((x) => x.id === l.id));
+      void update(kept.length ? { ...fresh(pager), lines: kept } : fresh(pager));
+      if (kept.length) setNotice(`Pesanan itu sudah ${gone.status === "void" ? "dibatalkan" : "dibayar"} dari jendela lain. Tambahan ${kept.length} menu dipindah ke pesanan baru.`);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gone?.id, gone?.status]);
   // A line's menu type, for compliments and discounts that cover one type (Commands.save reads it the same way): the type
@@ -103,24 +136,40 @@ export default function Pos() {
   // off an order already saved needs a manager's PIN from a cashier (Commands.save asks the same).
   function pickDiscount(p: DiscountPick) {
     const was = orders.find((o) => o.id === draft.orderId);
-    const needs = p.discountId ? Boolean(settings?.discounts?.find((d) => d.id === p.discountId)?.approval) && p.discountId !== was?.discountId : p.discount !== (was?.discount ?? 0);
+    const needs = p.discountId ? Boolean(settings?.discounts?.find((d) => d.id === p.discountId)?.approval) && p.discountId !== was?.discountId : Boolean(p.rule) || p.discount !== (was?.discount ?? 0);
     if (!manager && needs) { setPending(p); setAsk({ action: "discount", amount: p.discount, what: `Diskon ${rupiah(p.discount)} · ${p.reason}` }); return; }
-    void update({ ...draft, discountId: p.discountId, discount: p.discount, discountReason: p.reason, discountApproval: undefined });
+    void update({ ...draft, discountId: p.discountId, discountRule: p.rule, discount: p.discount, discountReason: p.reason, discountApproval: undefined });
     setDiscountDialog(false);
   }
   async function update(next: Draft) {
     // A discount belongs to the order it was given for: once a new cart is emptied, drop it so it
     // cannot slide onto the next customer's order.
-    if (!next.orderId && !next.lines.length) next = { ...next, discount: 0, discountReason: "", discountApproval: undefined, discountId: undefined };
+    if (!next.orderId && !next.lines.length) next = { ...next, discount: 0, discountReason: "", discountApproval: undefined, discountId: undefined, discountRule: undefined };
     // A saved discount follows the cart by its own rule, priced the same way Commands.save and the server price it. One
     // deleted meanwhile comes off a new cart; a saved order keeps it until the cashier picks another or takes it off
     // (Commands.save says so), since taking it off a saved order needs a reason and, from a cashier, a manager's PIN.
+    // A manual discount follows the cart by its rule the same way (TILL-02).
     if (next.discountId) {
       const saved = settings?.discounts?.find((d) => d.id === next.discountId);
       next = saved ? { ...next, discount: discountFor(saved, next.lines, lineType), discountReason: saved.name } : next.orderId ? next : { ...next, discountId: undefined, discount: 0, discountReason: "" };
+    } else if (next.discountRule) next = { ...next, discount: discountFor({ ...next.discountRule, id: "", name: "", note: "", from: "", to: "" }, next.lines, lineType) };
+    // The manager's approval covers the discount up to its amount, under the same rule or saved discount, and a rupiah
+    // rule only while the cart does not shrink (Commands.save and the server say the same): past that, ask again now
+    // rather than fail at Ke stasiun or Bayar (DSC-2, TILL-05).
+    if (!manager && next.discount > 0 && (next.discountRule || (next.discountId && settings?.discounts?.find((d) => d.id === next.discountId)?.approval))) {
+      const was = orders.find((o) => o.id === next.orderId), same = was && (next.discountId ? was.discountId === next.discountId : JSON.stringify(was.discountRule) === JSON.stringify(next.discountRule));
+      const covers = next.discountApproval?.amount ?? (same ? was.discountApproved ?? (was.discountApprovedBy ? Infinity : undefined) : undefined);
+      const shrunk = next.discountRule?.kind === "amount" && orderTotals({ lines: next.lines, discount: 0, mode: "dinein" }, { taxBps: 0, serviceBps: 0 }).subtotal < orderTotals({ lines: draft.lines, discount: 0, mode: "dinein" }, { taxBps: 0, serviceBps: 0 }).subtotal;
+      if (covers !== undefined && (next.discount > covers || shrunk)) {
+        next = { ...next, discountApproval: undefined };
+        setPending({ discountId: next.discountId, rule: next.discountRule, discount: next.discount, reason: next.discountReason });
+        setAsk({ action: "discount", amount: next.discount, what: `Diskon ${rupiah(next.discount)} · ${next.discountReason}` });
+      }
     }
     // State first, storage second: a quick second tap or keystroke must see this draft, not the
     // one from before IndexedDB answered.
+    next = { ...next, by: me };
+    latest.current = next;
     setDraft(next);
     try {
       await db.drafts.put(next);
@@ -128,6 +177,21 @@ export default function Pos() {
       setError("Draf gagal disimpan. Penyimpanan perangkat penuh atau tidak tersedia. Ekspor data di Lainnya.");
     }
   }
+  // What the order holds after a send, folded into the cart as it is now: sent lines come from the order, lines the cashier
+  // changed or added meanwhile stay as they are (STN-02).
+  const merge = (o: Order): Draft => {
+    const now = latest.current, mine = new Map(now.lines.map((l) => [l.id, l]));
+    return { ...now, orderId: o.id, revision: o.revision, lines: [...o.lines.flatMap((l) => (l.prepared || l.cancelled ? [l] : mine.has(l.id) ? [mine.get(l.id)!] : [])), ...now.lines.filter((l) => !o.lines.some((x) => x.id === l.id))], discountApproval: undefined };
+  };
+  // Lines tapped while the order was being closed out belong to the next order.
+  const rest = (o: Order) => latest.current.lines.filter((l) => !l.cancelled && !o.lines.some((x) => x.id === l.id));
+  const following = (o: Order) => { const kept = rest(o); return kept.length ? { ...fresh(pager), lines: kept } : fresh(pager); };
+  // TILL-08: the cart is what the saved order already holds, so paying it needs no save (a save after the 12-hour limit is refused, cash is not).
+  const unchanged = (d: Draft, o: Order) =>
+    d.revision === o.revision && d.mode === o.mode && d.label === o.label && (d.name?.trim() ?? "") === (o.name ?? "") && d.discount === o.discount && d.discountReason === o.discountReason && d.discountId === o.discountId
+    && JSON.stringify([d.discountRule?.kind, d.discountRule?.value, d.discountRule?.scope, d.discountRule?.items]) === JSON.stringify([o.discountRule?.kind, o.discountRule?.value, o.discountRule?.scope, o.discountRule?.items])
+    && JSON.stringify([d.compliment?.kind, d.compliment?.who.trim()]) === JSON.stringify([o.compliment?.kind, o.compliment?.who])
+    && d.lines.length === o.lines.length && d.lines.every((l) => { const x = o.lines.find((y) => y.id === l.id); return x && x.qty === l.qty && x.note === l.note && x.prepared === l.prepared && x.cancelled === l.cancelled && x.modifiers.map((m) => m.id).join() === l.modifiers.map((m) => m.id).join(); });
   const comp = draft.mode === "compliment" ? draft.compliment : undefined;
   const saved_ = orders.find((o) => o.id === draft.orderId);
   const clock = (iso: string) => new Date(iso).toLocaleTimeString("id-ID", { timeZone: settings?.timezone, hour: "2-digit", minute: "2-digit" });
@@ -165,7 +229,8 @@ export default function Pos() {
   function add(item: MenuItem) {
     if (item.modifiers.length) {
       setSelected(item);
-      setMods(groupsOf(item).flatMap((g) => { const c = choices(item, g.id); const d = c.find((m) => m.default) ?? (g.kind !== "add" && g.required ? c[0] : undefined); return d ? [d.id] : []; }));
+      // menu/F4: a paid add-on never starts ticked, whatever "default" a menu saved while its group was "pilih satu" still carries.
+      setMods(groupsOf(item).flatMap((g) => { const c = choices(item, g.id); const d = g.kind === "add" ? undefined : c.find((m) => m.default) ?? (g.required ? c[0] : undefined); return d ? [d.id] : []; }));
       setNote("");
       setNoteOpen(false);
       setPick(1);
@@ -174,33 +239,43 @@ export default function Pos() {
     void addLine(item, [], "");
   }
   async function addLine(item: MenuItem, ids: string[], notes: string, n = 1) {
-    // A base choice (Regular, Susu segar, Normal) changes nothing and stays off the ticket.
-    const picked = item.modifiers.filter((m) => ids.includes(m.id) && (m.price || m.recipe.length));
+    // A group's base choice (Regular, Susu segar, Normal) changes nothing and stays off the ticket; a free option the cashier
+    // picked on purpose (a kitchen instruction such as "Tidak pedas") stays on the line, the ticket and the receipt (STN-07).
+    const base = (m: Modifier) => { const g = groupsOf(item).find((x) => x.id === m.group); const c = g ? choices(item, g.id) : []; return Boolean(g) && g!.kind !== "add" && m === (c.find((x) => x.default) ?? (g!.required ? c[0] : undefined)); };
+    const picked = item.modifiers.filter((m) => ids.includes(m.id) && (m.price || m.recipe.length || !base(m)));
     // The same item with the same options and note, not yet sent, is one line with a higher quantity.
     const key = (ms: Modifier[]) => ms.map((m) => m.id).sort().join("|");
-    const same = draft.lines.find((l) => !l.prepared && !l.cancelled && l.itemId === item.id && l.catalogVersion === item.version && l.note === notes && key(l.modifiers) === key(picked) && l.qty < 999);
-    if (same) await update({ ...draft, lines: draft.lines.map((l) => (l === same ? { ...l, qty: Math.min(999, l.qty + n) } : l)) });
+    const cur = latest.current;
+    const same = cur.lines.find((l) => !l.prepared && !l.cancelled && l.itemId === item.id && l.catalogVersion === item.version && l.note === notes && key(l.modifiers) === key(picked) && l.qty < 999);
+    if (!same && cur.lines.length >= 200) { setError("Maksimal 200 menu per pesanan"); setSelected(undefined); return; }
+    if (same) await update({ ...cur, lines: cur.lines.map((l) => (l === same ? { ...l, qty: Math.min(999, l.qty + n) } : l)) });
     else {
       const line: Line = { id: uid(), itemId: item.id, name: item.name, price: item.price, qty: n, modifiers: picked, note: notes, recipe: item.recipe, catalogVersion: item.version, prepared: false, cancelled: false, station: itemStation(item), type: menuType(item) };
-      await update({ ...draft, lines: [...draft.lines, line] });
+      await update({ ...cur, lines: [...cur.lines, line] });
     }
     setSelected(undefined);
   }
   async function save() {
-    // Pesanan may have moved the order on (a station marked it ready): send the revision it has now.
-    const live = orders.find((o) => o.id === draft.orderId);
-    const o = await act(() => commands.save({ ...draft, revision: live?.revision ?? draft.revision }), "Pesanan tersimpan di perangkat");
-    if (o) {
-      // The approval went out with this save and the server accepts it once.
-      await update({ ...draft, orderId: o.id, revision: o.revision, lines: o.lines, discountApproval: undefined });
-      return o;
+    // The revision this cart was made from, not the latest local one (TILL-09, STN-09): a copy another window already moved on
+    // is refused ("Pesanan sudah berubah") instead of replacing the other window's lines.
+    // A window that has not caught up with the stored cart does not save its older copy over it.
+    const stored = await db.drafts.get("current");
+    if (stored && stored.by !== me && bare(stored) !== bare(draft)) {
+      setDraft(stored);
+      setError("Keranjang baru diubah dari jendela lain. Periksa isinya, lalu coba lagi.");
+      return;
     }
+    // Commands.save drops the stored cart and update() writes it back from the saved order: the message waits for that, so a
+    // reload right after it finds the cart (it is not only a race for a fast test: the write queues behind other storage work).
+    const o = await act(async () => { const o = await commands.save(draft); await update(merge(o)); return o; }, "Pesanan tersimpan di perangkat");
+    // The approval went out with this save and the server accepts it once.
+    if (o) return o;
   }
   async function prepare() {
     const o = await save();
     if (o) {
       const p = await act(() => commands.prepare(o.id), "Pesanan dikirim ke stasiun");
-      if (p) await update({ ...draft, orderId: p.id, revision: p.revision, lines: p.lines });
+      if (p) await update(merge(p));
     }
   }
   async function newOrder() {
@@ -208,40 +283,46 @@ export default function Pos() {
     // nothing savable: an emptied cart (an order needs a line), or an order no longer open because
     // it was voided from Pesanan, where saving can only fail and would trap the cart.
     const open = orders.some((o) => o.id === draft.orderId && o.status === "open");
-    if (!count || !open || (await save())) await update(fresh(pager));
-  }
-  // Pilot: without bar and kitchen tablets the cashier tells them; stock moves when the order is paid, so
-  // paying first sends every unsent line (one prepare op) and then opens the payment sheet.
-  async function payStart() {
-    let o = await save();
-    if (o && !tablets && o.lines.some((l) => !l.prepared && !l.cancelled)) {
-      const p = await act(() => commands.prepare(o!.id));
-      if (!p) return;
-      await update({ ...draft, orderId: p.id, revision: p.revision, lines: p.lines });
-      o = p;
+    if (!count || !open) await update(fresh(pager));
+    else {
+      const o = await save();
+      if (o) await update(following(o));
     }
-    if (o) {
-      setCartOpen(false);
-      // A free compliment (owner's family) has nothing to pay: record it and print the receipt.
-      if (o.mode === "compliment" && o.totals.total === 0) {
-        const done = await act(() => commands.pay(o!.id, "none", 0, true), "Compliment tersimpan");
-        if (done) { await update(fresh(pager)); setReceipt(done); }
-        return;
+  }
+  // Pilot: without bar and kitchen tablets the cashier tells them; stock moves when the order is paid, so the
+  // lines go out together with the payment (Commands.pay, send), not when the sheet opens: closing the sheet leaves the cart editable.
+  async function payStart() {
+    if (going.current) return;
+    going.current = true;
+    try {
+      const was = orders.find((o) => o.id === draft.orderId && o.status === "open");
+      const o = was && unchanged(draft, was) ? was : await save();
+      if (o) {
+        setCartOpen(false);
+        // A free compliment (owner's family) has nothing to pay: record it and print the receipt.
+        if (o.mode === "compliment" && o.totals.total === 0) {
+          const done = await act(() => commands.pay(o.id, "none", 0, true, { send: !tablets }), "Compliment tersimpan");
+          if (done) { await update(following(done)); setReceipt(done); }
+          return;
+        }
+        setCheckout(o);
+        setReceived(String(o.totals.total));
+        setMethod(cash ? "cash" : "card");
+        setEdc(edcs[0] ?? "");
+        setApprovalCode("");
+        setVerified(edcMode);
       }
-      setCheckout(o);
-      setReceived(String(o.totals.total));
-      setMethod(cash ? "cash" : "card");
-      setEdc(edcs[0] ?? "");
-      setApprovalCode("");
-      setVerified(edcMode);
+    } finally {
+      going.current = false;
     }
   }
   async function pay() {
-    if (!checkout) return;
-    const paid = await act(() => commands.pay(checkout.id, method, Number(received), verified, { edc: viaEdc ? edc : undefined, approvalCode: viaEdc ? approvalCode : undefined }), "Pembayaran tersimpan di perangkat");
+    // TILL-01: the tap that opened this sheet, or its double, is not a confirmation.
+    if (!checkout || !armed) return;
+    const paid = await act(() => commands.pay(checkout.id, method, Number(received), verified, { edc: viaEdc ? edc : undefined, approvalCode: viaEdc ? approvalCode : undefined, send: !tablets }), "Pembayaran tersimpan di perangkat");
     if (paid) {
       setCheckout(undefined);
-      await update(fresh(pager));
+      await update(following(paid));
       setReceipt(paid);
     }
   }
@@ -302,7 +383,7 @@ export default function Pos() {
         {!comp && <div className="order-who">
           <label className="table-label">
             Pager
-            <input aria-label="Nomor pager / meja" placeholder="12" maxLength={100} value={draft.label.replace(/^Pager (?=\d+$)/, "")} onChange={(e) => void update({ ...draft, label: /^\d+$/.test(e.target.value) ? `Pager ${e.target.value}` : e.target.value })} />
+            <input aria-label="Nomor pager / meja" placeholder="12" maxLength={100} value={draft.label.replace(/^Pager (?=\d+$)/, "")} onChange={(e) => { const label = /^\d+$/.test(e.target.value) ? `Pager ${e.target.value}` : e.target.value; if (label.length <= 100) void update({ ...draft, label }); }} />
           </label>
           <label className="table-label">
             Nama (opsional)
@@ -335,7 +416,7 @@ export default function Pos() {
                     <div className="quantity-control">
                       <button aria-label={`${l.qty > 1 ? "Kurangi" : "Hapus"} ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.flatMap((x) => (x.id !== l.id ? [x] : x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : [])) })}><Minus size={20} strokeWidth={1.6} /></button>
                       <span>{l.qty}</span>
-                      <button aria-label={`Tambah ${l.name}`} onClick={() => void update({ ...draft, lines: draft.lines.map((x) => (x.id === l.id ? { ...x, qty: x.qty + 1 } : x)) })}><Plus size={20} strokeWidth={1.6} /></button>
+                      <button aria-label={`Tambah ${l.name}`} disabled={l.qty >= 999} onClick={() => void update({ ...draft, lines: draft.lines.map((x) => (x.id === l.id ? { ...x, qty: x.qty + 1 } : x)) })}><Plus size={20} strokeWidth={1.6} /></button>
                     </div>
                   )}
                 </div>
@@ -351,8 +432,8 @@ export default function Pos() {
         ) : draft.discount > 0 && (
           <div className="bill-row"><span>Diskon · {draft.discountReason}</span><span>−{rupiah(draft.discount)}</span></div>
         )}
-        {total.service > 0 && <div className="bill-row"><span>Layanan {(settings?.serviceBps ?? 0) / 100}%</span><span>{rupiah(total.service)}</span></div>}
-        {total.tax > 0 && <div className="bill-row"><span>Pajak {(settings?.taxBps ?? 0) / 100}%</span><span>{rupiah(total.tax)}</span></div>}
+        {total.service > 0 && <div className="bill-row"><span>Layanan {((settings?.serviceBps ?? 0) / 100).toLocaleString("id-ID")}%</span><span>{rupiah(total.service)}</span></div>}
+        {total.tax > 0 && <div className="bill-row"><span>Pajak {((settings?.taxBps ?? 0) / 100).toLocaleString("id-ID")}%</span><span>{rupiah(total.tax)}</span></div>}
         <div className="bill-total"><strong>Total</strong><strong>{rupiah(total.total)}</strong></div>
         {invalid && <p className="error" role="alert">{invalid}</p>}
         {!shift ? (
@@ -385,10 +466,16 @@ export default function Pos() {
           </div>
           <span className={`badge ${shift ? "badge-green" : ""}`}><span className="status-dot" />{shift ? "Sif terbuka" : "Sif belum dibuka"}</span>
         </div>
+        {refused && !user.demo && (
+          <p className="callout" role="alert">
+            <Info size={17} />
+            <span>Server menolak satu operasi ({refused.error || refused.kind}). Penjualan tetap tercatat di tablet ini, tetapi belum sampai ke server sampai operasi itu dibuang. Buka <Link to="/settings" className="text-button">Lainnya → Sinkron &amp; backup</Link>.</span>
+          </p>
+        )}
         {notTill && (
           <p className="callout till-only" role="status">
             <Info size={17} />
-            <span>Perangkat ini dipasangkan sebagai <strong>{pairedAs}</strong>, jadi menu hanya bisa dilihat. Penjualan berjalan di satu perangkat kasir utama per toko. Untuk berjualan di sini, pemilik atau manajer membuka <Link to="/settings" className="text-button">Lainnya → Printer &amp; perangkat</Link> lalu memilih "Jadikan perangkat ini kasir utama".</span>
+            <span>Perangkat ini dipasangkan sebagai <strong>{pairedAs}</strong>, jadi menu hanya bisa dilihat. Penjualan berjalan di satu perangkat kasir utama per toko. Untuk berjualan di sini, pemilik membuka <Link to="/settings" className="text-button">Lainnya → Printer &amp; perangkat</Link> lalu memilih "Jadikan perangkat ini kasir utama".</span>
           </p>
         )}
         <div className="search-box">
@@ -489,10 +576,10 @@ export default function Pos() {
         })()}
       </Dialog>
       {discountDialog && <DiscountDialog open onClose={() => setDiscountDialog(false)} draft={draft} settings={settings} manager={manager} type={lineType} onPick={pickDiscount} />}
-      <ApprovalDialog request={ask} onClose={() => setAsk(undefined)} onApproved={(discountApproval) => { setAsk(undefined); setDiscountDialog(false); void update({ ...draft, discountId: pending?.discountId, discount: discountApproval.amount!, discountReason: pending?.reason ?? "", discountApproval }); }} />
+      <ApprovalDialog request={ask} onClose={() => setAsk(undefined)} onApproved={(discountApproval) => { setAsk(undefined); setDiscountDialog(false); void update({ ...draft, discountId: pending?.discountId, discountRule: pending?.rule, discount: discountApproval.amount!, discountReason: pending?.reason ?? "", discountApproval }); }} />
       {/* Figma C4/C4b: the total, how the guest pays, which EDC, what to do on it, the slip's code, then one confirm.
           Stores that take cash keep the cash and manual-check paths in the same layout. */}
-      <Dialog open={Boolean(checkout)} onOpenChange={() => setCheckout(undefined)} className="pay-dialog" title="Terima pembayaran" description={checkout ? payNote(checkout) : undefined}>
+      <Dialog open={Boolean(checkout)} onOpenChange={() => { if (armed) setCheckout(undefined); }} className="pay-dialog" title="Terima pembayaran" description={checkout ? payNote(checkout) : undefined}>
         {checkout && (
           <>
             <div className="payment-total"><span>Total tagihan</span><strong>{rupiah(checkout.totals.total)}</strong></div>
@@ -529,7 +616,7 @@ export default function Pos() {
                 <label className="check-row"><input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />Saya sudah memeriksa penerimaan di akun merchant.</label>
               </>
             )}
-            <Button className="full btn-accent pay-confirm" loading={busy} disabled={busy || (viaEdc ? !edc : method === "cash" ? Number(received) < checkout.totals.total : !verified)} onClick={() => pay()}><Check size={20} /> {viaEdc ? `Konfirmasi: ${method === "qris" ? "QRIS " : ""}dibayar di EDC ${edc}` : "Catat pembayaran"}</Button>
+            <Button className="full btn-accent pay-confirm" loading={busy} disabled={busy || !armed || (viaEdc ? !edc : method === "cash" ? Number(received) < checkout.totals.total : !verified)} onClick={() => pay()}><Check size={20} /> {viaEdc ? `Konfirmasi: ${method === "qris" ? "QRIS " : ""}dibayar di EDC ${edc}` : "Catat pembayaran"}</Button>
           </>
         )}
       </Dialog>

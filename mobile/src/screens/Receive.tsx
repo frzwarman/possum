@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { quantity, rupiah, search } from '../../../src/domain/calculate';
 import { can } from '../../../src/domain/permissions';
 import { lookup, normalizeCode, unitOf } from '../../../src/stok/barcode';
-import { flag, lineCost, lineQty, suggestedPrice, units } from '../../../src/stok/delivery';
+import { confirmed, flag, lineCost, lineQty, suggestedPrice, units } from '../../../src/stok/delivery';
 import type { DeliveryLine, PhoneStock } from '../../../src/stok/types';
 import { shrinkNote } from '../platform/photo';
 import { useApp } from '../state';
@@ -109,8 +109,9 @@ export function Receive({ back }: { back: () => void }) {
     setPhotoBusy(true);
     setProblem('');
     try {
-      const photo = await shrinkNote(uri);
-      app.setDelivery({ ...delivery, photo });
+      // Shrinking takes a while and the person goes on typing and scanning: the photo joins the delivery as it is
+      // by then (attachPhoto), not the copy this screen had when the camera opened.
+      app.attachPhoto(delivery.id, await shrinkNote(uri));
     } catch (e) {
       setProblem(says(e));
     } finally {
@@ -198,7 +199,7 @@ export function Receive({ back }: { back: () => void }) {
                       <Button label="Ubah" kind="secondary" small style={kit.grow} onPress={() => setEditing(line)} />
                       <Button
                         label={`Ya, ${line.amount} benar`} kind="primary" small style={kit.grow}
-                        onPress={() => app.setDelivery({ ...delivery, lines: delivery.lines.map((l) => (l.id === line.id ? { ...l, checked: l.amount } : l)) })}
+                        onPress={() => app.setDelivery({ ...delivery, lines: delivery.lines.map((l) => (l.id === line.id ? confirmed(stock, l) : l)) })}
                       />
                     </View>
                   </Card>

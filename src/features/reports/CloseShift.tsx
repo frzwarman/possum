@@ -10,11 +10,14 @@ import { Select } from '../../components/ui/select'
 import { ApprovalDialog,type ApprovalRequest } from '../../app/Approval'
 import type { Approval,Order } from '../../domain/types'
 import { payLabel } from '../orders/Receipt'
+import { useShiftOrders } from './range'
 // Close for a store with EDC machines (pilot PRD, Figma C9): the day's takings, every transaction findable, each
 // EDC's settlement slip against what Takar recorded on it, and, when the store takes cash, the drawer counted blind.
 // The stock count comes first.
 export function CloseShift({heading=false}:{heading?:boolean}){
- const {orders,settings,shift,shifts,counts,cash:moves,commands,act,busy,manager,user,stockItems}=useApp()
+ const {settings,shift,shifts,counts,cash:moves,commands,act,busy,manager,user,stockItems}=useApp()
+ // QA TILL-07, PERF-3: the shift's own orders, never the app's newest-500 window.
+ const orders=useShiftOrders(shift?.id)
  const [slips,setSlips]=useState<Record<string,string>>({});const [drawer,setDrawer]=useState('');const [query,setQuery]=useState('');const [kind,setKind]=useState('all');const [edc,setEdc]=useState('');const [byAmount,setByAmount]=useState(true);const [time,setTime]=useState('');const [ask,setAsk]=useState<ApprovalRequest>()
  const {cash,edcs}=tills(settings)
  // No shift open: say so with the one next step, then the last shifts as a table — one column per EDC (and the
@@ -40,9 +43,11 @@ export function CloseShift({heading=false}:{heading?:boolean}){
  const done=counts.filter(c=>c.status!=='draft'&&(c.submittedAt??c.approvedAt??'')>=shift.openedAt).map(c=>c.submittedAt??c.approvedAt!).sort().at(-1),counted=!stockItems.length||Boolean(done)
  const tz=settings?.timezone,hhmm=(iso:string)=>when(iso,tz,{hour:'2-digit',minute:'2-digit'}),hour=(iso:string)=>Number(new Date(iso).toLocaleString('en-GB',{timeZone:tz,hour:'2-digit',hourCycle:'h23'}))
  const inTime=(iso:string)=>!time||(time==='morning'?hour(iso)<12:time==='afternoon'?hour(iso)>=12&&hour(iso)<17:hour(iso)>=17)
- const amounts=Object.fromEntries(edcs.map(e=>[e,Number(slips[e]||0)])),list=settlements(shift.id,orders,amounts,edcs),cashGap=cash?Math.abs(Number(drawer||0)-expectedCash(shift,orders,moves)):0,gap=settlementGap(list)+cashGap,limit=settings?.varianceLimit??10000
+ // RPT-4: a machine that took payments this shift is on the screen (and in the close) even when settings no longer list it.
+ const machines=[...new Set([...edcs,...paid.flatMap(o=>o.payment?.edc?[o.payment.edc]:[])])]
+ const amounts=Object.fromEntries(machines.map(e=>[e,Number(slips[e]||0)])),list=settlements(shift.id,orders,amounts,edcs),cashGap=cash?Math.abs(Number(drawer||0)-expectedCash(shift,orders,moves)):0,gap=settlementGap(list)+cashGap,limit=settings?.varianceLimit??10000
  const shown=paid.filter(o=>(kind==='all'||(kind==='compliment'?o.mode==='compliment':o.payment?.method===kind))&&(!edc||o.payment?.edc===edc)&&inTime(o.payment!.at)&&[o.receiptId.slice(-6),o.label,o.name,o.payment?.approvalCode].join(' ').toLowerCase().includes(query.trim().toLowerCase())).sort((a,b)=>byAmount?b.totals.total-a.totals.total:b.payment!.at.localeCompare(a.payment!.at))
- const blank=edcs.filter(e=>slips[e]===undefined||slips[e]==='')
+ const blank=machines.filter(e=>slips[e]===undefined||slips[e]==='')
  const missing=[...(!counted?['Kirim hitung stok dulu (Stok → Hitung stok).']:[]),...(open>0?[`Bayar atau batalkan ${open} pesanan terbuka di Pesanan.`]:[]),...(blank.length?[`Isi slip ${blank.map(e=>`EDC ${e}`).join(', ')}. Ketik 0 bila mesinnya tidak dipakai.`]:[]),...(cash&&drawer===''?['Isi uang tunai di laci.']:[]),...(!(shift.actor===user.id||manager)?[`Hanya ${shift.cashier} atau manajer yang bisa menutup sif ini.`]:[])]
  async function close(approval?:Approval){if(!manager&&!approval&&gap>limit){setAsk({action:'variance',amount:gap,what:cash?'Selisih kas atau EDC di atas batas; manajer perlu menyetujui penutupan sif':`Selisih EDC ${rupiah(gap)}; manajer perlu menyetujui penutupan sif`});return}
   await act(async()=>{await commands.closeShift(cash?Number(drawer||0):0,approval,amounts);setSlips({});setDrawer('')},'Sif ditutup. Hasil hitung stok menunggu persetujuan manajer.')}
@@ -61,7 +66,7 @@ export function CloseShift({heading=false}:{heading?:boolean}){
    <article className="panel close-transactions"><div className="panel-heading"><h2>Transaksi sif ini</h2>
      <div className="search-box compact"><Search size={16}/><input aria-label="Cari transaksi" placeholder="No. pesanan atau kode approval" value={query} onChange={e=>setQuery(e.target.value)}/></div></div>
     <div className="filter-row"><div className="pill-tabs">{[['all','Semua'],...(cash?[['cash','Tunai']]:[]),['card','Kartu'],['qris','QRIS'],['compliment','Compliment']].map(([id,label])=><button key={id} className={kind===id?'active':''} aria-pressed={kind===id} onClick={()=>setKind(id)}>{label}</button>)}</div>
-     <div className="pill-selects"><Select ariaLabel="EDC" value={edc} onChange={setEdc} options={[{value:'',label:'EDC: semua'},...edcs.map(e=>({value:e,label:`EDC ${e}`}))]}/><Select ariaLabel="Waktu" value={time} onChange={setTime} options={[{value:'',label:'Waktu: sepanjang hari'},{value:'morning',label:'Pagi, sebelum 12.00'},{value:'afternoon',label:'Siang, 12.00 sampai 17.00'},{value:'evening',label:'Malam, setelah 17.00'}]}/></div></div>
+     <div className="pill-selects"><Select ariaLabel="EDC" value={edc} onChange={setEdc} options={[{value:'',label:'EDC: semua'},...machines.map(e=>({value:e,label:`EDC ${e}`}))]}/><Select ariaLabel="Waktu" value={time} onChange={setTime} options={[{value:'',label:'Waktu: sepanjang hari'},{value:'morning',label:'Pagi, sebelum 12.00'},{value:'afternoon',label:'Siang, 12.00 sampai 17.00'},{value:'evening',label:'Malam, setelah 17.00'}]}/></div></div>
     <div className="table-scroll"><table className="data-table plain-table dense"><thead><tr><th>Pesanan</th><th>Waktu</th><th>Pembayaran</th><th>EDC</th><th className="num"><button type="button" className="sort-head" onClick={()=>setByAmount(!byAmount)}>{byAmount?'Nominal: terbesar':'Waktu: terbaru'}<ChevronDown size={14}/></button></th></tr></thead><tbody>
      {shown.slice(0,50).map(o=><tr key={o.id} title={o.payment?.approvalCode?`Approval ${o.payment.approvalCode}`:undefined}><td><strong>#{o.receiptId.slice(-6).toUpperCase()}</strong></td><td>{hhmm(o.payment!.at)}</td><td className={o.mode==='compliment'?'muted':''}>{o.mode==='compliment'?'Compliment':payLabel(o).split(',')[0]}</td><td>{o.mode==='compliment'?(o.compliment?.kind==='family'?'Keluarga pemilik':'Staff meal'):o.payment?.edc??'—'}{o.payment?.approvalCode&&<small className="muted"> · {o.payment.approvalCode}</small>}</td><td className="num"><strong>{rupiah(o.totals.total)}</strong></td></tr>)}
     </tbody></table></div>

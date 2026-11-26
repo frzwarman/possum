@@ -13,10 +13,12 @@ export interface ApprovalRequest {
   what: string;
   amount?: number;
   orderId?: string;
+  lineId?: string;
 }
 // Corrections say what happens to stock where the manager approves them: made food is used, not restocked.
 const corrections: Partial<Record<ApprovalAction, { label: string; note: string }>> = {
   void: { label: "Setujui pembatalan", note: "Yang sudah dibuat tetap tercatat terpakai, bahannya tidak kembali ke stok." },
+  voidline: { label: "Setujui pembatalan", note: "Yang sudah dibuat tetap tercatat terpakai, bahannya tidak kembali ke stok." },
   refund: { label: "Setujui refund", note: "Refund tidak mengembalikan bahan ke stok." },
 };
 // Supervisor override at the till: the cashier stays signed in, a manager or the owner picks their
@@ -63,7 +65,7 @@ export function ApprovalDialog({
   }
   // Callers put the typed reason last ("Batalkan 1× Es teh di Meja 4 · Salah menu"); it shows under Alasan.
   const parts = request?.what.split(" · ") ?? [];
-  const reason = request && ["void", "refund", "discount", "cashout"].includes(request.action) && parts.length > 1 ? parts.pop() : undefined;
+  const reason = request && ["void", "voidline", "refund", "discount", "cashout"].includes(request.action) && parts.length > 1 ? parts.pop() : undefined;
   const kind = request && corrections[request.action];
   // A correction reads as on C6 ("Kinoy ingin membatalkan 2× Seasalt Latte (Rp84.000) di pesanan #A-1043"); other requests stay "meminta: …".
   const ask = parts.join(" · ").replace(/^Batalkan /, "ingin membatalkan ").replace(/^Kembalikan dana /, "ingin mengembalikan dana ");

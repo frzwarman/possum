@@ -4,10 +4,10 @@ import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Money } from "../../components/ui/money";
 import { businessDay, discountAmount, discountFor, discountRunning, orderTotals, rupiah, when } from "../../domain/calculate";
-import type { Discount, Draft, Line, MenuType, Settings } from "../../domain/types";
+import type { Discount, DiscountRule, Draft, Line, MenuType, Settings } from "../../domain/types";
 
 // What the cashier chose; the till decides whether a manager's PIN is needed before it lands on the cart.
-export type DiscountPick = { discountId?: string; discount: number; reason: string };
+export type DiscountPick = { discountId?: string; discount: number; reason: string; rule?: DiscountRule };
 const scopeText: Record<Discount["scope"], string> = { order: "seluruh pesanan", beverage: "minuman saja", food: "makanan saja", snack: "camilan saja", items: "menu pilihan" };
 const REASONS = ["Pelanggan tetap", "Komplain", "Acara", "Lainnya"];
 
@@ -108,7 +108,7 @@ export function DiscountDialog({ open, onClose, draft, settings, manager, type, 
             <span>Total baru, termasuk pajak</span><strong>{rupiah(bill(manual).total)}</strong>
           </div>
           {!manager && <p className="small muted">Diskon manual perlu persetujuan manajer: PIN-nya di kasir, atau lewat Telegram bila tidak di tempat. Sama seperti pembatalan.</p>}
-          <Button className="full" disabled={!manual || !why || (kind === "percent" && Number(value) > 100)} onClick={() => onPick({ discount: manual, reason: why })}>
+          <Button className="full" disabled={!manual || !why || (kind === "percent" && Number(value) > 100)} onClick={() => onPick({ discount: manual, reason: why, rule: { kind, value: Math.min(Number(value), 1e9), scope } })}>
             {manager ? "Terapkan diskon" : "Minta persetujuan manajer"}
           </Button>
         </>

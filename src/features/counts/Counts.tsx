@@ -1,7 +1,7 @@
 import { useRef,useState } from 'react'
 import { Navigate } from '@tanstack/react-router'
 import { ArrowLeft,CalendarClock,CalendarDays,Check,ChevronDown,ChevronRight,ClipboardList,Clock,Coins,Lock,Play,RotateCw,ShieldCheck,TriangleAlert } from 'lucide-react'
-import { useApp } from '../../app/context'
+import { useApp, useMovements } from '../../app/context'
 import { ApprovalDialog,type ApprovalRequest } from '../../app/Approval'
 import { Button } from '../../components/ui/button'
 import { Select } from '../../components/ui/select'
@@ -18,7 +18,8 @@ const money=(v:number)=>rupiah(v).replace(/^-/,'−')
 // F6: count by storage area with the expected amount hidden, pause and resume, then a variance review
 // that a manager approves (PIN for everyone else) into one count.record operation.
 export default function Counts(){
- const {stockItems,movements,counts,settings,commands,act,busy,user,manager,balance,costs,db,setError,menu,shift,shifts}=useApp()
+ const {stockItems,counts,settings,commands,act,busy,user,manager,costs,db,setError,menu,shift,shifts}=useApp()
+ const movements=useMovements()
  const [area,setArea]=useState('')
  const [session,setSession]=useState<CountSession>()
  const [typed,setTyped]=useState<Record<string,Entry>>({})
@@ -46,8 +47,10 @@ export default function Counts(){
   try{counted=s?measure(s,e):undefined}catch{counted=undefined}
   const next={...session,lines:session.lines.map(l=>l.stockId===stockId?{...l,counted}:l)};setSession(next);await db.counts.put(next)}
  async function submit(){if(!session)return;const s=session;await act(async()=>{await commands.submitCount(s);setSession(undefined)},'Hasil hitung dikirim untuk ditinjau manajer')}
- // CNT-2: expected = stock on hand now; gap valued at the latest cost; flagged over 5%. Ties (no cost yet) put flagged lines first.
- const review=(c:CountSession)=>c.lines.filter(l=>l.counted!==undefined).map(l=>{const expected=c.status==='approved'&&l.expected!==undefined?l.expected:balance(l.stockId);return {...l,...countGap(expected,l.counted!,costs.get(l.stockId)??0),expected}}).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value)||Number(b.flagged)-Number(a.flagged))
+ // CNT-2: expected = stock on hand when the count was taken (CT-01: the server sends it with a submitted count; a count sent from
+ // here is measured against the movements up to its submit); gap valued at the latest cost; flagged over 5%. Ties (no cost yet)
+ // put flagged lines first.
+ const review=(c:CountSession)=>c.lines.filter(l=>l.counted!==undefined).map(l=>{const at=l.at??(c.status==='submitted'?c.submittedAt:undefined),expected=l.expected??movements.filter(m=>m.stockId===l.stockId&&(!at||m.at<=at)).reduce((n,m)=>n+m.qty,0);return {...l,...countGap(expected,l.counted!,costs.get(l.stockId)??0),expected}}).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value)||Number(b.flagged)-Number(a.flagged))
  async function approve(c:CountSession,approval?:Approval){const rows=review(c)
   if(rows.some(r=>r.flagged&&!(reasons[r.stockId]??r.reason??'').trim())){setError('Isi alasan untuk setiap selisih di atas 5%');return}
   const lines=rows.map(r=>({stockId:r.stockId,counted:r.counted,reason:(reasons[r.stockId]??r.reason??'').trim()}))
@@ -68,8 +71,11 @@ export default function Counts(){
   let total:number|undefined,problem='';try{total=measure(s,e)}catch(err){problem=err instanceof Error?err.message:String(err)}
   const go=(l:typeof lines[number])=>{setAt(lines.indexOf(l));setBox(firstBox(l.stockId))}
   const press=(k:string)=>{const v=value(target);void type(s.id,put(target,k==='del'?v.slice(0,-1):k===','?(v.includes(',')?v:(v||'0')+','):v==='0'?k:(v+k).slice(0,12)))}
-  // Switching g↔kg or ml↔L converts what is already typed, so the count itself does not change.
-  const flip=()=>{const n=Number(e.loose.replace(',','.')),v=e.loose.trim()&&Number.isFinite(n)?String(Math.round((e.big?n*1000:n/1000)*1000)/1000).replace('.',','):e.loose;void type(s.id,{...e,loose:v,big:!e.big})}
+  // Switching g↔kg or ml↔L converts what is already typed, so the count itself does not change. STOK-10: a value the other
+  // unit cannot hold exactly (1.234,5 g would round to 1,235 kg, 0,4 g to 0) keeps its unit instead.
+  const flip=()=>{const n=Number(e.loose.replace(',','.')),x=e.big?n*1000:n/1000,r=Math.round(x*1000)/1000
+   if(e.loose.trim()&&Number.isFinite(n)&&Math.abs(r-x)>1e-9){setError(`Ketik dalam ${unitName(s.unit)} untuk pecahan di bawah 1 ${unitName(s.unit)}`);return}
+   const v=e.loose.trim()&&Number.isFinite(n)?String(r).replace('.',','):e.loose;void type(s.id,{...e,loose:v,big:!e.big})}
   const hint=(x:StockItem)=>[...(session.area==='Semua area'&&x.area?[x.area]:[]),...(x.production?['prep']:[]),...(x.packs?.length?x.packs.map(p=>`${p.name} ${nice(p.qty,x.unit)}`):[x.unit])].join(', ')
   const words=(x:StockItem,v:number)=>{const t=typed[x.id]??blank,parts=(x.packs??[]).filter(p=>(t.packs[p.name]??'').trim()).map(p=>`${t.packs[p.name]} ${p.name}`);return parts.length?`${[...parts,...(t.loose.trim()?[`${t.loose} ${unitName(t.big?BIG[x.unit]:x.unit)}`]:[])].join(' + ')} = ${nice(v,x.unit)}`:nice(v,x.unit)}
   const closing=shift&&!counts.some(c=>c.id!==session.id&&c.status!=='draft'&&(c.submittedAt??c.approvedAt??'')>=shift.openedAt),by=who(session.startedBy)

@@ -12,6 +12,8 @@ import { Select } from '../../components/ui/select'
 import { roleLabel,roleTitle,roles } from '../../domain/permissions'
 import { configured,supabase } from '../../lib/supabase'
 import { databaseFor,uid } from '../../lib/db'
+import { store,type Bootstrap } from '../../lib/sync'
+import { pauseNote,pinPause,pinTried,signInError } from '../../lib/signin'
 import type { Identity,Role } from '../../domain/types'
 const schema=z.object({email:z.email('Masukkan email yang valid'),password:z.string().min(6,'Minimal 6 karakter')})
 export interface TeamMember { id:string; name:string; role:Role; login?:string }
@@ -25,10 +27,12 @@ export const initials=(n:string)=>{const w=n.trim().split(/\s+/);return (w.lengt
 // it unless unsynced work is waiting. Runs at sign-in and after pairing the device.
 export async function bootstrap(id:string,deviceId:string):Promise<Identity>{
  const {data:boot,error:b}=await supabase!.rpc('bootstrap',{device_id:deviceId});if(b)throw b
- const user:Identity={id,name:boot.name,role:boot.role,restaurantId:boot.restaurantId,primary:boot.primary,deviceId,demo:false,mode:boot.device?.mode??null};const db=databaseFor(user)
- // The device keeps the team list so staff can pick their name and type their PIN next time.
- try{if(boot.team)localStorage.setItem('takar-team',JSON.stringify(boot.team));if(boot.settings?.name)localStorage.setItem('takar-store',boot.settings.name)}catch{/* private mode */}
- const pending=await db.outbox.where('state').anyOf('pending','rejected').count();if(!pending){await db.transaction('rw',db.tables,async()=>{await db.settings.put(boot.settings);await db.menu.clear();await db.menu.bulkPut(boot.menu);await db.stock.clear();await db.stock.bulkPut(boot.stock);await db.orders.bulkPut(boot.orders);await db.shifts.bulkPut(boot.shifts);await db.cash.bulkPut(boot.cash);await db.movements.clear();await db.movements.bulkPut(boot.movements);await db.counts.bulkPut(boot.counts??[]);await db.purchaseOrders.bulkPut(boot.purchaseOrders??[]);await db.suppliers.bulkPut(boot.suppliers??[]);await db.salesOrders.bulkPut(boot.salesOrders??[]);await db.transfers.bulkPut(boot.outletData?.transfers??[]);await db.meta.put({id:'outlets',value:JSON.stringify(boot.outletData?.outlets??[])});await db.meta.put({id:'costs',value:JSON.stringify(boot.costs??{})});await db.meta.put({id:'pullCursor',value:boot.now??new Date().toISOString()});await db.meta.put({id:'device',value:JSON.stringify(boot.device??{})});await db.meta.put({id:'initialized',value:'yes'})})}
+ const user:Identity={id,name:boot.name,role:boot.role,restaurantId:boot.restaurantId,primary:boot.primary,deviceId,demo:false,mode:boot.device?.mode??null};const db=databaseFor(user);await db.meta.delete('stale') // a fresh identity: the pull's older verdict on the last one no longer applies
+ // The device keeps the team list so staff can pick their name and type their PIN next time. AUTH-13: a member of
+ // another restaurant signing in here (a visiting manager of a linked outlet) does not replace the till's own picker
+ // and store name: the list is replaced when the device is paired with that restaurant, or has no other one yet.
+ try{const known=localStorage.getItem('takar-restaurant');if(!(known&&known!==boot.restaurantId&&!boot.device?.enrolled)){if(boot.team)localStorage.setItem('takar-team',JSON.stringify(boot.team));if(boot.settings?.name)localStorage.setItem('takar-store',boot.settings.name);localStorage.setItem('takar-restaurant',boot.restaurantId)}}catch{/* private mode */}
+ const pending=await db.outbox.where('state').anyOf('pending','rejected').count();if(!pending)await store(db,boot as Bootstrap)
  return user
 }
 export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
@@ -40,18 +44,27 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
  const [byEmail,setByEmail]=useState(members.length===0);const [who,setWho]=useState('');const [pin,setPin]=useState('');const [tryDemo,setTryDemo]=useState(false)
  const form=useForm<z.infer<typeof schema>>({resolver:zodResolver(schema)})
  const deviceId=localStorage.getItem('meja-device')||uid();localStorage.setItem('meja-device',deviceId)
- async function signIn(email:string,password:string,remember?:string){setLoading(true);setError('')
+ // `who` is the member picked on the pad: three wrong PINs pause that person's pad for five minutes (AUTH-03), and
+ // only a refused PIN counts (AUTH-11: no answer from the server is reported as that, not as a wrong PIN).
+ const wrong=(who?:string)=>who?'PIN salah atau akun tidak aktif':'Email atau kata sandi salah, atau akun tidak aktif'
+ async function signIn(email:string,password:string,who?:string){setLoading(true);setError('')
   try{if(!supabase)throw new Error('Koneksi restoran belum diatur. Gunakan demo lokal atau isi konfigurasi Supabase.')
-   const {data,error:e}=await supabase.auth.signInWithPassword({email,password});if(e)throw new Error(remember?'PIN salah atau akun tidak aktif':e.message)
-   const user=await bootstrap(data.user!.id,deviceId)
-   // CTL-4: the PIN's hash stays on this device so the lock screen can check it offline.
-   // Owners and managers never leave a PIN hash on a shared device: their lock screen asks the server instead.
-   try{if(remember&&!['owner','manager'].includes(user.role))localStorage.setItem('takar-pin-hash',await pinHash(remember,user.id));else localStorage.removeItem('takar-pin-hash')}catch{/* private mode */}
+   const wait=who?pinPause(who):0;if(wait)throw new Error(pauseNote(wait))
+   const {data,error:e}=await supabase.auth.signInWithPassword({email,password});if(e){const said=signInError(e,wrong(who));if(who&&said.name==='Wrong'){pinTried(who,false);const now=pinPause(who);if(now)throw new Error(pauseNote(now))}throw said}
+   if(who)pinTried(who,true)
+   // An account the server no longer accepts (deactivated) gets no session left on the device.
+   let user:Identity;try{user=await bootstrap(data.user!.id,deviceId)}catch(b){await supabase.auth.signOut({scope:'local'}).catch(()=>undefined);throw signInError(b as {message?:string},wrong(who))}
+   // CTL-4: the hash of the secret stays on this device so the lock screen can check it offline, whoever signed in and
+   // whichever way (AUTH-02, SYNC-07: a till in an outage must open for the person who locked it). A password that is
+   // not a 6-digit PIN is marked, so the lock asks for a password instead of showing the pad. logout() removes it.
+   try{localStorage.setItem('takar-pin-hash',(/^\d{6}$/.test(password)?'':'pw:')+await pinHash(password,user.id))}catch{/* private mode */}
    onLogin(user)}
   catch(e){setError(e instanceof Error?e.message:'Login gagal');setPin('')}finally{setLoading(false)}}
  // Each demo role has its own local data, so trying the cashier view never touches the owner's demo.
  function demo(){onLogin({id:`demo-${demoRole}`,name:`${roleLabel[demoRole]} Demo`,role:demoRole,restaurantId:'local-demo',deviceId,primary:true,demo:true})}
  const member=members.find(m=>m.id===who);const people=!byEmail&&members.length>0
+ // The pause is read at every render; the clock below re-renders the screen every 30 s, so it lifts on its own.
+ const paused=member?pinPause(member.id):0
  const store=(()=>{try{return localStorage.getItem('takar-store')||''}catch{return ''}})()
  // The shared tablet can sit on this screen for hours: keep the clock in the corner current.
  const [tick,setTick]=useState(()=>new Date());useEffect(()=>{const t=setInterval(()=>setTick(new Date()),30000);return()=>clearInterval(t)},[])
@@ -67,12 +80,12 @@ export default function Login({onLogin}:{onLogin:(u:Identity)=>void}){
    <p className="signin-links"><button type="button" className="text-button" onClick={()=>setByEmail(true)}><Mail size={14}/> Masuk dengan email</button><button type="button" className="text-button" onClick={()=>setTryDemo(!tryDemo)}>Coba demo lokal</button></p>
    {tryDemo&&demoBox}
   </section>
-  :<form className="signin-card" onSubmit={e=>{e.preventDefault();if(member.login)void signIn(member.login,pin,pin)}}>
+  :<form className="signin-card" onSubmit={e=>{e.preventDefault();if(member.login&&!paused)void signIn(member.login,pin,member.id)}}>
    <div className="signin-who"><span className="avatar">{initials(member.name)}</span><h2>Hai {member.name}</h2><p className="muted">{roleLabel[member.role]}.<br/>PIN Anda 6 angka.</p>
     <Button type="button" variant="secondary" onClick={()=>{setWho('');setPin('');setError('')}}><ArrowLeft size={18}/> Bukan Anda? Pilih nama</Button>
     {error&&<p role="alert" className="error">{error}</p>}</div>
    {/* The sixth digit signs in, as on the Figma; no extra button to find. */}
-   <div className="signin-pin"><strong>{loading?<Spinner label="Memeriksa…"/>:'Masukkan PIN'}</strong><PinPad label="Masukkan PIN" value={pin} onChange={v=>{setPin(v);if(v.length===6&&member.login&&configured&&!loading)void signIn(member.login,v,v)}} hint="3 kali salah mengunci masuk selama 5 menit."/></div>
+   <div className="signin-pin"><strong>{loading?<Spinner label="Memeriksa…"/>:'Masukkan PIN'}</strong><PinPad label="Masukkan PIN" value={pin} onChange={v=>{setPin(v);if(v.length===6&&member.login&&configured&&!loading&&!paused)void signIn(member.login,v,member.id)}} hint={paused?pauseNote(paused):'3 kali salah mengunci masuk selama 5 menit.'}/></div>
   </form>}
   {!member&&<p className="signin-foot"><LockKeyhole size={18}/> Setiap orang masuk dengan PIN sendiri, jadi setiap penjualan dan pembatalan tercatat atas namanya.</p>}
  </main>

@@ -12,13 +12,13 @@
 .orders-page .page-heading>.search-box input{font-size:14px;color:var(--text)}
 .orders-page .page-heading>.search-box input::placeholder{color:var(--text-secondary)}
 /* Once the search no longer fits beside the title (tablet portrait), it takes the whole row under it. */
-.orders-page{container:orders-page/inline-size}
-@container orders-page (max-width:717px){.orders-page .page-heading>.search-box{flex-basis:100%}}
+/* A media query, not a size container: Chromium 125 (Samsung Internet 27) makes a size container the containing block of the phone Select sheet (position:fixed). */
+@media(max-width:850px){.orders-page .page-heading>.search-box{flex-basis:100%}}
 /* The sort stays on the pills' row while it fits, else it drops to its own line (tablet portrait, phone).
    Pills and the sort draw 34 px tall as on C11 inside a 40 px touch target: a 3 px transparent border around the
    visible pill (background-clip), with the focus ring drawn on the visible edge. */
 .orders-filters{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:13px}
-.orders-filters .category-tabs{flex:0 1 auto;min-width:0;max-width:calc(100% + 6px);margin:0 -3px;padding:0;gap:2px}
+.orders-filters .category-tabs{flex:0 1 auto;min-width:0;max-width:calc(100% + 6px);margin:-4px -3px;padding:4px 0;gap:2px}
 .orders-filters .category-tabs>button,.orders-filters .filter-select .select-trigger{min-height:40px;border:3px solid transparent;background-clip:padding-box;font-size:13px;font-weight:600}
 .orders-filters .category-tabs>button{padding:0 14px;gap:6px}
 .orders-filters .category-tabs>button.active{border-color:transparent}
@@ -77,13 +77,13 @@
 .detail-line small{display:block;font-size:12px;line-height:17px;color:var(--text-secondary)}
 /* Prices sit 2 px above the item name, as drawn: a shorter line box at the top of the row. */
 .detail-line>strong,.detail-total strong{font-size:13px;line-height:16px;font-weight:600;white-space:nowrap}
-.detail-line.cancelled>div>span,.detail-line.cancelled>strong{text-decoration:line-through;color:var(--text-disabled)}
+.detail-line.cancelled>div>span,.detail-line.cancelled>strong{text-decoration:line-through;color:var(--text-secondary)}
 .detail-total{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-top:12px;border-top:1px solid var(--border);font-size:14px;line-height:20px}
 .detail-note{font-size:12px;line-height:17px;color:var(--text-secondary)}
 .detail-box{padding:12px 14px 11px;border-radius:12px;background:var(--bg-subtle);font-size:13px;line-height:18px;font-weight:500}
 .detail-box small{display:block;margin-top:1px;font-size:12px;line-height:17px;font-weight:400;color:var(--text-secondary)}
 .detail-box.critical{background:var(--critical-bg);color:var(--critical-fg);font-size:12px;line-height:17px}
-.detail-id{font-size:11px;line-height:16px;color:var(--text-disabled);word-break:break-all}
+.detail-id{font-size:11px;line-height:16px;color:var(--text-secondary);word-break:break-all}
 .detail-more{display:flex;flex-wrap:wrap;gap:4px 8px;margin-top:12px}
 .detail-more .btn{min-height:40px;padding:0 10px;border:0;background:none;font-size:13px;font-weight:500;color:var(--text-secondary)}
 .detail-more .btn:hover:not(:disabled){background:var(--bg-subtle);color:var(--text)}
@@ -113,7 +113,7 @@
  .order-detail{overflow:hidden}
 }
 /* Tablet portrait and phone: the detail is a dialog (Orders.tsx), so it needs no panel of its own. */
-.order-dialog .order-detail{padding:0}
+.order-dialog .order-detail{padding:0 4px}.order-dialog .detail-line.pick{margin:0}
 .order-dialog .detail-body{overflow:visible}
 @media(max-width:700px){
  .orders-page .page-heading>.search-box{flex:1 1 100%}

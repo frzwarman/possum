@@ -18,13 +18,13 @@ test('menu photo is optional, compressed on upload, and shown in the POS', async
   })
   await expect(dialog.locator('img[alt="Pratinjau foto menu"]')).toHaveAttribute(
     'src',
-    /^data:image\/webp;base64,/,
+    /^data:image\/(webp|jpeg);base64,/,
   )
   await dialog.getByRole('button', { name: 'Simpan versi menu' }).click()
   await expect(page.locator('.admin-row').first()).toContainText('Dengan foto')
   await page.getByRole('link', { name: 'Kasir' }).click()
   await expect(page.locator('.menu-card').first().locator('img')).toHaveAttribute(
     'src',
-    /^data:image\/webp;base64,/,
+    /^data:image\/(webp|jpeg);base64,/,
   )
 })

@@ -3,23 +3,27 @@ import { Navigate } from "@tanstack/react-router";
 import { ReceiptText } from "lucide-react";
 import { useApp } from "../../app/context";
 import { Button } from "../../components/ui/button";
-import { businessDay, rupiah, when } from "../../domain/calculate";
+import { businessDay, isSale, rupiah, when } from "../../domain/calculate";
 import type { Order } from "../../domain/types";
 import { Receipt } from "../orders/Receipt";
+import { useRangeOrders } from "../reports/range";
 const method = { cash: "Tunai", qris: "QRIS", card: "Kartu", none: "Compliment" };
 // Sales by receipt, menu item, day and cashier, counted at payment like Laporan. Totals per menu
 // are before the order-level discount; refunded receipts are listed but not counted.
 export default function Sales() {
-  const { orders, salesOrders, settings, manager } = useApp();
+  const { salesOrders, settings, manager } = useApp();
   const today = businessDay(new Date().toISOString(), settings?.timezone, settings?.cutoff);
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [tab, setTab] = useState("receipts");
   const [receipt, setReceipt] = useState<Order>();
+  // QA RPT-1, CAT-3: the range's own orders (server when signed in), never the app's newest-500 window.
+  const { orders, loading, notice } = useRangeOrders(from, to, manager);
   if (!manager) return <Navigate to="/pos" />;
   const day = (o: Order) => businessDay(o.payment!.at, settings?.timezone, settings?.cutoff);
   const paid = orders.filter((o) => o.payment && day(o) >= from && day(o) <= to).sort((a, b) => b.payment!.at.localeCompare(a.payment!.at));
-  const kept = paid.filter((o) => o.status !== "refunded");
+  // Staff meals and family compliments are listed but are not sales (RPT-2, CAT-4).
+  const kept = paid.filter((o) => o.status !== "refunded" && isSale(o));
   // Catering money is counted when it is received (DP, settlement, returned DP), like Laporan counts the till.
   const catering = salesOrders.flatMap((so) => so.payments).filter((p) => { const d = businessDay(p.at, settings?.timezone, settings?.cutoff); return d >= from && d <= to; }).reduce((n, p) => n + p.amount, 0);
   const total = kept.reduce((n, o) => n + o.totals.total, 0);
@@ -85,9 +89,11 @@ export default function Sales() {
         <article className="metric">
           <span>Refund</span>
           <strong>{rupiah(paid.filter((o) => o.status === "refunded").reduce((n, o) => n + o.totals.total, 0))}</strong>
-          <small>{paid.length - kept.length} struk</small>
+          <small>{paid.filter((o) => o.status === "refunded").length} struk</small>
         </article>
       </div>
+      {notice && <p className="callout" role="status">{notice}</p>}
+      {loading && <p className="muted small" role="status">Memuat pesanan dari server...</p>}
       {catering !== 0 && <p className="callout">Pembayaran pesanan katering &amp; B2B di rentang ini: {rupiah(catering)} (DP, pelunasan, pengembalian; tidak termasuk di atas).</p>}
       <div className="category-tabs">
         {[["receipts", "Per struk"], ["items", "Per menu"], ["days", "Per hari"], ["cashiers", "Per kasir"]].map(([id, label]) => (
@@ -124,6 +130,7 @@ export default function Sales() {
                     <td>
                       {rupiah(o.totals.total)}
                       {o.status === "refunded" && <small className="muted"> · direfund</small>}
+                      {!isSale(o) && <small className="muted"> · bukan penjualan</small>}
                     </td>
                     <td>
                       <Button variant="ghost" size="sm" aria-label={`Struk ${o.label || o.receiptId}`} onClick={() => setReceipt(o)}>

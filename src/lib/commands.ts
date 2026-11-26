@@ -1,9 +1,10 @@
-import { MAX_MONEY, businessDay, change, complimentDiscount, discountFor, discountRunning, tills, consumption, expectedCash, itemStation, menuType, money, orderTotals, settlementGap, settlements, paidValue, prepState, receivedQty, receivedValue, rupiah, totals, unitCosts } from '../domain/calculate'
+import { MAX_MONEY, afterVoid, businessDay, change, complimentDiscount, discountFor, discountRunning, tills, consumption, expectedCash, itemStation, menuType, money, orderTotals, settlementGap, settlements, paidValue, prepState, receivedQty, receivedValue, rupiah, totals, unitCosts, zonedTime } from '../domain/calculate'
 import { can, type Action } from '../domain/permissions'
 import type { Approval, ApprovalAction, CountSession, Draft, Identity, Ingredient, Line, MenuItem, MenuType, Operation, OpKind, Order, Outlet, Payment, PurchaseLine, PurchaseOrder, SalesLine, SalesOrder, Settings, Shift, Station, StockItem, Supplier, Transfer } from '../domain/types'
 import { MejaDB, uid } from './db'
 import { validateMenuPhotoData } from './menu-photo'
 import { supabase, telegramBot } from './supabase'
+import { clockOffset, refreshing } from './sync'
 // The demo has no server: its approvers and their PIN live here, and the hint shows the PIN.
 export const DEMO_PIN='123456'
 export const demoApprovers=[{id:'demo-owner',name:'Pemilik Demo'},{id:'demo-manager',name:'Manajer Demo'},{id:'demo-admin',name:'Admin Demo'}]
@@ -15,19 +16,21 @@ const canon=(v:unknown):string=>JSON.stringify(v,(_k,x)=>x&&typeof x==='object'&
 const strip=({readyAt:_,...l}:Line)=>canon(l)
 // Mirrors apply_operation's catalog.publish checks. The server rejects anything else, and a rejected
 // operation halts every later one in the outbox, so refuse it here with a message the manager can act on.
-function checkCatalog(menu:MenuItem[],stock:StockItem[]){
- const known=new Set(stock.map(s=>s.id)),whole=(v:number,max:number)=>Number.isSafeInteger(v)&&v>=0&&v<=max
+function checkCatalog(menu:MenuItem[],stock:StockItem[],known:Set<string>){
+ const whole=(v:number,max:number)=>Number.isSafeInteger(v)&&v>=0&&v<=max
  // Option recipes are deltas: a swap or a level may carry a negative amount (what it replaces or removes).
  const recipe=(r:Ingredient[],where:string,delta=false)=>{if(r.length>100||new Set(r.map(x=>x.stockId)).size<r.length||r.some(x=>!known.has(x.stockId)||!x.qty||!whole(Math.abs(x.qty),1e9)||(x.qty<0&&!delta)))throw new Error(`Resep "${where}" tidak valid`)}
  if(menu.length>500||stock.length>1000)throw new Error('Katalog maksimal 500 menu dan 1.000 bahan')
- for(const s of stock)if(!s.name||s.name.length>100||!['g','ml','pcs'].includes(s.unit)||!whole(s.threshold,1e12))throw new Error(`Bahan "${s.name}": nama 1–100 karakter, batas minimum angka 0 atau lebih`)
- for(const s of stock)if(s.production){const p=s.production;if(!p.inputs.length||p.inputs.some(x=>x.stockId===s.id)||!p.output||!whole(p.output,1e12))throw new Error(`Resep produksi "${s.name}": pilih bahan selain dirinya sendiri dan isi hasil per batch`);recipe(p.inputs,`produksi ${s.name}`)}
+ // sql/SQL-05: a missing or null field is refused by the server, so it is refused here (an old row, a bad import).
+ for(const s of stock)if(!s.id||!s.name||s.name.length>100||!['g','ml','pcs'].includes(s.unit)||!whole(s.threshold,1e12))throw new Error(`Bahan "${s.name}": nama 1–100 karakter, batas minimum angka 0 atau lebih`)
+ for(const s of stock)if(s.production){const p=s.production;if(!Array.isArray(p.inputs)||!p.inputs.length||p.inputs.some(x=>x.stockId===s.id)||!p.output||!whole(p.output,1e12))throw new Error(`Resep produksi "${s.name}": pilih bahan selain dirinya sendiri dan isi hasil per batch`);recipe(p.inputs,`produksi ${s.name}`)}
  const text=(list:string[]|undefined,max:number)=>!list||list.length<=20&&list.every(t=>t.trim().length>0&&t.length<=max)
  for(const s of stock){
   if((s.area??'').length>50||!text(s.aliases,50)||(s.station&&!['kitchen','bar'].includes(s.station))||(s.shelfLife!==undefined&&(!Number.isInteger(s.shelfLife)||s.shelfLife<1||s.shelfLife>100000)))throw new Error(`Bahan "${s.name}": area maks. 50 karakter, nama lain maks. 20 × 50 karakter, masa simpan 1–100.000 jam`)
   if((s.packs??[]).length>20||(s.packs??[]).some(p=>!p.name.trim()||p.name.length>30||!Number.isSafeInteger(p.qty)||p.qty<1||p.qty>1e12))throw new Error(`Bahan "${s.name}": setiap kemasan perlu nama (maks. 30 karakter) dan isi lebih dari 0`)
  }
  for(const m of menu){
+  if(!m.id||typeof m.active!=='boolean'||!Number.isInteger(m.version)||m.version<1||m.version>2147483647||!Array.isArray(m.recipe)||!Array.isArray(m.modifiers))throw new Error(`Menu "${m.name}": data menu tidak lengkap`)
   if(!m.name||m.name.length>100||!m.category||m.category.length>50||!whole(m.price,MAX_MONEY))throw new Error(`Menu "${m.name}": nama 1–100 karakter, kategori 1–50 karakter, harga Rp0–${rupiah(MAX_MONEY)}`)
   if((m.type&&!['food','beverage','snack'].includes(m.type))||(m.station&&!['kitchen','bar'].includes(m.station))||(m.lowAt!==undefined&&(!Number.isInteger(m.lowAt)||m.lowAt<0||m.lowAt>999))||!text(m.tags,50)||!text(m.aliases,50))throw new Error(`Menu "${m.name}": tag dan nama lain maks. 20 × 50 karakter, "hampir habis" 0–999`)
   const groups=m.groups??[]
@@ -39,14 +42,23 @@ function checkCatalog(menu:MenuItem[],stock:StockItem[]){
   for(const x of m.modifiers){if(!x.name.trim()||x.name.length>100||!whole(x.price,MAX_MONEY))throw new Error(`Menu "${m.name}": beri nama setiap tambahan (maks. 100 karakter) atau hapus barisnya`);recipe(x.recipe,`${m.name} + ${x.name}`,true)}
  }
 }
+// CT-08: Postgres refuses U+0000 in text (22P05) for good, so it never reaches the queue.
+const noNul=(v:unknown):unknown=>typeof v==='string'?v.replace(/\u0000/g,''):Array.isArray(v)?v.map(noNul):v&&typeof v==='object'?Object.fromEntries(Object.entries(v as Record<string,unknown>).map(([k,x])=>[k.replace(/\u0000/g,''),noNul(x)])):v
 export class Commands {
  constructor(public db:MejaDB,public user:Identity){}
  async run<T>(kind:OpKind, payload:Record<string,unknown>, mutate:(op:Operation)=>Promise<T>):Promise<T>{
   if(SELLING.includes(kind))this.need('sell')
   if(SELLING.includes(kind)&&!this.user.primary)throw new Error('Transaksi hanya di perangkat kasir utama')
   if(!this.user.primary&&!this.user.mode)throw new Error('Perangkat belum dipasangkan (Lainnya → Tim & perangkat)')
-  const op:Operation={id:uid(),kind,actor:this.user.id,restaurantId:this.user.restaurantId,deviceId:this.user.deviceId,occurredAt:new Date().toISOString(),payload,state:'pending',attempts:0,nextAttempt:0}
-  try{return await this.db.transaction('rw',this.db.tables,async()=>{const result=await mutate(op);await this.db.outbox.add(op);return result})}catch(e){throw new Error(e instanceof Error?e.message:'Penyimpanan gagal. Jangan tutup halaman; ekspor pemulihan.')}
+  const op:Operation={id:uid(),kind,actor:this.user.id,restaurantId:this.user.restaurantId,deviceId:this.user.deviceId,occurredAt:'',payload,state:'pending',attempts:0,nextAttempt:0}
+  const offset=await clockOffset(this.db)
+  try{return await this.db.transaction('rw',this.db.tables,async()=>{
+   // The device clock is not trusted (SYNC-02): stamp with the server's time as this device learned it, never earlier than the
+   // operation before (a shift opened a moment ago must not be later than the sale), and number the operation (SYNC-04):
+   // the outbox is sent in seq order, which no clock step can change. meta 'opClock' is "seq,last stamp in ms".
+   const [n,last]=((await this.db.meta.get('opClock'))?.value??'0,0').split(',').map(Number),now=Date.now()+offset,at=Math.max(now,Math.min((last||0)+1,now+90000))
+   await this.db.meta.put({id:'opClock',value:`${(n||0)+1},${at}`});op.seq=(n||0)+1;op.occurredAt=new Date(at).toISOString()
+   const result=await mutate(op);op.payload=noNul(op.payload) as Record<string,unknown>;await this.db.outbox.add(op);return result})}catch(e){throw new Error(e instanceof Error?e.message:'Penyimpanan gagal. Jangan tutup halaman; ekspor pemulihan.')}
  }
  online(){if(!this.user.demo&&!navigator.onLine)throw new Error('Tindakan ini perlu koneksi server')}
  // Role gates mirror apply_operation; the message stays the one older screens already show.
@@ -54,41 +66,43 @@ export class Commands {
  // A cashier's discount, void, refund, or cash out needs a manager's approval for exactly that action,
  // order, and amount, not yet an hour old: apply_operation rejects anything else, and a rejected
  // operation halts the outbox. Managers and the owner approve their own actions.
- private approver(action:ApprovalAction,approval:Approval|undefined,{amount,orderId}:{amount?:number;orderId?:string}={}){
-  if(can(this.user.role,'approve'))return {by:this.user.name,payload:{}}
-  if(!approval||approval.action!==action||approval.amount!==amount||approval.orderId!==orderId)throw new Error('Perlu persetujuan manajer')
+ // upTo: a discount priced by a rule (manual or saved) is covered by an approval for at least that amount, and the server
+ // keeps the approved amount on the order (discountApproved); a fixed manual discount is bound to the exact amount.
+ private approver(action:ApprovalAction,approval:Approval|undefined,{amount,orderId,lineId,upTo=false}:{amount?:number;orderId?:string;lineId?:string;upTo?:boolean}={}){
+  if(can(this.user.role,'approve'))return {by:this.user.name,approved:amount,payload:{}}
+  if(!approval||approval.action!==action||(upTo?approval.amount===undefined||amount===undefined||approval.amount<amount:approval.amount!==amount)||approval.orderId!==orderId||approval.lineId!==lineId)throw new Error('Perlu persetujuan manajer')
   if(Date.now()-approval.at>50*60000)throw new Error('Persetujuan manajer kedaluwarsa. Minta lagi.')
-  return {by:approval.by,payload:{approval:approval.id}}
+  return {by:approval.by,approved:approval.amount,payload:{approval:approval.id}}
  }
  async approvers(){
   if(this.user.demo)return demoApprovers.filter(a=>a.id!==this.user.id)
-  const {data,error}=await supabase!.from('memberships').select('user_id,name').in('role',['owner','manager','admin']).eq('active',true).order('name');if(error)throw error
+  const {data,error}=await refreshing(()=>supabase!.from('memberships').select('user_id,name').in('role',['owner','manager','admin']).eq('active',true).order('name'));if(error)throw error
   return (data as {user_id:string;name:string}[]).filter(m=>m.user_id!==this.user.id).map(m=>({id:m.user_id,name:m.name}))
  }
  // The manager types their PIN on this till; the server checks it and hands back a one-use approval.
- async approve(approver:string,pin:string,action:ApprovalAction,{amount,orderId}:{amount?:number;orderId?:string}={}):Promise<Approval>{
+ async approve(approver:string,pin:string,action:ApprovalAction,{amount,orderId,lineId}:{amount?:number;orderId?:string;lineId?:string}={}):Promise<Approval>{
   this.online();let id:string,by:string
   if(this.user.demo){const a=demoApprovers.find(a=>a.id===approver);if(!a||pin!==DEMO_PIN)throw new Error(refusal['wrong-pin']);id=uid();by=a.name}
-  else{const {data,error}=await supabase!.rpc('approve',{approver,pin,action,order_id:orderId??null,amount:amount??null});if(error)throw error;if(data.error)throw new Error(refusal[data.error]||'Persetujuan ditolak');id=data.id;by=data.by}
-  return {id,by,action,amount,orderId,at:Date.now()}
+  else{const {data,error}=await refreshing(()=>supabase!.rpc('approve',{approver,pin,action,order_id:orderId??null,amount:amount??null,line_id:lineId??null}));if(error)throw error;if(data.error)throw new Error(refusal[data.error]||'Persetujuan ditolak');id=data.id;by=data.by}
+  return {id,by,action,amount,orderId,lineId,at:Date.now()}
  }
  // Telegram: the request reaches every linked owner and manager; the first answer wins within 5 minutes,
  // and an approval comes back as the same one-use approval the PIN gives.
- async askTelegram(action:ApprovalAction,what:string,{amount,orderId}:{amount?:number;orderId?:string}={}){
+ async askTelegram(action:ApprovalAction,what:string,{amount,orderId,lineId}:{amount?:number;orderId?:string;lineId?:string}={}){
   this.online();if(this.user.demo||!telegramBot)throw new Error('Telegram belum diatur')
-  const {data,error}=await supabase!.functions.invoke('telegram',{body:{action,what,amount,orderId}})
+  const {data,error}=await supabase!.functions.invoke('telegram',{body:{action,what,amount,orderId,lineId}})
   if(error){const said=await (error as {context?:Response}).context?.json().then((b:{error?:string})=>b.error,()=>undefined)
    throw new Error(said?.includes('Too many')?'Masih ada 3 permintaan menunggu. Tunggu jawabannya atau 5 menit.':'Permintaan lewat Telegram gagal dikirim')}
   return data as {id:string;sent:number}
  }
- async telegramAnswer(request:string,action:ApprovalAction,{amount,orderId}:{amount?:number;orderId?:string}={}):Promise<{status:'pending'|'rejected'|'expired';by?:string}|{status:'approved';approval:Approval}>{
-  const {data,error}=await supabase!.rpc('approval_request',{request});if(error)throw error
-  return data.status==='approved'?{status:'approved',approval:{id:data.id,by:data.by,action,amount,orderId,at:Date.now()}}:data
+ async telegramAnswer(request:string,action:ApprovalAction,{amount,orderId,lineId}:{amount?:number;orderId?:string;lineId?:string}={}):Promise<{status:'pending'|'rejected'|'expired';by?:string}|{status:'approved';approval:Approval}>{
+  const {data,error}=await refreshing(()=>supabase!.rpc('approval_request',{request}));if(error)throw error
+  return data.status==='approved'?{status:'approved',approval:{id:data.id,by:data.by,action,amount,orderId,lineId,at:Date.now()}}:data
  }
  async telegramLink(){this.need('approve',true);const {data,error}=await supabase!.rpc('telegram_code');if(error)throw error;return `https://t.me/${telegramBot}?start=${data}`}
  async telegramLinked(){const {data,error}=await supabase!.rpc('telegram_status');if(error)throw error;return data as boolean}
  async telegramUnlink(){this.online();const {error}=await supabase!.rpc('telegram_unlink');if(error)throw error}
- async setPin(pin:string){this.need('approve',true);if(this.user.demo)throw new Error(`Demo memakai PIN ${DEMO_PIN}`);if(!/^\d{6}$/.test(pin))throw new Error('PIN harus 6 angka')
+ async setPin(pin:string){this.need('pin',true);if(this.user.demo)throw new Error(`Demo memakai PIN ${DEMO_PIN}`);if(!/^\d{6}$/.test(pin))throw new Error('PIN harus 6 angka')
   const {error}=await supabase!.rpc('set_approval_pin',{pin});if(error)throw new Error(error.message.includes('trivial')?'PIN terlalu mudah ditebak: hindari angka kembar dan urutan seperti 123456':error.message)}
  // The 12-hour authorization stops new work, not finishing it: void, cash payment and close still go
  // through (late), and an owner or manager may void in and close another cashier's shift (others).
@@ -97,6 +111,9 @@ export class Commands {
  async openShift(opening:number){money(opening);this.online();const id=uid();return this.run('shift.open',{id,opening},async op=>{if(await this.db.shifts.where('status').equals('open').count())throw new Error('Sif masih terbuka');const shift:Shift={id,actor:this.user.id,cashier:this.user.name,openedAt:op.occurredAt,expiresAt:new Date(Date.parse(op.occurredAt)+12*3600000).toISOString(),opening,status:'open'};await this.db.shifts.add(shift);return shift})}
  async save(draft:Draft){return this.run('order.save',{draft},async op=>{
   const shift=await this.shift();if(!draft.lines.some(l=>!l.cancelled))throw new Error('Tambahkan menu dahulu')
+  // TILL-03, TILL-12: the server's limits, counted the way it counts (every line, cancelled ones too; the label as stored).
+  if(draft.lines.length>200)throw new Error('Maksimal 200 menu per pesanan')
+  if(draft.label.length>100)throw new Error('Nomor pager atau meja maksimal 100 karakter')
   const old=draft.orderId?await this.db.orders.get(draft.orderId):undefined
   if(draft.orderId&&!old)throw new Error('Pesanan tidak ditemukan')
   if(old&&(old.status!=='open'||old.revision!==draft.revision))throw new Error('Pesanan sudah berubah. Buka ulang dari Pesanan.')
@@ -112,62 +129,91 @@ export class Commands {
   const fresh=Boolean(saved)&&draft.discountId!==old?.discountId
   if(saved&&fresh&&!discountRunning(saved,businessDay(new Date().toISOString(),current?.timezone,current?.cutoff)))throw new Error(`Diskon ${saved.name} sedang tidak berlaku`)
   // A line is typed by the catalog version it was rung up from, as the server prices it; older lines by the item's current one.
-  const menu=comp||saved?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return l.type??(m?menuType(m):l.station==='bar'?'beverage':'food')},drink=(l:Line)=>type(l)==='beverage'
-  const discount=comp?complimentDiscount(draft.lines,comp.kind,drink):saved?discountFor(saved,draft.lines,type):draft.discount,discountReason=comp?`${comp.kind==='staff'?'Staff meal':'Keluarga pemilik'} · ${comp.who.trim()}`:saved?saved.name:draft.discountReason
-  const discounted=!comp&&discount!==(old?.mode==='compliment'?0:old?.discount||0);if(discounted&&discount&&!discountReason.trim())throw new Error('Isi alasan diskon')
-  const approved=comp?{by:undefined,payload:{}}:saved?(saved.approval&&fresh?this.approver('discount',draft.discountApproval,{amount:discount}):{by:old?.discountId===saved.id?old.discountApprovedBy:undefined,payload:{}}):discounted?this.approver('discount',draft.discountApproval,{amount:discount}):{by:old?.mode==='compliment'?undefined:old?.discountApprovedBy,payload:{}}
+  // A manual discount keeps its rule (TILL-02) and is re-priced here like a saved one; a draft from before carries none.
+  const rule=!comp&&!saved?draft.discountRule:undefined
+  // order.save refuses a rule outside these bounds ('Invalid discount rule'): never queue one the server turns down.
+  if(rule&&!(['percent','amount'].includes(rule.kind)&&Number.isInteger(rule.value)&&rule.value>=1&&rule.value<=(rule.kind==='percent'?100:1e9)&&['order','food','beverage','snack','items'].includes(rule.scope)))throw new Error('Diskon manual tidak valid: potongan Rp1 sampai Rp1.000.000.000, atau 1 sampai 100%')
+  const menu=comp||saved||rule?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return l.type??(m?menuType(m):l.station==='bar'?'beverage':'food')},drink=(l:Line)=>type(l)==='beverage'
+  const discount=comp?complimentDiscount(draft.lines,comp.kind,drink):saved?discountFor(saved,draft.lines,type):rule?discountFor({...rule,id:'',name:'',note:'',from:'',to:''},draft.lines,type):draft.discount,discountReason=comp?`${comp.kind==='staff'?'Staff meal':'Keluarga pemilik'} · ${comp.who.trim()}`:saved?saved.name:draft.discountReason
+  if(!comp&&!saved&&discountReason.length>60)throw new Error('Alasan diskon maksimal 60 karakter')
+  const discounted=!comp&&discount!==(old?.mode==='compliment'?0:old?.discount||0);if((discounted||rule)&&discount&&!discountReason.trim())throw new Error('Isi alasan diskon')
+  // The approval covers up to its amount (DSC-2, TILL-05): under it the order keeps its approver, above it the till asks again.
+  // A saved discount approved before discountApproved existed keeps its approver whatever the amount, as the server does.
+  const carried={by:old?.discountApprovedBy,approved:old?.discountApproved,payload:{}},none={by:undefined,approved:undefined,payload:{}}
+  const subtotal=(lines:Line[])=>orderTotals({lines,discount:0,mode:'dinein'},{taxBps:0,serviceBps:0}).subtotal
+  const approved=comp?none:saved?(saved.approval&&(fresh||discount>(old?.discountApproved??Infinity))?this.approver('discount',draft.discountApproval,{amount:discount,upTo:true}):old?.discountId===saved.id?carried:none)
+   :rule?(old?.discountRule&&JSON.stringify(old.discountRule)===JSON.stringify(rule)&&discount<=(old.discountApproved??0)&&(rule.kind==='percent'||subtotal(draft.lines)>=old.totals.subtotal)?carried:discount?this.approver('discount',draft.discountApproval,{amount:discount,upTo:true}):none)
+   :discounted?{...this.approver('discount',draft.discountApproval,{amount:discount}),approved:discount}:old?.mode==='compliment'?none:carried
   // The order keeps a copy of the settings. The server checks a new order's copy only for tax, service and packaging, and a
-  // re-save's against the order's own, so a settings save on the laptop mid-shift turns it down only if it changes those. A
-  // saved discount priced here by a definition the laptop changed, ended or deleted before this till pulled still goes
-  // through if that happened since this shift opened (the server keeps such a definition 13 hours).
+  // re-save's against the order's own, so a settings save on the laptop mid-shift never turns it down: the values the till
+  // priced by are either the current ones or ones in force since this shift opened (the server keeps replaced values 13
+  // hours, HARNESS-F2). A saved discount priced here by a definition the laptop changed, ended or deleted before this till
+  // pulled still goes through if that happened since this shift opened (the same 13 hours).
   const settings=old?.settings||current;if(!settings)throw new Error('Selesaikan pengaturan restoran')
   if(old)for(const line of old.lines.filter(l=>l.prepared)){const next=draft.lines.find(l=>l.id===line.id);if(!next||strip(next)!==strip(line))throw new Error('Menu yang sudah disiapkan tidak dapat diubah. Batalkan seluruh pesanan dengan alasan.')}
   // A station may have marked a sent line ready meanwhile: that flag is the server's, not the till's.
   const lines=draft.lines.map(l=>{const was=old?.lines.find(x=>x.id===l.id);return was?.readyAt?{...l,readyAt:was.readyAt}:l})
   for(const l of draft.lines){if(!Number.isInteger(l.qty)||l.qty<1||l.qty>999)throw new Error('Jumlah menu 1–999');money(l.price)}
-  const order:Order={id:old?.id||uid(),restaurantId:this.user.restaurantId,shiftId:shift.id,actor:this.user.id,cashier:this.user.name,revision:(old?.revision||0)+1,receiptId:old?.receiptId||`MJ-${op.id.toUpperCase()}`,label:draft.label,...(name&&{name}),mode:draft.mode,...(comp&&{compliment:{kind:comp.kind,who:comp.who.trim()}}),lines,status:'open',prep:prepState(lines),discount,discountReason,...(approved.by&&{discountApprovedBy:approved.by}),...(saved&&{discountId:saved.id}),settings,totals:orderTotals({lines,discount,mode:draft.mode},settings),createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
+  const order:Order={id:old?.id||uid(),restaurantId:this.user.restaurantId,shiftId:shift.id,actor:this.user.id,cashier:this.user.name,revision:(old?.revision||0)+1,receiptId:old?.receiptId||`MJ-${op.id.toUpperCase()}`,label:draft.label,...(name&&{name}),mode:draft.mode,...(comp&&{compliment:{kind:comp.kind,who:comp.who.trim()}}),lines,status:'open',prep:prepState(lines),discount,discountReason,...(approved.by&&{discountApprovedBy:approved.by,...(approved.approved!==undefined&&{discountApproved:approved.approved})}),...(saved&&{discountId:saved.id}),...(rule&&{discountRule:rule}),settings,totals:orderTotals({lines,discount,mode:draft.mode},settings),createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
   op.payload={order,expectedRevision:old?.revision||0,...approved.payload};await this.db.orders.put(order);await this.db.drafts.delete('current');return order
  })}
- async prepare(id:string){return this.run('order.prepare',{id},async op=>{await this.shift();const o=await this.openOrder(id);const lines=o.lines.filter(l=>!l.prepared&&!l.cancelled);if(!lines.length)throw new Error('Tidak ada tambahan baru untuk disiapkan');op.payload={id,expectedRevision:o.revision,lineIds:lines.map(l=>l.id)}
+ // late: the pilot's payment sends the lines and takes the cash in one go, and cash is accepted after the 12-hour limit (decision 15), so its prepare is too.
+ async prepare(id:string,late=false){return this.run('order.prepare',{id},async op=>{await this.shift({late});const o=await this.openOrder(id);const lines=o.lines.filter(l=>!l.prepared&&!l.cancelled);if(!lines.length)throw new Error('Tidak ada tambahan baru untuk disiapkan');op.payload={id,expectedRevision:o.revision,lineIds:lines.map(l=>l.id)}
  for(const c of consumption(lines,o.mode==='takeaway'?o.settings.packaging:[]))await this.db.movements.add({id:`${op.id}-${c.stockId}`,stockId:c.stockId,qty:-c.qty,kind:'preparation',reason:`Persiapan ${o.label||o.receiptId}`,actor:this.user.id,at:op.occurredAt,recordId:o.id,cost:0})
  const menu=await this.db.menu.toArray()
  o.lines=o.lines.map(l=>l.prepared||l.cancelled?l:{...l,prepared:true,preparedAt:op.occurredAt,station:l.station??itemStation(menu.find(m=>m.id===l.itemId)??{category:''})});o.prep=prepState(o.lines);o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o);return o})}
  // A station marks its own sent lines ready. No shift and no revision are involved, so the kitchen
  // tablet and the till never conflict; the server applies the same rule.
  // Ziggy pays at the counter before the drink is made: a paid order still has tickets to serve.
- async ready(id:string,station?:Station){return this.run('order.ready',{id,...(station&&{station})},async op=>{const o=await this.db.orders.get(id);if(!o)throw new Error('Pesanan tidak ditemukan');if(o.status==='void'||o.status==='refunded')throw new Error('Pesanan sudah dibatalkan');if(!station&&o.lines.some(l=>!l.prepared&&!l.cancelled))throw new Error('Kirim seluruh menu ke dapur dahulu')
-  o.lines=o.lines.map(l=>l.prepared&&!l.cancelled&&!l.readyAt&&(!station||(l.station??'kitchen')===station)?{...l,readyAt:op.occurredAt}:l);o.prep=prepState(o.lines);await this.db.orders.put(o);return o})}
+ // STN-03: the lines named are the ones this device showed when it was tapped; the server marks those and no later round.
+ async ready(id:string,station?:Station,only?:string[]){const shown=(l:Line)=>l.prepared&&!l.cancelled&&!l.readyAt&&(!station||(l.station??'kitchen')===station)&&(!only||only.includes(l.id)),ids=((await this.db.orders.get(id))?.lines??[]).filter(shown).map(l=>l.id);return this.run('order.ready',{id,...(station&&{station}),lines:ids},async op=>{const o=await this.db.orders.get(id);if(!o)throw new Error('Pesanan tidak ditemukan');if(o.status==='void'||o.status==='refunded')throw new Error('Pesanan sudah dibatalkan');if(!station&&o.lines.some(l=>!l.prepared&&!l.cancelled))throw new Error('Kirim seluruh menu ke dapur dahulu')
+  o.lines=o.lines.map(l=>shown(l)&&ids.includes(l.id)?{...l,readyAt:op.occurredAt}:l);o.prep=prepState(o.lines);await this.db.orders.put(o);return o})}
  // Cashless: the cashier types the amount on the EDC, taps Confirm once it prints Approved or Paid, and may
  // copy the approval code from the slip to find a payment the EDC left pending. A free compliment pays 'none'.
- async pay(id:string,method:'cash'|'qris'|'card'|'none',tendered:number,verified:boolean,{edc,approvalCode}:{edc?:string;approvalCode?:string}={}){edc=edc?.trim()||undefined;approvalCode=approvalCode?.trim()||undefined
+ // send (TILL-04): in the pilot stock moves when the order is paid, so the lines not yet sent go out with the payment, after the same checks.
+ async pay(id:string,method:'cash'|'qris'|'card'|'none',tendered:number,verified:boolean,{edc,approvalCode,send=false}:{edc?:string;approvalCode?:string;send?:boolean}={}){edc=edc?.trim()||undefined;approvalCode=approvalCode?.trim()||undefined
   if((edc&&edc.length>30)||(approvalCode&&approvalCode.length>30))throw new Error('Nama EDC dan kode approval maksimal 30 karakter')
-  return this.run('payment.record',{id,method,tendered,verified,...(edc&&{edc}),...(approvalCode&&{approvalCode})},async op=>{await this.shift({late:method==='cash'});const o=await this.openOrder(id);if(o.lines.some(l=>!l.prepared&&!l.cancelled))throw new Error('Kirim ke dapur sebelum pembayaran')
+  if(send){const o=await this.db.orders.get(id);if(o?.status==='open'&&o.lines.some(l=>!l.prepared&&!l.cancelled)){await this.shift({late:method==='cash'});await this.payable(o,method,tendered,verified,edc,true);await this.prepare(id,true)}}
+  return this.run('payment.record',{id,method,tendered,verified,...(edc&&{edc}),...(approvalCode&&{approvalCode})},async op=>{await this.shift({late:method==='cash'});const o=await this.openOrder(id);await this.payable(o,method,tendered,verified,edc)
+  const t=method==='cash'?money(tendered):o.totals.total;const c=change(o.totals.total,t);op.payload={...op.payload,expectedRevision:o.revision};o.payment={method,tendered:t,change:c,verified:true,at:op.occurredAt,...(edc&&{edc}),...(approvalCode&&{approvalCode})};o.status='paid';o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o);return o})}
+ // What a payment needs, checked before anything is queued; `unsent` lets the lines about to be sent with it pass.
+ private async payable(o:Order,method:'cash'|'qris'|'card'|'none',tendered:number,verified:boolean,edc?:string,unsent=false){
+  if(!unsent&&o.lines.some(l=>!l.prepared&&!l.cancelled))throw new Error('Kirim ke dapur sebelum pembayaran')
   const till=tills(await this.db.settings.get('settings'))
   if(method==='none'?o.totals.total!==0:o.totals.total===0&&o.mode==='compliment')throw new Error(method==='none'?'Tanpa pembayaran hanya untuk total Rp0':'Compliment Rp0 disimpan tanpa pembayaran')
   if(method==='cash'&&!till.cash)throw new Error('Outlet ini tidak menerima tunai')
   if((method==='card'||method==='qris')&&till.edc&&!edc)throw new Error('Pilih mesin EDC')
   if((method==='card'||method==='qris')&&(!verified||(!edc&&!navigator.onLine)))throw new Error(edc?'Konfirmasi setelah EDC mencetak Approved atau Paid':'Periksa pembayaran pada aplikasi merchant saat online')
-  const t=method==='cash'?money(tendered):o.totals.total;const c=change(o.totals.total,t);op.payload={...op.payload,expectedRevision:o.revision};o.payment={method,tendered:t,change:c,verified:true,at:op.occurredAt,...(edc&&{edc}),...(approvalCode&&{approvalCode})};o.status='paid';o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o);return o})}
+  if(method==='cash')change(o.totals.total,money(tendered))
+ }
  // A made line taken off an open or paid order: manager's PIN, reason kept on the line, totals recomputed.
  // On a paid order the cashier also voids or refunds the difference on the EDC; the settlement expects the new total.
- async voidLine(id:string,lineId:string,reason:string,approval?:Approval){if(!reason.trim()||reason.length>300)throw new Error('Alasan wajib, maksimal 300 karakter');const ok=this.approver('void',approval,{orderId:id});return this.run('order.voidline',{id,lineId,reason,...ok.payload},async op=>{const s=await this.shift({late:true,others:true});const o=await this.db.orders.get(id)
+ async voidLine(id:string,lineId:string,reason:string,approval?:Approval){reason=reason.trim();if(!reason||reason.length>300)throw new Error('Alasan wajib, maksimal 300 karakter')
+  // The manager's approval is for this order, this line and its value: what the screen showed (SEC-1).
+  const value=(l:Line)=>(l.price+l.modifiers.reduce((n,m)=>n+m.price,0))*l.qty,seen=(await this.db.orders.get(id))?.lines.find(l=>l.id===lineId)
+  const ok=this.approver('voidline',approval,{orderId:id,lineId,amount:seen&&value(seen)});return this.run('order.voidline',{id,lineId,reason,...ok.payload},async op=>{const s=await this.shift({late:true,others:true});const o=await this.db.orders.get(id)
   if(!o||o.shiftId!==s.id||!['open','paid'].includes(o.status))throw new Error('Hanya pesanan sif ini yang belum dibatalkan')
   const line=o.lines.find(l=>l.id===lineId&&!l.cancelled);if(!line||!line.prepared)throw new Error('Menu yang belum dikirim cukup dihapus dari keranjang')
   if(o.lines.filter(l=>!l.cancelled).length<2)throw new Error(o.status==='paid'?'Satu-satunya menu: kembalikan seluruh pembayaran':'Satu-satunya menu: batalkan seluruh pesanan')
-  const lines=o.lines.map(l=>l.id===lineId?{...l,cancelled:true,voidReason:reason.trim(),...(ok.by&&{voidApprovedBy:ok.by})}:l)
-  // A compliment or a saved discount follows the lines left, by its own rule (the server recomputes both the same way).
-  const saved=o.discountId?(await this.db.settings.get('settings'))?.discounts?.find(d=>d.id===o.discountId):undefined
-  const menu=o.compliment||saved?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return l.type??(m?menuType(m):l.station==='bar'?'beverage':'food')}
-  const discount=o.compliment?complimentDiscount(lines,o.compliment.kind,l=>type(l)==='beverage'):saved?discountFor(saved,lines,type):o.discount
-  op.payload={...op.payload,expectedRevision:o.revision};Object.assign(o,{lines,discount,totals:orderTotals({lines,discount,mode:o.mode},o.settings),revision:o.revision+1,updatedAt:op.occurredAt});await this.db.orders.put(o);return o})}
- async voidOrder(id:string,reason:string,approval?:Approval){if(!reason.trim())throw new Error('Alasan wajib');const ok=this.approver('void',approval,{orderId:id});return this.run('order.void',{id,reason,...ok.payload},async op=>{await this.shift({late:true,others:true});const o=await this.openOrder(id);op.payload={...op.payload,expectedRevision:o.revision};o.status='void';o.voidReason=reason;o.voidApprovedBy=ok.by;o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o)})}
+  const lines=o.lines.map(l=>l.id===lineId?{...l,cancelled:true,voidReason:reason,...(ok.by&&{voidApprovedBy:ok.by})}:l)
+  // The discount follows the lines left by its own rule, as the order was sold with it (its own copy of the settings, not today's),
+  // and a void never raises what the guest owes or fails for a discount (afterVoid; the server does the same sum).
+  const saved=o.discountId?o.settings.discounts?.find(d=>d.id===o.discountId):undefined
+  const menu=o.compliment||saved||o.discountRule?await this.db.menu.toArray():[],type=(l:Line):MenuType=>{const m=menu.find(x=>x.id===l.itemId);return l.type??(m?menuType(m):l.station==='bar'?'beverage':'food')}
+  const own=o.compliment?complimentDiscount(lines,o.compliment.kind,l=>type(l)==='beverage'):o.discountId?(saved?discountFor(saved,lines,type):o.discount):o.discountRule?discountFor({...o.discountRule,id:'',name:'',note:'',from:'',to:''},lines,type):o.discount
+  const discount=afterVoid(o.discount,value(line),orderTotals({lines,discount:0,mode:'dinein'},{taxBps:0,serviceBps:0}).subtotal,own)
+  op.payload={...op.payload,expectedRevision:o.revision}
+  // The cart holds its own copy of this order (STN-04): follow the void, or Bayar still bills the line and a save is refused.
+  const draft=await this.db.drafts.get('current');if(draft?.orderId===id)await this.db.drafts.put({...draft,lines:draft.lines.map(l=>l.id===lineId?lines.find(x=>x.id===lineId)!:l),...(draft.revision===o.revision&&{revision:o.revision+1}),...(draft.discount===o.discount&&{discount})})
+  Object.assign(o,{lines,discount,totals:orderTotals({lines,discount,mode:o.mode},o.settings),revision:o.revision+1,updatedAt:op.occurredAt});await this.db.orders.put(o);return o})}
+ async voidOrder(id:string,reason:string,approval?:Approval){if(!reason.trim())throw new Error('Alasan wajib');const ok=this.approver('void',approval,{orderId:id,amount:(await this.db.orders.get(id))?.totals.total});return this.run('order.void',{id,reason,...ok.payload},async op=>{await this.shift({late:true,others:true});const o=await this.openOrder(id);op.payload={...op.payload,expectedRevision:o.revision};o.status='void';o.voidReason=reason;o.voidApprovedBy=ok.by;o.revision++;o.updatedAt=op.occurredAt;await this.db.orders.put(o)})}
  async refund(id:string,reason:string,approval?:Approval){this.online();if(!reason.trim())throw new Error('Alasan wajib');const ok=this.approver('refund',approval,{orderId:id});return this.run('refund.record',{id,reason,...ok.payload},async op=>{const o=await this.db.orders.get(id);if(!o||o.status!=='paid')throw new Error('Hanya transaksi lunas yang dapat dikembalikan');const s=await this.shift();if(s.id!==o.shiftId)throw new Error('MVP: pengembalian hanya dalam sif asal yang masih terbuka');op.payload={...op.payload,expectedRevision:o.revision};o.status='refunded';o.refund={reason,at:op.occurredAt,actor:this.user.id,approvedBy:ok.by};o.revision++;await this.db.orders.put(o)})}
- async stockRecord(stockId:string,kind:'opening'|'purchase'|'waste'|'count'|'adjustment',qty:number,reason:string,cost=0,fromDrawer=false,photo?:string){this.need(kind==='waste'?'waste':kind==='purchase'?'inventory':'approve');if(!reason.trim()||!Number.isSafeInteger(qty)||Math.abs(qty)>1e12)throw new Error('Jumlah/alasan tidak valid');money(cost);if(photo&&!validateMenuPhotoData(photo))throw new Error('Foto nota tidak valid');return this.run('stock.record',{stockId,kind,qty,reason,cost,fromDrawer,...(photo&&{photo})},async op=>{
+ async stockRecord(stockId:string,kind:'opening'|'purchase'|'waste'|'count'|'adjustment',qty:number,reason:string,cost=0,fromDrawer=false,photo?:string){this.need(kind==='waste'?'waste':kind==='purchase'?'inventory':'approve');if(!reason.trim()||reason.length>200||!Number.isSafeInteger(qty)||Math.abs(qty)>1e12)throw new Error('Jumlah/alasan tidak valid');money(cost);if(photo&&!validateMenuPhotoData(photo))throw new Error('Foto nota tidak valid');return this.run('stock.record',{stockId,kind,qty,reason,cost,fromDrawer,...(photo&&{photo})},async op=>{
  if(!await this.db.stock.get(stockId))throw new Error('Bahan tidak ditemukan');const balance=(await this.db.movements.where('stockId').equals(stockId).toArray()).reduce((n,m)=>n+m.qty,0)
  const delta=kind==='count'?qty-balance:kind==='waste'?-Math.abs(qty):qty
  if((kind==='purchase'||kind==='opening')&&qty<=0)throw new Error('Jumlah harus positif')
  await this.db.movements.add({id:op.id,stockId,kind,qty:delta,reason,actor:this.user.id,at:op.occurredAt,recordId:op.id,cost,...(photo&&{photo})});if(fromDrawer){const s=await this.shift();await this.db.cash.add({id:op.id,shiftId:s.id,amount:-cost,reason:`Pembelian: ${reason}`,at:op.occurredAt,actor:this.user.id,recordId:op.id});op.payload.shiftId=s.id}return delta})}
- async cashMove(amount:number,reason:string,approval?:Approval){if(!Number.isSafeInteger(amount)||!amount||Math.abs(amount)>1e9||!reason.trim())throw new Error('Jumlah/alasan tidak valid');const ok=amount<0?this.approver('cashout',approval,{amount:-amount}):{payload:{}};return this.run('shift.cash',{amount,reason,...ok.payload},async op=>{const s=await this.shift();op.payload.shiftId=s.id;await this.db.cash.add({id:op.id,shiftId:s.id,amount,reason,actor:this.user.id,at:op.occurredAt,...('by' in ok&&{approvedBy:ok.by})})})}
+ async cashMove(amount:number,reason:string,approval?:Approval){if(!Number.isSafeInteger(amount)||!amount||Math.abs(amount)>1e9||!reason.trim()||reason.length>300)throw new Error('Jumlah tidak valid, alasan wajib dan maksimal 300 karakter');const ok=amount<0?this.approver('cashout',approval,{amount:-amount}):{payload:{}};return this.run('shift.cash',{amount,reason,...ok.payload},async op=>{const s=await this.shift();op.payload.shiftId=s.id;await this.db.cash.add({id:op.id,shiftId:s.id,amount,reason,actor:this.user.id,at:op.occurredAt,...('by' in ok&&{approvedBy:ok.by})})})}
  // POS-8: a gap over the limit needs a manager's PIN for exactly that gap; managers answer for their own.
  // counted = the cash in the drawer (0 for a cashless store). With slips, each EDC's settlement slip is matched against
  // what Takar recorded on that machine. The gap that needs a PIN is the cash gap plus each machine's gap.
@@ -186,16 +232,33 @@ export class Commands {
   if(!sold&&!this.user.demo){const {count,error}=await supabase!.from('order_lines').select('item_id',{count:'exact',head:true}).in('item_id',ids);if(error)throw new Error(error.message);if(count)throw new Error('Menu ini sudah pernah terjual: nonaktifkan saja')}
   if(sold)throw new Error('Menu ini sudah pernah terjual: nonaktifkan saja')
   return this.run('catalog.remove',{ids},async()=>{await this.db.menu.bulkDelete(ids)})}
+ // Callers may pass whole lists (the CSV import does); only the rows that differ from the device's copy are sent and
+ // stored (menu/F1 F8 F9, sql/SQL-17, sync/SYNC-13, perf/PERF-7): a laptop that has not pulled yet then never re-sends
+ // stale copies of rows it did not touch, and a bahan edited elsewhere is not reverted. Nothing changed, nothing queued.
  async publish(menu:MenuItem[],stock:StockItem[],approval?:Approval){this.need('catalog',true)
   // "Tambah pilihan" starts a blank row, and older builds saved untouched ones; one of those anywhere
   // in the menu then blocked every later save. Nameless, free and untracked is not an add-on: drop it.
-  menu=menu.map(m=>({...m,modifiers:m.modifiers.filter(x=>x.name.trim()||x.price||x.recipe.length)}))
-  checkCatalog(menu,stock)
-  // MENU-7: a chef or admin publishing an active item with no recipe needs a manager's PIN.
-  const known=new Map((await this.db.menu.toArray()).map(m=>[m.id,m.version]))
-  const ok=menu.some(m=>m.active&&!m.recipe.length&&known.get(m.id)!==m.version)?this.approver('publish',approval):{payload:{}}
-  return this.run('catalog.publish',{menu,stock,...ok.payload},async()=>{await this.db.menu.clear();await this.db.menu.bulkPut(menu);await this.db.stock.bulkPut(stock)})}
- async settings(settings:Settings){this.need('settings',true);return this.run('settings.update',{settings},async()=>{await this.db.settings.put(settings)})}
+  const clean=(m:MenuItem)=>({...m,modifiers:Array.isArray(m.modifiers)?m.modifiers.filter(x=>x.name.trim()||x.price||x.recipe.length):m.modifiers})
+  const had=new Map((await this.db.menu.toArray()).map(m=>[m.id,canon(clean(m))])),hadStock=new Map((await this.db.stock.toArray()).map(s=>[s.id,canon(s)]))
+  menu=menu.map(clean).filter(m=>had.get(m.id)!==canon(m));stock=stock.filter(s=>hadStock.get(s.id)!==canon(s))
+  const bahan=new Set([...hadStock.keys(),...stock.map(s=>s.id)])
+  if(new Set([...had.keys(),...menu.map(m=>m.id)]).size>500||bahan.size>1000)throw new Error('Katalog maksimal 500 menu dan 1.000 bahan')
+  checkCatalog(menu,stock,bahan)
+  if(!menu.length&&!stock.length)return
+  // menu/F2: a version the server already holds is refused there ('Catalog version immutable', 'Stale catalog version')
+  // and halts the outbox, so the live versions are checked first. The device is online here (need).
+  if(menu.length&&!this.user.demo){const live=new Map<string,number>()
+   for(let i=0;i<menu.length;i+=100){const {data,error}=await supabase!.from('catalog_items').select('id,version').eq('restaurant_id',this.user.restaurantId).in('id',menu.slice(i,i+100).map(m=>m.id));if(error)throw new Error(error.message);for(const r of data??[])live.set(r.id,r.version)}
+   const old=menu.find(m=>(live.get(m.id)??0)>=m.version);if(old)throw new Error(`Menu "${old.name}" diubah di perangkat lain. Tunggu sinkronisasi, lalu buka dan simpan lagi.`)}
+  // MENU-7: a chef or admin publishing an active item with no recipe needs a manager's PIN. Every row left is news.
+  const ok=menu.some(m=>m.active&&!m.recipe.length)?this.approver('publish',approval):{payload:{}}
+  return this.run('catalog.publish',{menu,stock,...ok.payload},async()=>{await this.db.menu.bulkPut(menu);await this.db.stock.bulkPut(stock)})}
+ // SQL-15: the server refuses settings missing a key the till prices or prints by (null and a wrong type included); the form never sends such, so this only mirrors it.
+ async settings(settings:Settings){this.need('settings',true);const s=settings as unknown as Record<string,unknown>
+  if(s.id!=='settings'||!Array.isArray(s.packaging)||['name','appName','timezone','goLive'].some(k=>typeof s[k]!=='string')||['cutoff','taxBps','serviceBps','receiptWidth','printableWidth'].some(k=>typeof s[k]!=='number'))throw new Error('Pengaturan restoran belum lengkap')
+  // DSC-3: settings.update takes at most 100 saved discounts; ended ones stay listed, so the manager deletes old ones.
+  if((settings.discounts?.length??0)>100)throw new Error('Maksimal 100 diskon tersimpan. Hapus diskon lama yang sudah selesai.')
+  return this.run('settings.update',{settings},async()=>{await this.db.settings.put(settings)})}
  // Mirrors purchase_total on the server: known items, one line per item, whole amounts.
  private async purchaseTotal(lines:PurchaseLine[]){const known=new Set((await this.db.stock.toArray()).map(s=>s.id))
   if(!lines.length||lines.length>100||new Set(lines.map(l=>l.stockId)).size<lines.length||lines.some(l=>!known.has(l.stockId)||!Number.isSafeInteger(l.qty)||l.qty<1||l.qty>1e12||!Number.isSafeInteger(l.cost)||l.cost<0||l.cost>MAX_MONEY))throw new Error('Periksa baris pembelian: satu bahan per baris, jumlah lebih dari 0, harga Rp0 atau lebih')
@@ -252,10 +315,12 @@ export class Commands {
   const menu=await this.db.menu.toArray(),settings=await this.db.settings.get('settings');if(!settings)throw new Error('Selesaikan pengaturan restoran')
   if(!input.lines.length||input.lines.length>200||input.lines.some(l=>{const m=menu.find(m=>m.id===l.itemId);return !m||l.catalogVersion>m.version||(m.version===l.catalogVersion&&m.name!==l.name)||!Number.isInteger(l.qty)||l.qty<1||l.qty>999||!Number.isSafeInteger(l.price)||l.price<0||l.price>MAX_MONEY}))throw new Error('Periksa menu pesanan: jumlah 1–999 per baris, harga Rp0 atau lebih')
   const sum=totals(input.lines.map(l=>({...l,modifiers:[],cancelled:false})),money(input.discount),settings)
+  // CAT-5: a datetime-local value has no zone and means the restaurant's wall clock, not this device's.
+  const deliverAt=new Date(/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(input.deliverAt)?zonedTime(input.deliverAt,settings.timezone):Date.parse(input.deliverAt)).toISOString()
   return this.run('salesorder.save',{},async op=>{const old=input.id?await this.db.salesOrders.get(input.id):undefined
    if(input.id&&old?.status!=='confirmed')throw new Error('Pesanan yang sudah dikirim atau dibatalkan tidak dapat diubah')
    if(old&&sum.total<paidValue(old))throw new Error('Total tidak boleh di bawah uang yang sudah dibayar pelanggan')
-   const so:SalesOrder={id:old?.id||uid(),number:old?.number||`SO-${op.id.slice(0,8).toUpperCase()}`,customer,deliverAt:new Date(input.deliverAt).toISOString(),lines:input.lines,discount:input.discount,note,totals:sum,payments:old?.payments||[],status:'confirmed',revision:(old?.revision||0)+1,createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
+   const so:SalesOrder={id:old?.id||uid(),number:old?.number||`SO-${op.id.slice(0,8).toUpperCase()}`,customer,deliverAt,lines:input.lines,discount:input.discount,note,totals:sum,payments:old?.payments||[],status:'confirmed',revision:(old?.revision||0)+1,createdAt:old?.createdAt||op.occurredAt,updatedAt:op.occurredAt}
    op.payload={order:so,expectedRevision:old?.revision||0};await this.db.salesOrders.put(so);return so})}
  async paySalesOrder(id:string,amount:number,payment:Payment['from']){this.need('documents')
   return this.run('salesorder.pay',{id,amount,payment},async op=>{const so=await this.db.salesOrders.get(id)
@@ -266,7 +331,9 @@ export class Commands {
  async deliverSalesOrder(id:string){this.need('documents')
   return this.run('salesorder.deliver',{id},async op=>{const so=await this.db.salesOrders.get(id);if(!so||so.status!=='confirmed')throw new Error('Pesanan ini tidak menunggu pengiriman')
    op.payload={...op.payload,expectedRevision:so.revision};const menu=await this.db.menu.toArray(),use=new Map<string,number>()
-   for(const l of so.lines)for(const r of (menu.find(m=>m.id===l.itemId&&m.version===l.catalogVersion)??menu.find(m=>m.id===l.itemId))?.recipe??[])use.set(r.stockId,(use.get(r.stockId)||0)+r.qty*l.qty)
+   // CT-06: the server uses the recipe of the line's own version; this device keeps one version per item, so a line
+   // saved under another version books nothing here and the pull brings the server's movements (same ids).
+   for(const l of so.lines)for(const r of menu.find(m=>m.id===l.itemId&&m.version===l.catalogVersion)?.recipe??[])use.set(r.stockId,(use.get(r.stockId)||0)+r.qty*l.qty)
    for(const [stockId,qty] of use)await this.db.movements.add({id:`${op.id}-${stockId}`,stockId,qty:-qty,kind:'preparation',reason:`Pesanan ${so.number} · ${so.customer.name}`,actor:this.user.id,at:op.occurredAt,recordId:so.id,cost:0})
    Object.assign(so,{status:'delivered',deliveredAt:op.occurredAt,revision:so.revision+1,updatedAt:op.occurredAt});await this.db.salesOrders.put(so)})}
  async cancelSalesOrder(id:string,reason:string,refund=0,payment:Payment['from']='outside'){this.need('documents');if(!reason.trim())throw new Error('Alasan wajib')
@@ -277,7 +344,7 @@ export class Commands {
    if(refund>0&&payment==='drawer')await this.drawer(op,-refund,`Pengembalian DP ${so.number} · ${so.customer.name}`)
    Object.assign(so,{status:'cancelled',cancelReason:reason,payments:refund>0?[...so.payments,{at:op.occurredAt,amount:-refund,from:payment}]:so.payments,revision:so.revision+1,updatedAt:op.occurredAt});await this.db.salesOrders.put(so)})}
  // Linked outlets and both directions of transfers, read from the server when the page opens.
- async refreshTransfers(){if(this.user.demo||!can(this.user.role,'reports'))return;this.online()
+ async refreshTransfers(){if(this.user.demo||!can(this.user.role,'documents'))return;this.online()
   const {data,error}=await supabase!.rpc('outlet_transfers');if(error)throw error
   await this.db.transaction('rw',this.db.transfers,this.db.meta,async()=>{await this.db.transfers.bulkPut(data.transfers);await this.db.meta.put({id:'outlets',value:JSON.stringify(data.outlets)})})}
  async sendTransfer(to:Outlet,lines:{stockId:string;qty:number}[],note:string){this.need('documents');note=note.trim()
@@ -296,7 +363,8 @@ export class Commands {
   return this.run('transfer.receive',{id,lines},async op=>{const t=await this.db.transfers.get(id)
    if(!t||t.status!=='sent'||t.to!==this.user.restaurantId)throw new Error('Transfer ini tidak sedang menuju outlet ini')
    const targets=lines.filter(l=>l.qty>0).map(l=>l.target)
-   if(t.lines.some(s=>{const l=lines.find(l=>l.stockId===s.stockId);return !l||!Number.isSafeInteger(l.qty)||l.qty<0||l.qty>1e12||l.qty>0&&stock.find(x=>x.id===l.target)?.unit!==s.unit})||new Set(targets).size<targets.length)throw new Error('Pilih bahan dengan satuan yang sama untuk setiap baris, satu bahan per baris')
+   if(t.lines.some(s=>{const l=lines.find(l=>l.stockId===s.stockId);return !l||!Number.isSafeInteger(l.qty)||l.qty<0||l.qty>0&&stock.find(x=>x.id===l.target)?.unit!==s.unit})||new Set(targets).size<targets.length)throw new Error('Pilih bahan dengan satuan yang sama untuk setiap baris, satu bahan per baris')
+   if(t.lines.some(s=>lines.find(l=>l.stockId===s.stockId)!.qty>s.qty))throw new Error('Jumlah diterima tidak boleh melebihi yang dikirim') // SQL-10
    for(const s of t.lines){const l=lines.find(l=>l.stockId===s.stockId)!;if(l.qty>0)await this.db.movements.add({id:`${op.id}-${l.target}`,stockId:l.target,qty:l.qty,kind:'transfer',reason:`Transfer ${t.number} dari ${t.fromName}`,actor:this.user.id,at:op.occurredAt,recordId:t.id,cost:Math.min(MAX_MONEY,Math.round(s.value*l.qty/s.qty))})}
    Object.assign(t,{status:'received',received:lines,receivedAt:op.occurredAt});await this.db.transfers.put(t)})}
  async cancelTransfer(id:string,reason:string){this.need('documents');if(!reason.trim())throw new Error('Alasan wajib')
@@ -310,12 +378,17 @@ export class Commands {
   const area=session.area.trim(),lines=session.lines.flatMap(l=>l.counted===undefined?[]:[{stockId:l.stockId,counted:l.counted,reason:(l.reason??'').trim()}])
   if(!area||area.length>50||!lines.length||lines.length>1000||new Set(lines.map(l=>l.stockId)).size<lines.length||lines.some(l=>!Number.isSafeInteger(l.counted)||l.counted<0||l.counted>1e12||l.reason.length>200))throw new Error('Isi area dan hasil hitung setiap bahan')
   const ok=this.approver('count',approval,{orderId:session.id})
-  return this.run('count.record',{id:session.id,area,lines,...ok.payload},async op=>{const stock=await this.db.stock.toArray(),result:CountSession['lines']=[]
-   for(const l of lines){if(!stock.some(s=>s.id===l.stockId))throw new Error('Bahan tidak ditemukan');const balance=(await this.db.movements.where('stockId').equals(l.stockId).toArray()).reduce((n,m)=>n+m.qty,0),delta=l.counted-balance
+  return this.run('count.record',{id:session.id,area,lines,...ok.payload},async op=>{const stock=await this.db.stock.toArray(),result:CountSession['lines']=[],old=await this.db.counts.get(session.id)
+   // CT-01: a count measures the shelf when it was taken (the line's time, else the submit's, else now), so the gap is against the
+   // movements up to then and the movement is stamped then: what sold or arrived since stays. A submitted count pulled from the
+   // server carries that balance (expected); a count made here has it in the movements. Same arithmetic as apply_operation.
+   for(const l of lines){if(!stock.some(s=>s.id===l.stockId))throw new Error('Bahan tidak ditemukan');const was=old?.lines.find(x=>x.stockId===l.stockId),at=was?.at??(old?.status==='submitted'?old.submittedAt:undefined)??op.occurredAt
+    const moves=await this.db.movements.where('stockId').equals(l.stockId).toArray(),balance=was?.expected??moves.filter(m=>m.at<=at).reduce((n,m)=>n+m.qty,0),delta=l.counted-balance
     // Always one row per line, also at zero: the server does the same, so a pulled row replaces this one exactly.
-    await this.db.movements.add({id:`${op.id}-${l.stockId}`,stockId:l.stockId,qty:delta,kind:'count',reason:`Hitung ${area}${l.reason?`: ${l.reason}`:''}`,actor:this.user.id,at:op.occurredAt,recordId:session.id,cost:0})
-    result.push({stockId:l.stockId,counted:l.counted,expected:balance,reason:l.reason})}
-   const old=await this.db.counts.get(session.id)
+    await this.db.movements.add({id:`${op.id}-${l.stockId}`,stockId:l.stockId,qty:delta,kind:'count',reason:`Hitung ${area}${l.reason?`: ${l.reason}`:''}`,actor:this.user.id,at,recordId:session.id,cost:0})
+    // A later count of the same bahan approved before this one was measured against a shelf without this gap: it shrinks by it.
+    const later=moves.filter(m=>m.kind==='count'&&m.at>at).sort((a,b)=>a.at.localeCompare(b.at))[0];if(later&&delta)await this.db.movements.update(later.id,{qty:later.qty-delta})
+    result.push({stockId:l.stockId,counted:l.counted,expected:balance,reason:l.reason,at})}
    const count:CountSession={id:session.id,area,status:'approved',lines:result,startedBy:old?.startedBy??this.user.id,startedAt:old?.startedAt??op.occurredAt,submittedAt:old?.submittedAt??op.occurredAt,approvedAt:op.occurredAt,approvedBy:ok.by}
    await this.db.counts.put(count);return count})}
  // CNT-1: a finished count leaves the device so the manager can approve it from the laptop (or here, after closing).

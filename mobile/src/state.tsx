@@ -5,11 +5,12 @@ import 'expo-sqlite/localStorage/install';
 import * as Crypto from 'expo-crypto';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
+import { can } from '../../src/domain/permissions';
 import { countJob } from '../../src/stok/count';
 import { deliveryJobs } from '../../src/stok/delivery';
 import { demoIdentity, demoServer, demoSnapshot } from '../../src/stok/demo';
 import { Queue, load, save } from '../../src/stok/queue';
-import { Rejected, explain, flush, staysSignedIn } from '../../src/stok/sync';
+import { Rejected, cannotLeave, explain, flush, staysSignedIn, whoseSession } from '../../src/stok/sync';
 import type { BarcodeLink, CountSession, Delivery, Identity, Job, KV, PhoneStock, Snapshot, TeamMember } from '../../src/stok/types';
 import { configured, currentUser, onSignedOut, server, signIn as serverSignIn, signOut as serverSignOut } from './platform/supabase';
 
@@ -22,7 +23,7 @@ export interface App {
   busy: boolean; syncing: boolean; error: string; notice: string
   signIn(email: string, secret: string, byPin?: boolean): Promise<void>; startDemo(): void; signOut(): Promise<void>; pair(): Promise<void>; sync(): Promise<void>
   saveDraft(session: CountSession): void; dropDraft(id: string): void; submitCount(session: CountSession): boolean
-  setDelivery(delivery: Delivery): void; saveDelivery(): boolean
+  setDelivery(delivery: Delivery): void; attachPhoto(deliveryId: string, photo: string): void; saveDelivery(): boolean
   link(code: string, stockId: string, pack: string): void; unlink(code: string): void
   renew(jobId: string): void; discard(jobId: string): void; clearMessage(): void
   newId(): string
@@ -252,8 +253,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       start: async () => {
         const saved = load<Identity | null>(kv, keys.identity, null);
         if (!saved) return;
-        // No signal is not a reason to sign someone out: see staysSignedIn.
-        const session = saved.demo ? { unsure: false } : await currentUser().catch(() => ({ unsure: true }));
+        // No signal is not a reason to sign someone out (staysSignedIn), nor to hold them at a blank screen while
+        // an expired session is retried: whoseSession stops waiting after two seconds.
+        const session = saved.demo ? { unsure: false } : await whoseSession(currentUser);
         if (!staysSignedIn(saved, session)) {
           kv.removeItem(keys.identity);
           return;
@@ -304,8 +306,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (!user) return;
           if (!user.demo) {
             await sync();
-            const left = queueOf(user).all().length;
-            if (left) throw new Error(`Masih ada ${left} catatan belum terkirim. Cari sinyal dulu, lalu ganti pengguna.`);
+            const stuck = cannotLeave(queueOf(user).all());
+            if (stuck) throw new Error(stuck);
           }
           await leave();
         }),
@@ -323,6 +325,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         draftsRef.current.some((d) => d.id === session.id) &&
         guard(() => {
           const user = need();
+          // Takar refuses a count from a role that does not count (the accountant): say so before it is queued.
+          if (!can(user.role, 'counts')) throw new Error(explain('Manager permission required'));
           const job = countJob(session, stockRef.current, user.id, uuid(), stamp());
           enqueue(user, [job], job.label);
           writeDrafts(draftsRef.current.filter((d) => d.id !== session.id));
@@ -331,6 +335,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDelivery: (next: Delivery) => {
         setError('');
         writeDelivery(next);
+      },
+      // The note photo arrives a while after the camera closed, once it has been shrunk. It joins the delivery as it
+      // is by then, with whatever was typed or scanned meanwhile; a delivery saved or left by then gets nothing.
+      attachPhoto: (deliveryId: string, photo: string) => {
+        if (deliveryRef.current.id !== deliveryId) return;
+        setError('');
+        writeDelivery({ ...deliveryRef.current, photo });
       },
       saveDelivery: () =>
         guard(() => {

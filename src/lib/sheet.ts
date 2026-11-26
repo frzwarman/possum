@@ -4,7 +4,7 @@ import { menuType } from '../domain/calculate'
 // Every row of a CSV that has something in it, cells as written. Indonesian Excel saves CSV with
 // semicolons: whichever separator the first line uses more wins.
 export function csvRows(input:string):string[][] {
- const text=input.replace(/^﻿/,'');const rows:string[][]=[];let row:string[]=[];let cell='';let quoted=false
+ const text=input.replace(/^﻿/,'').replace(/\r\n?/g,'\n');const rows:string[][]=[];let row:string[]=[];let cell='';let quoted=false
  const head=text.slice(0,text.indexOf('\n')<0?text.length:text.indexOf('\n')),sep=head.split(';').length>head.split(',').length?';':','
  for(let i=0;i<text.length;i++){const c=text[i]
   if(c==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++}else quoted=!quoted}
@@ -20,9 +20,9 @@ const clean=(v:string|undefined)=>(v??'').trim().replace(/\s+/g,' ')
 // Numbers as an Indonesian sheet shows them: "Rp25.000" is twenty-five thousand, "1,5" one and a half,
 // "6 pcs" six. Empty or text gives undefined.
 export function sheetNumber(v:string|undefined){
- const m=clean(v).replace(/^Rp\s*/i,'').match(/^\d{1,3}(?:\.\d{3})+(?:,\d+)?|^\d+(?:[.,]\d+)?/)
+ const m=clean(v).replace(/^Rp\s*/i,'').match(/^[1-9]\d{0,2}(?:\.\d{3})+(?:,\d+)?|^\d+(?:[.,]\d+)?/)
  if(!m)return undefined
- return Number(/^\d{1,3}(\.\d{3})+/.test(m[0])?m[0].replace(/\./g,'').replace(',','.'):m[0].replace(',','.'))
+ return Number(/^[1-9]\d{0,2}(\.\d{3})+/.test(m[0])?m[0].replace(/\./g,'').replace(',','.'):m[0].replace(',','.'))
 }
 
 type Unit='g'|'ml'|'pcs'

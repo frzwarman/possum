@@ -19,6 +19,8 @@ const rp = (n: number) => `Rp${new Intl.NumberFormat("id-ID").format(n)}`;
 const label: Record<string, string> = {
   discount: "Diskon",
   void: "Pembatalan",
+  voidline: "Pembatalan item",
+  discard: "Lepas antrean",
   refund: "Refund",
   cashout: "Kas keluar",
   count: "Hitung stok",
@@ -51,8 +53,8 @@ async function ask(req: Request) {
     global: { headers: { Authorization: req.headers.get("Authorization")! } },
     auth: { persistSession: false },
   });
-  const { action, orderId, amount, what } = await req.json();
-  const id = await rpc<string>("request_approval", { action, order_id: orderId ?? null, amount: amount ?? null, what }, user);
+  const { action, orderId, amount, what, lineId } = await req.json();
+  const id = await rpc<string>("request_approval", { action, order_id: orderId ?? null, amount: amount ?? null, what, line_id: lineId ?? null }, user);
   const r = await rpc<{
     action: string;
     amount: number | null;
@@ -60,6 +62,7 @@ async function ask(req: Request) {
     by: string;
     chats: number[];
     order: { receipt: string; label: string; status: string; total: number; items: string | null } | null;
+    line: { name: string; qty: number; total: number } | null;
     count: { area: string; lines: number } | null;
   } | null>("telegram_request", { request: id });
   if (!r) return json({ id, sent: 0 });
@@ -70,6 +73,7 @@ async function ask(req: Request) {
     `Persetujuan: ${label[r.action] ?? r.action}`,
     o ? `Pesanan #${o.receipt.slice(-6).toUpperCase()}${o.label ? ` · ${o.label}` : ""} · ${status[o.status] ?? o.status} · ${rp(o.total)}` : "",
     items ? `Isi: ${items}` : "",
+    r.line ? `Item dibatalkan: ${r.line.qty}× ${r.line.name} · ${rp(r.line.total)}` : "",
     r.count ? `Hitung stok ${r.count.area}: ${r.count.lines} bahan` : "",
     r.amount != null ? `Nominal: ${rp(r.amount)}` : "",
     `Catatan kasir: ${r.what}`,

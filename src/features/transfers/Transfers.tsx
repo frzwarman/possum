@@ -197,7 +197,7 @@ export default function Transfers() {
       <Dialog open={Boolean(receiving)} onOpenChange={() => setReceiving(undefined)} title="Terima transfer" description={receiving && `${receiving.t.number} dari ${receiving.t.fromName}`}>
         {receiving && (
           <>
-            <p className="small muted">Pilih bahan di outlet ini untuk setiap baris dan isi yang benar-benar datang; 0 = hilang di jalan.</p>
+            <p className="small muted">Pilih bahan di outlet ini untuk setiap baris dan isi yang benar-benar datang; 0 = hilang di jalan; tidak boleh melebihi yang dikirim.</p>
             {receiving.t.lines.map((l, i) => (
               <div className="form-grid" key={l.stockId}>
                 <Select

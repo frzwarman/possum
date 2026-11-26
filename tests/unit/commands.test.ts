@@ -1,4 +1,6 @@
 import { describe,expect,it,vi } from 'vitest'
+// QA 2026-11-25 (catalog): Commands.publish reads the live catalog versions before queueing (menu/F2); no server here.
+vi.mock('../../src/lib/supabase',()=>({configured:true,telegramBot:'',supabase:{from:()=>({select:()=>({eq:()=>({in:async()=>({data:[],error:null})})})})}}))
 import { draft,identity,line,sale,seed,tea,tick } from './offline-harness'
 import { Commands,DEMO_PIN } from '../../src/lib/commands'
 import { uid } from '../../src/lib/db'
@@ -191,9 +193,11 @@ describe('a cashier needs a manager approval for exactly that action',()=>{
   const {db,commands}=await cashier(),order=await openOrder(commands)
   await expect(commands.voidOrder(order.id,'Salah meja')).rejects.toThrow('Perlu persetujuan manajer')
   await expect(commands.approve('demo-owner','000000','void',{orderId:order.id})).rejects.toThrow('PIN salah')
-  const elsewhere=await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:'other-order'})
+  const elsewhere=await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:'other-order',amount:order.totals.total})
   await expect(commands.voidOrder(order.id,'Salah meja',elsewhere)).rejects.toThrow('Perlu persetujuan manajer')
-  const approval=await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:order.id})
+  // SEC-1: the approval is for the order's total; an approval for another amount is no approval.
+  await expect(commands.voidOrder(order.id,'Salah meja',await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:order.id}))).rejects.toThrow('Perlu persetujuan manajer')
+  const approval=await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:order.id,amount:order.totals.total})
   await commands.voidOrder(order.id,'Salah meja',approval)
   expect((await db.orders.get(order.id))?.voidApprovedBy).toBe('Pemilik Demo')
   expect((await db.outbox.toArray()).find(o=>o.kind==='order.void')?.payload).toMatchObject({id:order.id,approval:approval.id})
@@ -522,7 +526,7 @@ describe('cashless: EDC, compliments, line voids and the settlement',()=>{
   const o=await made(commands,[{...tea(),type:'food'},line()],{mode:'compliment',compliment:{kind:'staff',who:'Raka'}})
   expect(o.discount).toBe(3000+12500)
   const rice=o.lines.find(l=>l.itemId==='nasi-goreng')!
-  const after=await commands.voidLine(o.id,rice.id,'Salah menu',await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:o.id}))
+  const after=await commands.voidLine(o.id,rice.id,'Salah menu',await commands.approve('demo-owner',DEMO_PIN,'voidline',{orderId:o.id,lineId:rice.id,amount:rice.price*rice.qty}))
   expect(after.discount).toBe(3000)
  })
  it('voids one made line with a PIN, keeps it on the order, and recomputes the total',async()=>{
@@ -530,10 +534,14 @@ describe('cashless: EDC, compliments, line voids and the settlement',()=>{
   const o=await made(commands)
   const teaLine=o.lines.find(l=>l.itemId==='es-teh')!
   await expect(commands.voidLine(o.id,teaLine.id,'Salah menu')).rejects.toThrow('Perlu persetujuan manajer')
-  const after=await commands.voidLine(o.id,teaLine.id,'Salah menu',await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:o.id}))
+  const lineApproval=(l:{id:string;price:number;qty:number})=>commands.approve('demo-owner',DEMO_PIN,'voidline',{orderId:o.id,lineId:l.id,amount:l.price*l.qty})
+  // SEC-1: the approval is for this line and its value; the old 'void' approval for the order is no longer enough.
+  await expect(commands.voidLine(o.id,teaLine.id,'Salah menu',await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:o.id}))).rejects.toThrow('Perlu persetujuan manajer')
+  await expect(commands.voidLine(o.id,teaLine.id,'Salah menu',await lineApproval(o.lines[0]))).rejects.toThrow('Perlu persetujuan manajer')
+  const after=await commands.voidLine(o.id,teaLine.id,'Salah menu',await lineApproval(teaLine))
   expect(after.lines.find(l=>l.id===teaLine.id)).toMatchObject({cancelled:true,voidReason:'Salah menu',voidApprovedBy:'Pemilik Demo'})
   expect(after.totals).toMatchObject({subtotal:25000,tax:2500,total:27500})
-  await expect(commands.voidLine(o.id,o.lines[0].id,'x',await commands.approve('demo-owner',DEMO_PIN,'void',{orderId:o.id}))).rejects.toThrow('Satu-satunya menu')
+  await expect(commands.voidLine(o.id,o.lines[0].id,'x',await lineApproval(o.lines[0]))).rejects.toThrow('Satu-satunya menu')
   expect((await db.outbox.toArray()).find(op=>op.kind==='order.voidline')?.payload).toMatchObject({id:o.id,lineId:teaLine.id,expectedRevision:2})
  })
  it("closes against each EDC's slip; offsetting gaps still need a PIN for their sum",async()=>{
@@ -564,14 +572,14 @@ import { signOutBlockers } from '../../src/app/context'
 describe('signing out never strands work',()=>{
  it('names an own open shift, a new unsaved order and unsent operations; the demo strands nothing',async()=>{
   const user=identity({role:'cashier'}),{db,commands}=await seed(user)
-  expect(await signOutBlockers(db,user)).toEqual({shift:false,cart:false,unsent:0})
+  expect(await signOutBlockers(db,user)).toEqual({shift:false,cart:false,unsent:0,rejected:0})
   await commands.openShift(0);await tick()
   await db.drafts.put(draft([tea()]))
-  expect(await signOutBlockers(db,user)).toEqual({shift:true,cart:true,unsent:1})
+  expect(await signOutBlockers(db,user)).toEqual({shift:true,cart:true,unsent:1,rejected:0})
   // A saved order in the cart lives in Pesanan; only a new one would be left behind.
   await db.drafts.put(draft([tea()],{orderId:'saved'}))
   expect((await signOutBlockers(db,user)).cart).toBe(false)
   const other=identity({role:'manager'});expect((await signOutBlockers(db,other)).shift).toBe(false)
-  expect(await signOutBlockers(db,{...user,demo:true})).toEqual({shift:false,cart:false,unsent:0})
+  expect(await signOutBlockers(db,{...user,demo:true})).toEqual({shift:false,cart:false,unsent:0,rejected:0})
  })
 })

@@ -5,10 +5,12 @@ import type { Delivery, DeliveryLine, Job, PhoneStock } from './types'
 const MAX_COST = 1_000_000_000
 
 // The units a delivery can be typed in: each pack, then kg or L for a bahan kept in g or ml, then the base unit.
-// per = thousandths of the base unit in one.
+// per = thousandths of the base unit in one. A name is offered once: lemons bought by a pack called "kg" have that
+// pack, not a second kg beside it.
 export function units(item: PhoneStock): { name: string; per: number }[] {
   const big = item.unit === 'g' ? [{ name: 'kg', per: 1_000_000 }] : item.unit === 'ml' ? [{ name: 'l', per: 1_000_000 }] : []
-  return [...(item.packs ?? []).map((p) => ({ name: p.name, per: p.qty })), ...big, { name: item.unit, per: 1000 }]
+  const all = [...(item.packs ?? []).map((p) => ({ name: p.name, per: p.qty })), ...big, { name: item.unit, per: 1000 }]
+  return all.filter((u, i) => all.findIndex((x) => x.name === u.name) === i)
 }
 const per = (item: PhoneStock, unit: string) => units(item).find((u) => u.name === unit)?.per
 
@@ -32,18 +34,22 @@ export function suggestedPrice(item: PhoneStock, unit: string): string {
 }
 
 // PUR-4: an amount over 5× or under a fifth of the usual delivery needs a second look, until the person confirms
-// exactly that amount. An amount that does not parse is not flagged here; saving reports it.
+// exactly that quantity: the same digits in another unit, or in a pack that was resized since, ask again.
+// An amount that does not parse is not flagged here; saving reports it.
 export function flag(item: PhoneStock, line: DeliveryLine): 'high' | 'low' | undefined {
-  if (line.checked === line.amount) return undefined
   let qty = 0
   try {
     qty = lineQty(item, line)
   } catch {
     return undefined
   }
+  if (line.checked === qty) return undefined
   const verdict = qty > 0 ? sanity(qty, item.usual ?? []) : 'ok'
   return verdict === 'ok' ? undefined : verdict
 }
+// "Ya, benar": the person looked at the nota and this is what came. Only offered for a line flag() has flagged,
+// so the amount parses.
+export const confirmed = (item: PhoneStock, line: DeliveryLine): DeliveryLine => ({ ...line, checked: lineQty(item, line) })
 
 // One stock.record per line, as the Stok page's "Terima kiriman" sends it. The job id is the line's own id, so
 // saving the same delivery twice cannot put the stock in twice. The note photo rides on the first line only.

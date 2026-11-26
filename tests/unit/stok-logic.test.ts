@@ -102,7 +102,8 @@ describe('delivery', () => {
   it('flags an unusual amount until it is confirmed', () => {
     const big = { id: 'l2', stockId: 'syrup', unit: 'pcs', amount: '60', price: '' }
     expect(flag(syrup, big)).toBe('high')
-    expect(flag(syrup, { ...big, checked: '60' })).toBeUndefined()
+    // What is confirmed is the quantity, in thousandths of the base unit (tests/unit/qa-stok.test.ts, STOK-2).
+    expect(flag(syrup, { ...big, checked: 60_000 })).toBeUndefined()
     expect(flag(syrup, { ...big, amount: '6' })).toBeUndefined()
     expect(flag(rice, { ...big, stockId: 'rice', unit: 'kg' })).toBeUndefined()
   })

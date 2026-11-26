@@ -4,15 +4,19 @@ import { defaultSettings, sampleMenu, stock } from '../../src/domain/sample'
 
 const discount = (page: Page, amount: string) => manualDiscount(page, amount, 'Langganan')
 
-test('a discount that no longer fits the cart is reported, not a crash that survives reloads', async ({ page }) => {
+test('a discount that no longer fits the cart is clamped to it, not a crash that survives reloads', async ({ page }) => {
   await demo(page)
   await addItem(page, 'Es teh manis') // 6.000
   await addItem(page, 'Air mineral') // 5.000
   await discount(page, '8000')
   await cart(page).getByRole('button', { name: 'Hapus Es teh manis' }).click()
-  await expect(cart(page).getByRole('alert')).toContainText('Diskon melebihi subtotal')
+  // QA TILL-02: a manual discount follows the cart by its rule, so 8.000 on what is left (5.000) is 5.000, never a bill below zero
+  // and never an error that survives a reload.
+  await expect(cart(page).getByRole('alert')).toHaveCount(0)
+  await expect(cart(page).locator('.bill-total')).toContainText(/Rp\s*0/)
   await page.reload()
-  await expect(cart(page).getByRole('alert')).toContainText('Diskon melebihi subtotal')
+  await expect(cart(page).getByRole('alert')).toHaveCount(0)
+  await expect(cart(page).locator('.bill-total')).toContainText(/Rp\s*0/)
   await addItem(page, 'Es teh manis')
   await expect(cart(page).getByRole('alert')).toHaveCount(0)
   await expect(cart(page).locator('.bill-total')).toContainText(/Rp\s*3\.000/)
@@ -201,6 +205,7 @@ test('moving the primary till to this device works at once, without signing out 
   const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url')
   const token = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: owner, role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`
   await page.route('**/auth/v1/token**', route => route.fulfill({ json: { access_token: token, token_type: 'bearer', expires_in: 3600, refresh_token: 'refresh', user: { id: owner, aud: 'authenticated', role: 'authenticated', email: 'pemilik@example.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() } } }))
+  await page.route('**/rest/v1/catalog_items*', route => route.fulfill({ json: [] })) // Commands.publish asks which versions the server holds (QA F2)
   await page.route('**/rest/v1/rpc/*', route => {
     const rpc = new URL(route.request().url()).pathname.split('/').pop()
     if (rpc === 'enroll_device') { primary = true; return route.fulfill({ status: 204 }) }

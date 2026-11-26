@@ -1,18 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Check, ChefHat, Coffee, CookingPot, Moon, Printer, Sun, Trash2, Clock } from 'lucide-react'
-import { useApp } from '../../app/context'
+import { useApp, useMovements } from '../../app/context'
 import { Button } from '../../components/ui/button'
 import { Dialog } from '../../components/ui/dialog'
 import { Select } from '../../components/ui/select'
-import { convert, expiring, prepList, quantity, when } from '../../domain/calculate'
+import { convert, expiring, onBoard, prepList, quantity, when } from '../../domain/calculate'
 import type { Order, Station as Kind, StockItem } from '../../domain/types'
-import { Receipt } from '../orders/Receipt'
+import { Receipt, modeLabel } from '../orders/Receipt'
+const UNDO_MS=4000
 // STN-4: waste in three taps: item, amount, reason.
 const REASONS=['Rusak','Jatuh','Salah pesanan','Kedaluwarsa','Makan staf']
 // F2: a station tablet sees only its own tickets, oldest first, big enough to read from 1.5 m.
 export default function Station(){
- const {orders,settings,station,setStation,commands,act,busy,stockItems,balance,movements,user}=useApp()
+ const {orders,settings,station,setStation,commands,act,busy,stockItems,balance,user,shift,pullFailed,sync,setNotice,setError}=useApp()
+ const movements=useMovements()
  const [dark,setDarkState]=useState(()=>{try{return localStorage.getItem('takar-dark')==='1'}catch{return false}})
  const setDark=(v:boolean)=>{try{localStorage.setItem('takar-dark',v?'1':'0')}catch{/* private mode */}setDarkState(v)}
  const [now,setNow]=useState(Date.now())
@@ -20,10 +22,20 @@ export default function Station(){
  const [waste,setWaste]=useState<{stockId:string;amount:string;unit:string;reason:string}>()
  const [printing,setPrinting]=useState<Order>()
  const mine=(l:{station?:Kind})=>(l.station??'kitchen')===station
+ // STN-11: Siap waits UNDO_MS on this tablet before it is sent, so a tap by mistake can be taken back; leaving the page sends it at once.
+ const [held,setHeld]=useState<{id:string;label:string}[]>([]);const waiting=useRef(new Map<string,{t:ReturnType<typeof setTimeout>;go:()=>void}>())
+ const bump=(o:Order)=>{if(waiting.current.has(o.id))return;const st=station,shown=o.lines.filter(l=>l.prepared&&!l.cancelled&&!l.readyAt&&(l.station??'kitchen')===st).map(l=>l.id),go=()=>{const w=waiting.current.get(o.id);if(!w)return;clearTimeout(w.t);waiting.current.delete(o.id)
+  commands.ready(o.id,st,shown).then(()=>{setNotice('Tiket siap; kasir bisa memanggil pager');if(!user.demo)void sync()}).catch(e=>setError(e instanceof Error?e.message:'Tindakan gagal. Data belum tersimpan.')).finally(()=>setHeld(h=>h.filter(x=>x.id!==o.id)))}
+  waiting.current.set(o.id,{t:setTimeout(go,UNDO_MS),go});setHeld(h=>[...h,{id:o.id,label:o.label||o.receiptId.slice(-6)}])}
+ const undo=(id:string)=>{const w=waiting.current.get(id);if(w)clearTimeout(w.t);waiting.current.delete(id);setHeld(h=>h.filter(x=>x.id!==id))}
+ useEffect(()=>{const w=waiting.current;return()=>{[...w.values()].forEach(x=>x.go())}},[])
+ // STN-15: a ticket stopped after it reached this station (the order voided, or its line taken off) stays as a notice for two minutes.
+ const [dismissed,setDismissed]=useState<string[]>([])
+ const stopped=orders.filter(o=>onBoard(o,shift,settings,now)&&now-Date.parse(o.updatedAt)<120000&&!dismissed.includes(o.id+o.updatedAt)&&o.lines.some(l=>l.prepared&&!l.readyAt&&mine(l)&&(o.status==='void'||l.cancelled)))
  const sentAt=(o:Order)=>o.lines.filter(l=>l.prepared&&!l.cancelled&&!l.readyAt&&mine(l)).map(l=>l.preparedAt??o.updatedAt).sort()[0]??o.updatedAt
- const tickets=orders.filter(o=>(o.status==='open'||o.status==='paid')&&o.lines.some(l=>l.prepared&&!l.cancelled&&!l.readyAt&&mine(l))).sort((a,b)=>sentAt(a).localeCompare(sentAt(b)))
+ const tickets=orders.filter(o=>(o.status==='open'||o.status==='paid')&&!held.some(h=>h.id===o.id)&&onBoard(o,shift,settings,now)&&o.lines.some(l=>l.prepared&&!l.cancelled&&!l.readyAt&&mine(l))).sort((a,b)=>sentAt(a).localeCompare(sentAt(b)))
  const target=settings?.stations?.[station]??(station==='bar'?8:15)
- const minutes=(o:Order)=>Math.floor((now-Date.parse(sentAt(o)))/60000)
+ const minutes=(o:Order)=>Math.max(0,Math.floor((now-Date.parse(sentAt(o)))/60000))
  const here=stockItems.filter(s=>(s.station??'kitchen')===station)
  const prep=prepList(here,balance)
  const expiringPrep=expiring(here,movements,2,now)
@@ -42,18 +54,26 @@ export default function Station(){
    <Button variant="secondary" onClick={()=>setDark(!dark)} aria-label={dark?'Mode terang':'Mode gelap'}>{dark?<Sun size={17}/>:<Moon size={17}/>} {dark?'Terang':'Gelap'}</Button>
    <Button variant="secondary" onClick={()=>openWaste()}><Trash2 size={17}/> Catat buang</Button>
   </div>
+  {pullFailed&&<p className="callout" role="alert">Tidak tersambung ke server: tiket baru belum masuk. Tanyakan pesanan langsung ke kasir sampai tersambung lagi.</p>}
+  {held.map(h=><p className="callout" role="status" key={h.id}>Tiket {h.label} ditandai siap. <button type="button" className="text-button" onClick={()=>undo(h.id)}>Urungkan</button></p>)}
   <div className="station-grid">
+   {stopped.map(o=><article className="ticket late" key={o.id}>
+    <div className="ticket-head"><h2>{o.label||o.receiptId.slice(-6)}</h2><span className="ticket-age">Dibatalkan</span></div>
+    <p className="muted small">Jangan dibuat. {o.status==='void'?'Pesanan dibatalkan.':'Menu ini dibatalkan.'}</p>
+    <div>{o.lines.filter(l=>l.prepared&&!l.readyAt&&mine(l)&&(o.status==='void'||l.cancelled)).map(l=><div className="ticket-line" key={l.id}><strong>{l.qty}× {l.name}</strong></div>)}</div>
+    <Button variant="secondary" className="full" onClick={()=>setDismissed(d=>[...d,o.id+o.updatedAt])}>Mengerti</Button>
+   </article>)}
    {tickets.map(o=><article className={`ticket ${minutes(o)>target?'late':''}`} key={o.id}>
     <div className="ticket-head"><h2>{o.label||o.receiptId.slice(-6)}</h2><span className="ticket-age">{minutes(o)} mnt{minutes(o)>target?' · terlambat':''}</span></div>
-    <p className="muted small">{o.mode==='dinein'?'Makan di sini':'Bungkus'} · {when(sentAt(o),settings?.timezone,{hour:'2-digit',minute:'2-digit'})}</p>
+    <p className="muted small">{modeLabel(o)} · {when(sentAt(o),settings?.timezone,{hour:'2-digit',minute:'2-digit'})}</p>
     <div>{o.lines.filter(l=>l.prepared&&!l.cancelled&&!l.readyAt&&mine(l)).map(l=><div className="ticket-line" key={l.id}><strong>{l.qty}× {l.name}</strong>{l.modifiers.length>0&&<small>{l.modifiers.map(m=>m.name).join(', ')}</small>}{l.note&&<small className="line-note">{l.note}</small>}</div>)}</div>
     <div className="button-row">
-     <Button className="full" disabled={busy} onClick={()=>act(()=>commands.ready(o.id,station),'Tiket siap; kasir bisa memanggil pager')}><Check size={18}/> Siap</Button>
+     <Button className="full" disabled={busy} onClick={()=>bump(o)}><Check size={18}/> Siap</Button>
      <Button variant="secondary" size="icon" aria-label="Cetak tiket" onClick={()=>setPrinting(o)}><Printer size={17}/></Button>
     </div>
    </article>)}
   </div>
-  {!tickets.length&&<div className="empty-state"><ChefHat size={42} strokeWidth={1.3}/><h2>Tidak ada tiket</h2><p>Tiket muncul di sini beberapa detik setelah kasir mengirim pesanan.</p></div>}
+  {!tickets.length&&!stopped.length&&<div className="empty-state"><ChefHat size={42} strokeWidth={1.3}/><h2>Tidak ada tiket</h2><p>Tiket muncul di sini beberapa detik setelah kasir mengirim pesanan.</p></div>}
   <div className="station-side">
    <article className="panel"><div className="panel-heading"><h2><CookingPot size={17}/> Perlu dibuat</h2><span className="badge">{prep.length}</span></div>
     {prep.length?prep.map(p=><div className="bill-row" key={p.item.id}><span>{p.item.name} · sisa {quantity(p.balance)} {p.item.unit}</span><strong>{p.batches} batch</strong></div>):<p className="muted">Semua bahan olahan di atas par.</p>}

@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { BackHandler, StyleSheet, View } from 'react-native';
 import { quantity, search } from '../../../src/domain/calculate';
 import { BIG, blank, measure, type Entry } from '../../../src/domain/measure';
-import { lookup, normalizeCode } from '../../../src/stok/barcode';
+import { can, roleLabel } from '../../../src/domain/permissions';
+import { boxOf, lookup, normalizeCode } from '../../../src/stok/barcode';
 import { ALL_AREAS, areas, setCounted, startCount } from '../../../src/stok/count';
 import type { CountSession, PhoneStock } from '../../../src/stok/types';
 import { useApp } from '../state';
@@ -45,6 +46,14 @@ export function Count({ back, resume }: { back: () => void; resume?: string }) {
   }, [current]);
 
   const item = (id: string) => app.stock.find((s) => s.id === id);
+  // Takar takes a count from every role but the accountant's. Beranda does not offer it; this is the second guard.
+  if (app.identity && !can(app.identity.role, 'counts')) {
+    return (
+      <Screen title="Hitung stok" onBack={back}>
+        <T>{roleLabel[app.identity.role]} tidak menghitung stok.</T>
+      </Screen>
+    );
+  }
 
   if (!session) {
     const start = () => {
@@ -123,7 +132,8 @@ export function Count({ back, resume }: { back: () => void; resume?: string }) {
     setQuery('');
   };
   // A bahan was scanned or picked. One from another area joins the count only if the person says so.
-  const arrive = (stock: PhoneStock, pack?: string) => {
+  // pack is the box the code stands for (boxOf): '' for a "satuan" code, which open() must not take for "no code".
+  const arrive = (stock: PhoneStock, pack: string) => {
     if (session.lines.some((l) => l.stockId === stock.id)) {
       open(stock.id, pack);
       return;
@@ -140,7 +150,7 @@ export function Count({ back, resume }: { back: () => void; resume?: string }) {
   };
   const onCode = (code: string) => {
     const hit = lookup(code, app.links, app.stock);
-    if (hit) arrive(hit.item, hit.pack?.name);
+    if (hit) arrive(hit.item, boxOf(hit));
     else setUnknown(code);
   };
   // The one field does two jobs: a code that is known opens its bahan, digits that are not get taught, and
@@ -172,7 +182,10 @@ export function Count({ back, resume }: { back: () => void; resume?: string }) {
     // Switching g and kg (or ml and L) converts what is typed, so the count itself does not change.
     const flip = () => {
       const n = Number(entry.loose.replace(',', '.'));
-      const loose = entry.loose.trim() && Number.isFinite(n) ? String(Math.round((entry.big ? n * 1000 : n / 1000) * 1000) / 1000).replace('.', ',') : entry.loose;
+      const x = entry.big ? n * 1000 : n / 1000, r = Math.round(x * 1000) / 1000;
+      // STOK-10: a value the other unit cannot hold exactly (1.234,5 g would become 1,235 kg, 0,4 g nothing) keeps its unit.
+      if (entry.loose.trim() && Number.isFinite(n) && Math.abs(r - x) > 1e-9) return;
+      const loose = entry.loose.trim() && Number.isFinite(n) ? String(r).replace('.', ',') : entry.loose;
       change(stock, { ...entry, loose, big: !entry.big });
     };
     const codes = Object.entries(app.links).filter(([, link]) => link.stockId === stock.id).map(([code]) => code);
@@ -281,7 +294,7 @@ export function Count({ back, resume }: { back: () => void; resume?: string }) {
         code={unknown} onClose={() => setUnknown(undefined)}
         onPick={(picked, pack) => {
           setUnknown(undefined);
-          arrive(picked, pack || undefined);
+          arrive(picked, pack);
         }}
       />
       <Confirm ask={ask} onClose={() => setAsk(undefined)} />

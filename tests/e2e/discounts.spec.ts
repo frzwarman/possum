@@ -45,6 +45,13 @@ test('a saved discount is made under Diskon and goes on at the till in one tap, 
   await cart(page).getByRole('button', { name: 'Opsi pesanan' }).click()
   await cart(page).getByRole('button', { name: 'Simpan pesanan' }).click()
   await expect(page.getByText('Pesanan tersimpan di perangkat')).toBeVisible()
+  // The message of the first save may still be on screen: leave only once the cart is back in storage (a save drops it and writes it again).
+  await expect.poll(() => page.evaluate(async () => {
+    const name = (await indexedDB.databases()).find((d) => d.name?.startsWith('meja-'))?.name
+    const db = await new Promise<IDBDatabase>((r) => { const q = indexedDB.open(name!); q.onsuccess = () => r(q.result) })
+    const n = await new Promise<number>((r) => { const q = db.transaction('drafts').objectStore('drafts').count(); q.onsuccess = () => r(q.result) })
+    db.close(); return n
+  })).toBe(1)
   // As on the manager's laptop: a till with its shift open shows no back office in its menu.
   await page.goto('/discounts')
   await page.getByRole('button', { name: 'Aksi Hari Guru' }).click()

@@ -9,15 +9,19 @@ const MAX_DATA_URL_LENGTH = 70_000;
 
 export function validateMenuPhotoData(value: string | undefined): boolean {
   if (value === undefined || value === "") return true;
-  // A compressed WebP taken on the device, or a hotlinked Unsplash photo (demo catalogue, stock pictures).
+  // A compressed WebP (or, from WebKit, JPEG) taken on the device, or a hotlinked Unsplash photo (demo catalogue, stock pictures).
   return (
     value.length <= MAX_DATA_URL_LENGTH &&
-    (/^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(value) || /^https:\/\/images\.unsplash\.com\/[\w\-./?=&%]+$/.test(value))
+    (/^data:image\/(webp|jpeg);base64,[A-Za-z0-9+/=]+$/.test(value) || /^https:\/\/images\.unsplash\.com\/[\w\-./?=&%]+$/.test(value))
   );
 }
 
+// menu/F7: Safari and every iPhone or iPad browser (WebKit) cannot encode WebP from a canvas; toDataURL hands back a
+// PNG instead, which is far too large. There the photo is a JPEG, which apply_operation accepts under the same cap.
+let webp: boolean | undefined;
+const canWebp = () => (webp ??= document.createElement("canvas").toDataURL("image/webp").startsWith("data:image/webp"));
 function canvasToDataUrl(canvas: HTMLCanvasElement, quality: number): string {
-  return canvas.toDataURL("image/webp", quality);
+  return canvas.toDataURL(canWebp() ? "image/webp" : "image/jpeg", quality);
 }
 
 // Menu photos: 420 px on a filled background. Logos: 256 px, transparency kept so the receipt stays white.
@@ -25,6 +29,8 @@ export const compressMenuPhoto = (file: File) => compressImage(file, 420, "#f2f1
 export const compressLogo = (file: File) => compressImage(file, 256);
 
 async function compressImage(file: File, maxSide: number, background?: string): Promise<string> {
+  // A JPEG has no transparency: on WebKit the logo is flattened on white, which is what the receipt is anyway.
+  if (!background && !canWebp()) background = "#ffffff";
   if (!INPUT_TYPES.has(file.type)) {
     throw new Error(
       "Gunakan foto JPG, PNG, atau WebP. Ubah foto HEIC di galeri terlebih dahulu.",

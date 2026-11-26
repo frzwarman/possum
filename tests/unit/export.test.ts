@@ -31,8 +31,8 @@ describe('export separation',()=>{
   // Draining the queue must not change the ids the server deduplicates on.
   await synchronize(db,user,recorder().transport)
   const third=await exportData(db,true) as {outbox:{id:string;state:string}[]}
-  expect(third.outbox.map(o=>o.id).sort()).toEqual(pending.slice().sort())
-  expect(third.outbox.every(o=>o.state==='synced')).toBe(true)
+  // Only unsent work is in the recovery file (PERF-2): once the server has everything it is empty.
+  expect(third.outbox).toEqual([])
  })
  it('leaks no credential in either export',async()=>{
   const user=identity();const {db,commands}=await seed(user)

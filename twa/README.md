@@ -8,7 +8,13 @@ https://possum.farizz-a.workers.dev/, in Chrome, without browser UI. Nothing of 
   sign-in, device pairing and unsent operations;
 - a web change ships by deploying the site; rebuild the APK only when the shell changes (address, name, icon, colours).
 
-The tablet needs Chrome (any recent version). Without a browser that supports TWAs it falls back to a Custom Tab.
+The app opens in Chrome whenever the tablet has it (`app/src/main/java/app/takar/pos/LauncherActivity.java`), even
+when another browser is the default. Before 1.0.2 it opened in the default browser: on Galaxy tablets that is Samsung
+Internet, which darkened the POS in dark mode and, as version 27, ran a Chromium 125 engine. Without Chrome the
+library picks a browser that supports TWAs, and without one it falls back to a Custom Tab.
+
+Site storage belongs to the browser, so a tablet moving from Samsung Internet (1.0.1) to Chrome (1.0.2) starts with
+Chrome's storage: send the queue first (no pending operations on the old app), then sign in again after the update.
 
 ## Full screen needs one file on the site
 

@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Trusted Web Activity: opens the hosted Takar POS in Chrome, full screen once the site serves
-     /.well-known/assetlinks.json for this app's signing key. Printing, the offline cache, share and
-     storage are Chrome's, so they behave exactly as in the installed PWA. -->
+<!-- Trusted Web Activity: opens the hosted Takar POS in Chrome (LauncherActivity.java picks Chrome over the default
+     browser), full screen once the site serves /.well-known/assetlinks.json for this app's signing key. Printing,
+     the offline cache, share and storage are Chrome's, so they behave exactly as in the installed PWA. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <!-- Android 11+ hides other apps unless named: LauncherActivity checks that Chrome is installed. -->
+  <queries><package android:name="com.android.chrome" /></queries>
   <application
     android:allowBackup="false"
     android:icon="@mipmap/ic_launcher"
@@ -19,7 +21,7 @@
     </activity>
 
     <activity
-      android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+      android:name=".LauncherActivity"
       android:alwaysRetainTaskState="true"
       android:exported="true"
       android:label="@string/appName">

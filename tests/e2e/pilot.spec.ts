@@ -67,7 +67,7 @@ test('the owner uploads the store logo; it shows in the sidebar and on the recei
   await page.getByRole('button', { name: 'Restoran' }).click()
   await page.locator('.logo-field input[type=file]').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: png })
   await expect(page.getByText('Logo tersimpan')).toBeVisible()
-  await expect(page.locator('.restaurant-icon img')).toHaveAttribute('src', /^data:image\/webp;base64,/)
+  await expect(page.locator('.restaurant-icon img')).toHaveAttribute('src', /^data:image\/(webp|jpeg);base64,/)
   await go(page, 'Kasir')
   await openShift(page)
   await addItem(page, 'Es teh manis')

@@ -24,9 +24,9 @@ commands are at the top of that file), so the guide can be refreshed whenever a 
 | The phone does | Through | Who may |
 | --- | --- | --- |
 | Read bahan, barcodes and the team | `stock_app(device_id)` | any active staff member |
-| Send a count for review | `apply_operation`, `count.submit` | every role |
+| Send a count for review | `apply_operation`, `count.submit` | every role but the accountant |
 | Record a delivery | `apply_operation`, `stock.record` kind `purchase` | owner, manager, admin stok |
-| Link or remove a barcode | `link_barcode`, `unlink_barcode` | every role, on a paired phone |
+| Link or remove a barcode | `link_barcode`, `unlink_barcode` | every role, on a paired phone (the app offers it inside a count or a delivery, so not to the accountant) |
 | Pair this phone | `enroll_phone(device_id)` | owner, manager |
 
 - Counts and deliveries use the operations the web app already sends, so permissions, the manager's approval and

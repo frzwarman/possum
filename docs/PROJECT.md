@@ -69,7 +69,7 @@ Figma table layout for Orders, a separate "Pending EDC" status, the WhatsApp add
 | Feature | Status |
 |---|---|
 | F1 Take an order (POS-1 … POS-8) | done; POS-5 prints through the browser, not a LAN printer |
-| F2 Kitchen and bar stations (STN-1 … STN-5) | done; dark mode for the bar |
+| F2 Kitchen and bar stations (STN-1 … STN-5) | done; dark mode for the bar. A bump (`order.ready`) names the line ids the ticket showed and the server marks those (an older client sends none: then only lines prepared before the bump); Siap waits 4 s on the tablet so it can be undone; tickets are the open shift's (or today's business day); a pull that says this device is no longer the till, was unpaired, or its person's role changed or was switched off stops selling at once (meta `stale`, applied in `context.tsx`); a failing pull shows "Server tidak terjangkau" (meta `pullError`) |
 | F3 Menu and recipes (MENU-1, 2, 3, 5, 7) | done; MENU-4 has free-text tags but no "Create tag" prompt; MENU-6 (recipe approval) deferred by the PRD |
 | F4 Prep batches (PREP-1 … PREP-4) | done |
 | F5 Ingredients and receiving (ING-1, ING-2, PUR-3, PUR-4) | done; sanity check covers direct deliveries, not receipts against a PO; PUR-1 and PUR-2 deferred by the PRD |
@@ -87,11 +87,11 @@ recipe approvals, bar and kitchen tablets, accounting, attendance.
 
 **Local-first PWA.** Vite 7, React 19, TypeScript strict, TanStack Router, Dexie (IndexedDB) with a
 transactional outbox. Every write is a command that updates the local database and queues an
-operation; `synchronize()` pushes the queue in time order to one Supabase RPC, `apply_operation`,
+operation; the screen never waits for the network: `synchronize()` runs in the background and pushes the whole queue in the order the operations were made (a per-device `seq`; older ones by time) to one Supabase RPC, `apply_operation`,
 which re-checks every rule, then pulls what other devices changed (`pull`, from a cursor with a
-10-second overlap). Station tablets pull every 5 s, the till every 10 s, laptops every 30 s. The
-till keeps selling offline; conflicts resolve by replay, and rejected operations stay visible until
-an owner discards them after an export.
+10-second overlap; it also carries purchase orders, suppliers, counts and, for owner, manager and admin, catering orders; a device with no cursor loads everything again through `bootstrap`). Station tablets pull every 5 s, the till every 10 s, laptops every 30 s. The
+till keeps selling offline (every request is cut after 30 s; an expired token is refreshed once and retried); operations are stamped with the device clock corrected by the server's `now` (meta `clockOffset`, a banner shows when the clock is off by over a minute); a refusal by SQLSTATE class P0001, 22, 23 or 42501 (or HTTP 413) is final, anything else waits and retries; conflicts resolve by replay, and rejected operations stay visible (on the POS too) until
+they are discarded in Lainnya → Sinkron & backup: the recovery file (only unsent work) is saved, then an owner or manager approves with their PIN (`discard`; the signed-in owner or manager needs none). The operations made on the same order go with it, and the orders and shifts they touched come back from the server.
 
 **Server.** Supabase Postgres with RLS; ten migrations under `supabase/migrations/`; `202611060009_takar.sql` carries roles, device modes,
 packs, areas, counts, approvals, the pull cursor and the audit log, and `202611130010_cashless.sql` the EDC

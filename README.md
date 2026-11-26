@@ -31,7 +31,7 @@ PIN and land in an audit log nobody can edit. The till keeps selling offline.
 |---|---|---|---|
 | **POS** (`pos`) | the one cashier tablet | cashier, manager, owner | take orders, send to stations, take payment, open and close the shift |
 | **Station** (`station`) | kitchen tablet, bar tablet | kitchen crew, barista | see its own tickets oldest first, mark ready, log waste, make prep batches, count its area |
-| **Back office** (`office`) | laptop, manager's phone | owner, manager, inventory admin, head chef | Today, menu and recipes, ingredients and receiving, counts, reports, audit log, team |
+| **Back office** (`office`) | laptop, manager's phone | owner, manager, inventory admin, head chef | Menu and recipes, ingredients and receiving, counts, team; Today, reports, sales and the audit log for owner and manager; purchases, catering and transfers for owner, manager and admin |
 
 The **accountant** role is separate from all three: a laptop sign-in that reads *Akuntansi* and the audit log, writes
 the cash book of costs, and can change nothing else. *Akuntansi* (also open to the owner and manager) gives the
@@ -176,7 +176,7 @@ others did.
 | Routing | TanStack Router | `/pos` eager, every other screen lazy |
 | Local database | Dexie (IndexedDB), `src/lib/db.ts` | one database per identity + device |
 | Queue | transactional outbox in the same Dexie database | record and operation commit together or not at all |
-| Sync | `src/lib/sync.ts` | push (Web Locks, ordered, batched, backs off, halts on rejection) then pull |
+| Sync | `src/lib/sync.ts` | push (Web Locks, in order of `seq`, the whole queue per round, backs off, halts on rejection) then pull |
 | Server | Supabase Postgres + Auth | `apply_operation`, `bootstrap`, `pull`, `audit_log`, `approve`, `enroll_device`, `manage_staff`, `sales_report` |
 | Hosting | Cloudflare Pages (static) | see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Offline shell | vite-plugin-pwa / Workbox, `registerType: 'prompt'` | never reloads itself mid-checkout |
@@ -194,13 +194,16 @@ others did.
 - **Stock is derived from immutable movements**, never stored as a balance. "Can make" is the lowest
   whole number of portions any recipe line allows; at `lowAt` or fewer the card says *Sisa N*, below 1
   the item is sold out by itself (a manager can keep selling it with *Tetap jual*).
-- **Ingredients are consumed exactly once, at `order.prepare`** — when the ticket goes to the stations.
+- **Ingredients are consumed exactly once, at `order.prepare`** — when the ticket goes to the stations, or, in the pilot
+  (no station tablets), when the cashier confirms the payment (the prepare and the payment are queued together).
   A refund never restores stock. Lines carry their station, `preparedAt` and `readyAt`; a station marks
   its lines ready without touching the order revision, so the till and the tablets never conflict.
 - **Immutable catalog versions.** Every order line stores its item's version and a copy of the name,
   price, recipe and options. Any immutable version is accepted on a line.
-- **Counts.** `count.record` writes one `count` movement per line that differs (reason "Hitung <area>:
-  <alasan>") plus a `counts` row for the variance report.
+- **Counts.** `count.record` writes one `count` movement per line (reason "Hitung <area>:
+  <alasan>") plus a `counts` row for the variance report. A count measures the shelf when it was taken (the submit's
+  time): the gap is counted minus the balance then, stamped then, so sales and deliveries since stay. A count already
+  approved is accepted again and ignored.
 - **Business day** ends at the configured cutoff — default **04:00**, timezone **Asia/Jakarta**.
 - **Operations are idempotent by operation id.** The server serializes writes per restaurant; `pull`
   asks from ten seconds before its last cursor and upserts, so nothing is lost or double counted.
@@ -232,8 +235,8 @@ Test results on this machine on 2026-11-20 (macOS, Node v25): `pnpm test` 227 pa
 
 - **One outlet per restaurant row; one POS device.** Linked outlets can transfer stock.
 - **Offline is bounded to an authorized shift, 12 hours maximum.** No fresh sign-in of a new person
-  while offline; the lock screen still works. Void, cash payment and close still work after the 12 hours;
-  new work does not.
+  while offline; the lock screen still works. Void, cash payment and close still work after the 12 hours,
+  and in the pilot (no station tablets) so does the `order.prepare` that goes out with that payment; new work does not.
 - **No offline card or QRIS.** Recorded only online, after the cashier confirms the merchant app.
 - **Full-bill payment only; full refunds only, online, by a manager, within the original open shift.**
 - **Recipe stock is an estimate until a count.** Counts are the correction, and they are logged.

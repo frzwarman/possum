@@ -42,12 +42,14 @@ export function Receipt({order,onClose,kitchen=false,reprint=false,station,auto=
   <div className="receipt-sums">
    <div className="receipt-row"><span>Subtotal</span><span>{rupiah(order.totals.subtotal)}</span></div>
    {order.totals.discount>0&&<div className="receipt-row"><span>Diskon{order.discountReason&&` · ${order.discountReason}`}</span><span>−{rupiah(order.totals.discount)}</span></div>}
-   {order.totals.service>0&&<div className="receipt-row"><span>Layanan {s.serviceBps/100}%</span><span>{rupiah(order.totals.service)}</span></div>}
-   {order.totals.tax>0&&<div className="receipt-row"><span>Pajak {s.taxBps/100}%</span><span>{rupiah(order.totals.tax)}</span></div>}
+   {order.totals.service>0&&<div className="receipt-row"><span>Layanan {(s.serviceBps/100).toLocaleString('id-ID')}%</span><span>{rupiah(order.totals.service)}</span></div>}
+   {order.totals.tax>0&&<div className="receipt-row"><span>Pajak {(s.taxBps/100).toLocaleString('id-ID')}%</span><span>{rupiah(order.totals.tax)}</span></div>}
    <div className="receipt-total"><span>Total</span><strong>{rupiah(order.totals.total)}</strong></div>
    {order.payment?<>
     <div className="receipt-row"><span>{payLabel(order)}</span><span>{rupiah(order.payment.tendered)}</span></div>
-    {order.payment.method==='cash'&&<div className="receipt-row receipt-strong"><span>Kembalian</span><span>{rupiah(order.payment.change)}</span></div>}
+    {/* TILL-14: a line voided after payment lowers the total, so what goes back is tendered minus the total as it stands. */}
+    {order.payment.method==='cash'&&<div className="receipt-row receipt-strong"><span>Kembalian</span><span>{rupiah(order.payment.tendered-order.totals.total)}</span></div>}
+    {(order.payment.method==='card'||order.payment.method==='qris')&&order.payment.tendered>order.totals.total&&<div className="receipt-row receipt-strong"><span>Dikembalikan</span><span>{rupiah(order.payment.tendered-order.totals.total)}</span></div>}
     {order.payment.approvalCode&&<div className="receipt-row receipt-strong"><span>Kode approval</span><span>{order.payment.approvalCode}</span></div>}
     {(order.payment.method==='card'||order.payment.method==='qris')&&!order.payment.edc&&<div className="receipt-row"><span>Verifikasi</span><span>manual oleh kasir</span></div>}
    </>:<div className="receipt-row"><span>Pembayaran</span><span>belum dibayar</span></div>}

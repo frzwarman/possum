@@ -17,7 +17,7 @@ test('a CSV import with photos can be removed again, except an item that was sol
   await row('TEST Matcha Latte Dingin').getByRole('button', { name: 'Edit' }).click()
   const dialog = page.getByRole('region', { name: 'Edit menu' })
   await dialog.locator('input[type=file]').setInputFiles(`${dir}/TEST Matcha Latte Dingin.jpg`)
-  await expect(dialog.locator('img[alt="Pratinjau foto menu"]')).toHaveAttribute('src', /^data:image\/webp;base64,/)
+  await expect(dialog.locator('img[alt="Pratinjau foto menu"]')).toHaveAttribute('src', /^data:image\/(webp|jpeg);base64,/)
   await dialog.getByRole('button', { name: 'Simpan versi menu' }).click()
   await expect(row('TEST Matcha Latte Dingin')).toContainText('Dengan foto')
   // Sell one TEST item: from now on it can only be switched off.

@@ -31,8 +31,11 @@ export default function Discounts() {
   const used = (d: Discount) => orders.filter((o) => o.discountId === d.id && o.status !== "void").length;
   const scope = (d: Discount) => (d.scope === "order" ? "Seluruh pesanan" : d.scope === "items" ? `${d.items?.length ?? 0} menu pilihan` : typeLabel[d.scope]);
   const rules = (d: Discount) => [d.minSpend ? `Min. ${rupiah(d.minSpend)}` : "", d.approval ? "Perlu PIN manajer" : ""].filter(Boolean).join(" · ") || "Tanpa syarat";
-  const count = (s: typeof show) => list.filter((d) => s === "all" || (s === "ended") === (stateOf(d, today) === "ended")).length;
-  const shown = list.filter((d) => (show === "all" || (show === "ended") === (stateOf(d, today) === "ended")) && `${d.name} ${d.note}`.toLowerCase().includes(query.trim().toLowerCase()));
+  // Aktif means running today: a scheduled one (Terjadwal) shows under Semua only (DSC-5).
+  const count = (s: typeof show) => list.filter((d) => s === "all" || stateOf(d, today) === s).length;
+  const shown = list.filter((d) => (show === "all" || stateOf(d, today) === show) && `${d.name} ${d.note}`.toLowerCase().includes(query.trim().toLowerCase()));
+  // settings.update takes at most 100 saved discounts (Commands.settings refuses more): ended ones stay, so old ones go first.
+  const full = list.length >= 100;
   const save = (next: Discount[], message: string) => act(() => commands.settings({ ...settings!, discounts: next }), message);
   if (editing) return <DiscountForm start={editing.d} fresh={editing.fresh} today={today} onCancel={() => setEditing(undefined)} onSave={async (d) => { await save(editing.fresh ? [d, ...list] : list.map((x) => (x.id === d.id ? d : x)), `${d.name} tersimpan. Langsung muncul di daftar diskon kasir.`); setEditing(undefined); }} busy={busy} menu={menu} tz={tz} />;
   return (
@@ -41,7 +44,7 @@ export default function Discounts() {
         <div><p className="crumb-text small muted">Diskon</p><h1>Diskon tersimpan</h1></div>
         <div className="discounts-tools">
           <div className="search-box"><Search size={20} aria-hidden /><input aria-label="Cari diskon" placeholder="Cari nama atau kode" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
-          <Button className="btn-accent" onClick={() => setEditing({ fresh: true, d: { id: uid(), name: "", note: "", kind: "percent", value: 10, scope: "order", from: today, to: addDays(today, 6) } })}><Plus size={18} /> Diskon baru</Button>
+          <Button className="btn-accent" disabled={full} title={full ? "Maksimal 100 diskon tersimpan" : undefined} onClick={() => setEditing({ fresh: true, d: { id: uid(), name: "", note: "", kind: "percent", value: 10, scope: "order", from: today, to: addDays(today, 6) } })}><Plus size={18} /> Diskon baru</Button>
         </div>
       </div>
       <div className="category-tabs">
@@ -65,8 +68,9 @@ export default function Discounts() {
                       <td><span className={`dot-chip ${stateLabel[st][1]}`}>{stateLabel[st][0]}</span></td>
                       <td className="num">{used(d)}</td>
                       <td className="row-menu-cell">
-                        <button type="button" className="row-menu-button" aria-label={`Aksi ${d.name}`} popoverTarget={`row-menu-${i}`}><Ellipsis size={18} /></button>
-                        <div id={`row-menu-${i}`} popover="auto" className="row-menu" onClick={(e) => { if ((e.target as HTMLElement).closest("button") && e.currentTarget.matches(":popover-open")) e.currentTarget.hidePopover(); }}>
+                        {/* One anchor name per row: anchor-scope needs Chromium 131, and the tablet's Samsung Internet 27 is 125. */}
+                        <button type="button" className="row-menu-button" aria-label={`Aksi ${d.name}`} popoverTarget={`row-menu-${i}`} style={{ anchorName: `--row-menu-${i}` }}><Ellipsis size={18} /></button>
+                        <div id={`row-menu-${i}`} popover="auto" className="row-menu" style={{ positionAnchor: `--row-menu-${i}` }} onClick={(e) => { if ((e.target as HTMLElement).closest("button") && e.currentTarget.matches(":popover-open")) e.currentTarget.hidePopover(); }}>
                             <button type="button" onClick={() => { setEditing({ fresh: false, d: { ...d } }); }}>Ubah</button>
                             {st === "ended" ? (
                               <button type="button" onClick={() => { setEditing({ fresh: false, d: { ...d, ended: false, from: today, to: addDays(today, Math.max(0, (Date.parse(d.to) - Date.parse(d.from)) / 86400000)) } }); }}>Jalankan lagi</button>
@@ -86,7 +90,7 @@ export default function Discounts() {
           <p className="muted">{list.length ? "Tidak ada diskon yang cocok." : "Belum ada diskon tersimpan. Tambahkan untuk acara atau voucher; kasir memakainya dengan sekali ketuk."}</p>
         )}
       </div>
-      <p className="small muted">Diskon aktif langsung muncul di daftar diskon kasir. Yang sudah selesai tetap di sini agar laporan tetap masuk akal.</p>
+      <p className="small muted">{full ? "Sudah 100 diskon tersimpan, batas maksimal. Hapus diskon lama yang sudah selesai sebelum menambah yang baru." : "Diskon aktif langsung muncul di daftar diskon kasir. Yang sudah selesai tetap di sini agar laporan tetap masuk akal."}</p>
       <Dialog open={Boolean(removing)} onOpenChange={() => setRemoving(undefined)} title={`Hapus ${removing?.name ?? "diskon"}?`} description="Pesanan yang sudah memakai diskon ini tetap tercatat dengan namanya. Untuk berhenti memakainya saja, pilih Akhiri sekarang.">
         <div className="detail-actions pair">
           <Button variant="secondary" onClick={() => setRemoving(undefined)}>Batal</Button>

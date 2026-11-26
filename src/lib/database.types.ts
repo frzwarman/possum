@@ -25,6 +25,7 @@ export interface Database { public: { Tables: {
     decided_by: string | null
     created_at: string
     decided_at: string | null
+    line_id: string | null
   }; Insert: never; Update: never; Relationships: [] }
   approvals: { Row: {
     id: string
@@ -36,6 +37,15 @@ export interface Database { public: { Tables: {
     amount: number | null
     created_at: string
     operation_id: string | null
+    line_id: string | null
+  }; Insert: never; Update: never; Relationships: [] }
+  audit_events: { Row: {
+    id: string
+    restaurant_id: string
+    kind: string
+    occurred_at: string
+    actor: string | null
+    payload: Json
   }; Insert: never; Update: never; Relationships: [] }
   barcodes: { Row: {
     restaurant_id: string
@@ -182,6 +192,7 @@ export interface Database { public: { Tables: {
     snapshot: Json
     created_at: string
     updated_at: string
+    received_at: string
   }; Insert: never; Update: never; Relationships: [] }
   purchases: { Row: {
     restaurant_id: string
@@ -215,6 +226,7 @@ export interface Database { public: { Tables: {
     logo_at: string | null
     catalog_at: string | null
     retired_discounts: Json
+    retired_pricing: Json
   }; Insert: never; Update: never; Relationships: [] }
   sales_orders: { Row: {
     restaurant_id: string
@@ -225,6 +237,7 @@ export interface Database { public: { Tables: {
     snapshot: Json
     created_at: string
     updated_at: string
+    received_at: string
   }; Insert: never; Update: never; Relationships: [] }
   shifts: { Row: {
     restaurant_id: string
@@ -268,6 +281,7 @@ export interface Database { public: { Tables: {
     id: string
     snapshot: Json
     updated_at: string
+    received_at: string
   }; Insert: never; Update: never; Relationships: [] }
   sync_operations: { Row: {
     id: string

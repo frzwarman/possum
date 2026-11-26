@@ -61,8 +61,16 @@ the relaxed shift rules. Apply it with `supabase db push`; `pnpm test:db` runs e
 Each owner and manager signs in once and sets a 6-digit approval PIN in *Lainnya → PIN persetujuan*.
 At the till the cashier stays signed in; the manager picks their name and types the PIN. The server
 checks it (bcrypt via `pgcrypto`) and issues an approval that works once, for that person, action,
-order or count, and amount, within an hour. Three wrong PINs in five minutes pause approvals for that
-person (the one asking) and nobody else.
+order or count, and amount, within an hour. Voiding one made line is its own action, `voidline`, bound
+to the order, the line and the line's value; voiding a whole order is `void`, bound to the order's total; the server
+compares both with its own figures when the operation arrives. (The web app before 2026-11-25 asked for both as `void`
+with no amount; `supabase/pending/voids_strict.sql` ends accepting that.) `discard` is a manager's PIN that releases a
+refused operation from a cashier's queue: it carries no order or amount and no operation consumes it. Three wrong PINs
+in five minutes pause approvals for that person (the one asking) and nobody else.
+Two QA-2026-11-25 rules wait for every till to run the new web app and are switched on by a ready file in
+`supabase/pending/` (not a migration; apply by hand, then move it into `migrations/`): `voids_strict.sql` (above)
+and `discounts_strict.sql` (an approved rupiah discount asks again once the subtotal fell, and a saved discount that
+needs a PIN asks again once it grew past its approval).
 
 Staff accounts use a 6-digit PIN as their password: `pnpm staff add kasir@ziggy.local cashier "Budi"
 --restaurant <uuid> --pin 482915`. The email is stored in `memberships.login`, so after an owner or

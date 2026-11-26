@@ -48,6 +48,27 @@ export function staysSignedIn(saved: { id: string; demo: boolean }, session: { i
   return saved.demo || session.id === saved.id || (session.id === undefined && session.unsure)
 }
 
+// A wait with an end. `call` gets a signal that is aborted `ms` after it started, and at that moment the caller
+// stops waiting, whatever `call` does with the signal. The signal fires even after `call` has answered: a fetch
+// answers when the headers arrive, and the body it is still reading must not hang either.
+export function deadline<T>(ms: number, call: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const stop = new AbortController()
+  return new Promise<T>((resolve, reject) => {
+    setTimeout(() => {
+      stop.abort()
+      reject(new Error('Tidak ada jawaban dari Takar. Coba lagi.'))
+    }, ms)
+    call(stop.signal).then(resolve, reject)
+  })
+}
+
+// The question staysSignedIn needs answered, asked with a limit. An expired session is refreshed first, and with no
+// signal that is half a minute of retries: the app must not sit at a blank screen that long. After `wait` the
+// answer is "unsure", as it is when the check fails outright; the refresh carries on by itself.
+export function whoseSession(check: () => Promise<{ id?: string; unsure: boolean }>, wait = 2000): Promise<{ id?: string; unsure: boolean }> {
+  return deadline(wait, check).catch(() => ({ unsure: true }))
+}
+
 // A queued count or delivery as apply_operation takes it.
 export function toOperation(job: Extract<Job, { type: 'op' }>, identity: Identity): Operation {
   return { id: job.id, kind: job.kind, actor: job.actor, restaurantId: identity.restaurantId, deviceId: identity.deviceId, occurredAt: job.occurredAt, payload: job.payload }
@@ -75,4 +96,14 @@ export async function flush(queue: Queue, identity: Identity, server: Server): P
     }
   }
   return { sent, rejected, left: mine.length - sent - rejected }
+}
+
+// Why "Ganti" has to wait, if it has to: work is sent under the name of the person who did it, so they cannot leave
+// while some of it is still on the phone. Unsent work waits for signal. Refused work waits for a decision in Perlu
+// perhatian, and no signal will send it.
+export function cannotLeave(jobs: Job[]): string | undefined {
+  const unsent = jobs.filter((j) => j.state === 'pending').length
+  if (unsent) return `Masih ada ${unsent} catatan belum terkirim. Cari sinyal dulu, lalu ganti pengguna.`
+  if (jobs.length) return `Ada ${jobs.length} catatan yang ditolak Takar. Buka Perlu perhatian: kirim ulang atau hapus, lalu ganti pengguna.`
+  return undefined
 }

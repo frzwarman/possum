@@ -25,7 +25,7 @@ const rupiah = (v: number) => money(v || 0);
 type Chart = Record<Account, readonly [string, string]>;
 const show = (v: Cell, k: Kind) => (v === "" ? "" : k === "rp" ? rupiah(v as number) : k === "qty" ? quantity(v as number) : k === "pct" ? `${Math.round((v as number) * 100)}%` : String(v));
 // For a file: quantities in whole units, a share as a fraction (Excel formats it) or as a percentage (CSV).
-const plain = (v: Cell, k: Kind, percent = false) => (v === "" || k === "text" || k === "rp" || k === "num" ? v : k === "qty" ? (v as number) / 1000 : percent ? Math.round((v as number) * 1000) / 10 : v);
+export const plain = (v: Cell, k: Kind, percent = false) => (typeof v !== "number" || k === "text" || k === "rp" || k === "num" ? v : k === "qty" ? (v as number) / 1000 : percent ? Math.round((v as number) * 1000) / 10 : v);
 const FORMAT: Record<Kind, Format> = { text: "text", rp: "int", num: "int", qty: "dec", pct: "pct" };
 const html = (s: string) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
 const DAYS = 93, DATE = /^\d{4}-\d\d-\d\d$/;

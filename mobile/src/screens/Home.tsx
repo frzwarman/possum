@@ -13,8 +13,10 @@ export function Home({ go }: { go: (route: Route, draft?: string) => void }) {
   if (!me) return null;
   const pending = app.jobs.filter((j) => j.state === 'pending').length;
   const rejected = app.jobs.filter((j) => j.state === 'rejected').length;
-  // Deliveries stay with the roles Takar lets record them; everyone counts.
+  // Each job is offered to the roles Takar accepts it from: deliveries from owner, manager and admin stok, counts
+  // from everyone but the accountant. Anything else would be typed, sent and then refused.
   const receives = can(me.role, 'inventory');
+  const counts = can(me.role, 'counts');
   const queued = new Set(app.jobs.map((j) => j.id));
   const today = new Date().toDateString();
   // "Sent" means the queue no longer holds any of its jobs.
@@ -38,9 +40,14 @@ export function Home({ go }: { go: (route: Route, draft?: string) => void }) {
       </View>
 
       <View style={local.tiles}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Hitung stok" onPress={() => go('count')} style={({ pressed }) => [local.tile, { backgroundColor: color.lime }, pressed && kit.pressed]}>
-          <T tone="heading">Hitung stok</T>
-          <T tone="small" style={{ color: color.ink }}>Pindai, ketik jumlah, kirim untuk ditinjau.</T>
+        <Pressable
+          accessibilityRole="button" accessibilityLabel="Hitung stok" accessibilityState={{ disabled: !counts }} disabled={!counts} onPress={() => go('count')}
+          style={({ pressed }) => [local.tile, { backgroundColor: counts ? color.lime : color.muted }, pressed && kit.pressed]}
+        >
+          <T tone="heading" style={counts ? undefined : { color: color.disabled }}>Hitung stok</T>
+          <T tone="small" style={{ color: counts ? color.ink : color.secondary }}>
+            {counts ? 'Pindai, ketik jumlah, kirim untuk ditinjau.' : `${roleLabel[me.role]} tidak menghitung stok`}
+          </T>
         </Pressable>
         <Pressable
           accessibilityRole="button" accessibilityLabel="Terima barang" accessibilityState={{ disabled: !receives }} disabled={!receives} onPress={() => go('receive')}
@@ -55,7 +62,7 @@ export function Home({ go }: { go: (route: Route, draft?: string) => void }) {
 
       {rejected > 0 ? <Row tone="warning" title={`Perlu perhatian (${rejected})`} note="Ada catatan yang ditolak Takar." right={<T tone="strong">›</T>} onPress={() => go('attention')} /> : null}
 
-      {app.drafts.length > 0 ? (
+      {counts && app.drafts.length > 0 ? (
         <View style={local.section}>
           <T tone="label">Dijeda</T>
           {app.drafts.map((c) => (

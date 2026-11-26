@@ -8,16 +8,11 @@ import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
 import { Select } from "../../components/ui/select";
 import { Dialog } from "../../components/ui/dialog";
-import { paidValue, rupiah, totals, when } from "../../domain/calculate";
+import { paidValue, rupiah, totals, when, zonedLocal } from "../../domain/calculate";
 import type { Payment, SalesLine, SalesOrder } from "../../domain/types";
 import { uid } from "../../lib/db";
 const status = { confirmed: "Dikonfirmasi", delivered: "Terkirim", cancelled: "Dibatalkan" };
 type Draft = { id?: string; name: string; phone: string; address: string; deliverAt: string; lines: SalesLine[]; discount: string; note: string; dp: string };
-// <input type="datetime-local"> speaks local wall-clock time without a zone.
-const localInput = (iso: string) => {
-  const d = new Date(iso);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-};
 // Catering and B2B orders: a customer, a delivery time, a down payment now and the rest later.
 // Delivery takes the menu recipes out of stock; until the balance is paid the order stays owed.
 export default function Catering() {
@@ -31,13 +26,16 @@ export default function Catering() {
   const [cancelling, setCancelling] = useState<{ so: SalesOrder; reason: string; refund: string }>();
   const [printing, setPrinting] = useState<SalesOrder>();
   if (!can(user.role, "documents")) return <Navigate to="/pos" />;
+  const refunded = (so: SalesOrder) => -so.payments.reduce((n, p) => n + Math.min(0, p.amount), 0);
   const balance = (so: SalesOrder) => (so.status === "cancelled" ? 0 : so.totals.total - paidValue(so));
-  const shown = salesOrders.filter((so) =>
-    tab === "upcoming" ? so.status === "confirmed" : tab === "owed" ? so.status === "delivered" && balance(so) > 0 : true,
-  );
+  const shown = salesOrders
+    .filter((so) => (tab === "upcoming" ? so.status === "confirmed" : tab === "owed" ? so.status === "delivered" && balance(so) > 0 : true))
+    // CAT-8: the next delivery first on 'Akan dikirim'; the other tabs stay newest first.
+    .sort((a, b) => (tab === "upcoming" ? Date.parse(a.deliverAt) - Date.parse(b.deliverAt) : 0));
   const customers = [...new Map(salesOrders.map((so) => [so.customer.name, so.customer])).values()];
+  const own = shift?.actor === user.id; // the server takes drawer cash only for the actor's own shift
   const sources = [
-    { value: "drawer", label: shift ? "Tunai ke laci kas sif aktif" : "Tunai ke laci (buka sif dulu)", disabled: !shift },
+    { value: "drawer", label: own ? "Tunai ke laci kas sif aktif" : "Tunai ke laci (buka sif Anda dulu)", disabled: !own },
     { value: "outside", label: "Transfer / QRIS / di luar laci" },
   ];
   let preview = { subtotal: 0, discount: 0, service: 0, tax: 0, total: 0 };
@@ -51,6 +49,7 @@ export default function Catering() {
   const text = (so: SalesOrder) =>
     [
       `PESANAN ${so.number}`,
+      so.status === "cancelled" && `DIBATALKAN${so.cancelReason ? `: ${so.cancelReason}` : ""}`,
       settings?.name,
       settings?.address,
       `Pelanggan: ${so.customer.name}${so.customer.phone ? ` (${so.customer.phone})` : ""}`,
@@ -64,7 +63,8 @@ export default function Catering() {
       so.totals.tax > 0 && `Pajak: ${rupiah(so.totals.tax)}`,
       `Total: ${rupiah(so.totals.total)}`,
       `Sudah dibayar: ${rupiah(paidValue(so))}`,
-      `Sisa: ${rupiah(balance(so))}`,
+      refunded(so) > 0 && `Dikembalikan: ${rupiah(refunded(so))}`,
+      so.status !== "cancelled" && `Sisa: ${rupiah(balance(so))}`,
       so.note && `Catatan: ${so.note}`,
       settings?.footer,
     ]
@@ -107,7 +107,7 @@ export default function Catering() {
         <Button
           onClick={() => {
             setSource("outside");
-            setDraft({ name: "", phone: "", address: "", deliverAt: localInput(new Date(Date.now() + 86400000).toISOString()), lines: [], discount: "", note: "", dp: "" });
+            setDraft({ name: "", phone: "", address: "", deliverAt: zonedLocal(new Date(Date.now() + 86400000).toISOString(), settings?.timezone), lines: [], discount: "", note: "", dp: "" });
           }}
         >
           <Plus size={17} /> Pesanan baru
@@ -187,7 +187,7 @@ export default function Catering() {
                 <Button
                   variant="secondary"
                   onClick={() =>
-                    setDraft({ id: so.id, ...so.customer, deliverAt: localInput(so.deliverAt), lines: so.lines.map((l) => { const m = menu.find((x) => x.id === l.itemId); return m ? { ...l, name: m.name, catalogVersion: m.version } : l; }), discount: String(so.discount || ""), note: so.note, dp: "" })
+                    setDraft({ id: so.id, ...so.customer, deliverAt: zonedLocal(so.deliverAt, settings?.timezone), lines: so.lines.map((l) => { const m = menu.find((x) => x.id === l.itemId); return m ? { ...l, name: m.name, catalogVersion: m.version } : l; }), discount: String(so.discount || ""), note: so.note, dp: "" })
                   }
                 >
                   Ubah

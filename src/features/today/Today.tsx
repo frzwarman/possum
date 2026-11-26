@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, Navigate } from '@tanstack/react-router'
 import { Bell, ChartColumn, Percent, Trash2, CircleAlert, Milk, Ban, Scale, ChefHat, Clock, ArrowRight, ClipboardList } from 'lucide-react'
-import { useApp } from '../../app/context'
+import { useApp, useMovements } from '../../app/context'
 import { businessDay, countsDue, daysLeft, expiring, isSale, itemStation, niceStep, quantity, rupiah, usagePerDay, when } from '../../domain/calculate'
 import { can } from '../../domain/permissions'
 import type { ReactNode } from 'react'
 // Figma M1 "Today": three numbers, sales by hour, what needs the manager, what runs low; on the right the count that
 // is due, the compliment budget and who is on shift. Every line links to where it is fixed.
 export default function Today(){
- const {orders,movements,stockItems,menu,counts,settings,costs,balance,user,shift,db}=useApp()
+ const {stockItems,menu,counts,settings,costs,balance,user,shift,db,salesOrders}=useApp()
+ const movements=useMovements()
  const [permission,setPermission]=useState<NotificationPermission|'unsupported'>(()=>typeof Notification==='undefined'?'unsupported':Notification.permission)
  const [all,setAll]=useState(false)
  const notified=useRef(new Set<string>())
@@ -19,14 +20,23 @@ export default function Today(){
  // device's store (a day early, for the cutoff), as VoidSummary does.
  const month=today.slice(0,7),since=new Date(Date.parse(`${month}-01T00:00:00Z`)-86400000).toISOString()
  const compliments=useLiveQuery(()=>db.orders.where('createdAt').aboveOrEqual(since).filter(o=>o.mode==='compliment').toArray(),[db,since])??[]
- if(!can(user.role,'backoffice'))return <Navigate to="/pos"/>
- const paid=orders.filter(o=>o.payment&&day(o.payment.at)===today&&o.status!=='refunded'&&isSale(o)),sales=paid.reduce((n,o)=>n+o.totals.total,0)
- const value=(kind:string)=>movements.filter(m=>m.kind===kind&&day(m.at)===today).reduce((n,m)=>n+m.qty*(costs.get(m.stockId)??0),0)
- const cogs=-value('preparation'),wasted=movements.filter(m=>m.kind==='waste'&&day(m.at)===today),waste=-value('waste'),gap=value('count')
+ // QA PERF-4: today's orders come from the device's store, never the app's newest-500 window. An order is made a little
+ // before it is paid, so ask three days back and keep what was paid (or last touched) today.
+ const recent=new Date(Date.now()-3*864e5).toISOString().slice(0,10)
+ const orders=useLiveQuery(()=>db.orders.where('createdAt').aboveOrEqual(recent).toArray(),[db,recent])??[]
+ // AUTH-12: the access table gives 'Hari ini' (sales and money) to owner and manager only; the rest of the office goes to the menu.
+ if(!can(user.role,'reports'))return <Navigate to={can(user.role,'backoffice')?'/menu':'/pos'}/>
+ // STN-12, RPT-6: Penjualan is what was paid today, a refund apart (as Laporan and the server count it).
+ const paid=orders.filter(o=>o.payment&&day(o.payment.at)===today&&isSale(o)),sales=paid.reduce((n,o)=>n+o.totals.total,0),refunded=orders.filter(o=>o.refund&&day(o.refund.at)===today).reduce((n,o)=>n+o.totals.total,0)
+ const catering=new Set(salesOrders.map(s=>s.id)) // CAT-7: catering takes ingredients too, but its money is not counter sales
+ // QA PERF-6: a business day began less than 36 h ago; a string compare drops the rest before the zone arithmetic.
+ const dayStart=new Date(Date.now()-36*36e5).toISOString(),todays=movements.filter(m=>m.at>=dayStart)
+ const value=(kind:string)=>todays.filter(m=>m.kind===kind&&day(m.at)===today&&!(kind==='preparation'&&catering.has(m.recordId))).reduce((n,m)=>n+m.qty*(costs.get(m.stockId)??0),0)
+ const cogs=-value('preparation'),wasted=todays.filter(m=>m.kind==='waste'&&day(m.at)===today),waste=-value('waste'),gap=value('count')
  const low=stockItems.filter(s=>balance(s.id)<=s.threshold).map(s=>({item:s,out:balance(s.id)<=0,days:daysLeft(balance(s.id),usagePerDay(movements,s.id))})).sort((a,b)=>Number(b.out)-Number(a.out)||a.days-b.days)
  const soldOut=menu.filter(m=>m.active&&m.soldOut)
- const voids=orders.filter(o=>o.status==='void'&&day(o.updatedAt)===today)
- const gaps=movements.filter(m=>m.kind==='count'&&day(m.at)===today&&m.qty!==0)
+ const voids=orders.filter(o=>o.status==='void'&&day(o.updatedAt)===today),itemVoids=orders.filter(o=>o.status!=='void'&&day(o.updatedAt)===today).flatMap(o=>o.lines.filter(l=>l.cancelled&&l.voidReason).map(l=>({key:`${o.id}-${l.id}`,text:`Batal item ${l.qty}× ${l.name}, ${o.label||o.receiptId}`})))
+ const gaps=todays.filter(m=>m.kind==='count'&&day(m.at)===today&&m.qty!==0)
  const noRecipe=menu.filter(m=>m.active&&!m.recipe.length)
  const due=countsDue(stockItems,movements,counts),soon=expiring(stockItems,movements,2)
  const item=(id:string)=>stockItems.find(s=>s.id===id)
@@ -49,6 +59,7 @@ export default function Today(){
   ...soldOut.map(m=>({key:`so-${m.id}`,icon:<CircleAlert size={16}/>,text:`${m.name} habis`,to:'/inventory',tone:'critical'})),
   ...low.map(l=>({key:`low-${l.item.id}`,icon:<Milk size={16}/>,text:`${l.item.name} ${l.out?'habis':'hampir habis'}`,to:'/inventory',tone:'warning'})),
   ...voids.map(o=>({key:`void-${o.id}`,icon:<Ban size={16}/>,text:`Pembatalan ${o.label||o.receiptId}`,to:'/audit',tone:'critical'})),
+  ...itemVoids.map(v=>({key:`voidline-${v.key}`,icon:<Ban size={16}/>,text:v.text,to:'/audit',tone:'critical'})),
   ...gaps.map(m=>({key:`gap-${m.id}`,icon:<Scale size={16}/>,text:`Selisih hitung ${item(m.stockId)?.name??''}`,to:'/counts',tone:'info'})),
   ...soon.map(e=>({key:`exp-${e.movement.id}`,icon:<Clock size={16}/>,text:`${e.item.name} ${e.expired?'kedaluwarsa':'segera kedaluwarsa'}`,to:'/production',tone:'warning'})),
   ...noRecipe.map(m=>({key:`rec-${m.id}`,icon:<ChefHat size={16}/>,text:`${m.name} belum punya resep`,to:'/settings',tone:'info'})),
@@ -63,7 +74,7 @@ export default function Today(){
   <div className="today-grid">
    <div className="today-main">
     <div className="metrics">
-     <article className="metric"><span><ChartColumn size={16}/> Penjualan</span><strong>{rupiah(sales)}</strong><small>{paid.length} transaksi lunas hari ini</small></article>
+     <article className="metric"><span><ChartColumn size={16}/> Penjualan</span><strong>{rupiah(sales)}</strong><small>{paid.length} transaksi lunas hari ini{refunded>0?`, refund ${rupiah(refunded)}`:''}</small></article>
      <article className="metric"><span><Percent size={16}/> Food cost</span><strong>{sales?Math.round(cogs/sales*100):0}%</strong><small>bahan terpakai {rupiah(Math.round(cogs))}</small></article>
      <article className="metric"><span><Trash2 size={16}/> Terbuang</span><strong>{rupiah(Math.round(waste))}</strong><small>{wasted.length} catatan{gap?`, selisih hitung ${rupiah(Math.round(gap))}`:''}</small></article>
     </div>

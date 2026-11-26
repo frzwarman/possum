@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { AlertCircle,ChartColumn,Milk,Package,Percent,Printer,Trash2 } from 'lucide-react'
-import { useApp } from '../../app/context'
+import { useApp, useMovements } from '../../app/context'
 import { JAKARTA,businessDay,expectedCash,isSale,itemStation,lineUse,niceStep,quantity,tills,rupiah,stamp,when } from '../../domain/calculate'
 import { menuPicture } from '../../lib/menu-photo'
 import { CloseShift } from './CloseShift'
+import { rangeBounds,useRangeOrders,useShiftOrders } from './range'
 import { OpenShift } from '../shift/OpenShift'
 import { can } from '../../domain/permissions'
 import { Button } from '../../components/ui/button'
@@ -16,21 +17,30 @@ import { supabase } from '../../lib/supabase'
 import { ApprovalDialog,type ApprovalRequest } from '../../app/Approval'
 import type { Approval,Line } from '../../domain/types'
 export default function Reports(){
- const {orders,settings,shift,shifts,cash,commands,act,manager,busy,outbox,lastSync,user,movements,costs,stockItems,menu}=useApp()
+ const {settings,shift,shifts,cash,commands,act,manager,busy,outbox,lastSync,user,balance,costs,stockItems,menu,salesOrders}=useApp()
+ const movements=useMovements()
  // A store with EDC machines closes on the EDC screen (with the drawer too when it takes cash); a cash-only store keeps the drawer panel.
  const till=tills(settings)
  const day=(iso:string)=>businessDay(iso,settings?.timezone,settings?.cutoff),today=day(new Date().toISOString())
  // Figma M4 opens on this week. A period sets both dates (today, from Monday, from the 1st); "Rentang lain" shows them.
  const start=(p:string)=>{const d=new Date(today+'T12:00:00Z');if(p==='week')d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));if(p==='month')d.setUTCDate(1);return d.toISOString().slice(0,10)}
  const [period,setPeriod]=useState('week');const [from,setFrom]=useState(()=>start('week'));const [to,setTo]=useState(today);const [closing,setClosing]=useState(false);const [counted,setCounted]=useState('');const [cashDialog,setCashDialog]=useState(false);const [amount,setAmount]=useState('');const [direction,setDirection]=useState('out');const [reason,setReason]=useState('');const [remote,setRemote]=useState<Record<string,number>|null>(null);const [ask,setAsk]=useState<ApprovalRequest>()
+ // QA RPT-1: the range's own orders (server when signed in, the device otherwise), never the app's newest-500 window; the
+ // shift's close and drawer read the shift's own orders.
+ const {orders,loading,notice}=useRangeOrders(from,to,manager&&!(user.primary&&Boolean(shift))),shiftOrders=useShiftOrders(shift?.id)
  const inRange=(at:string)=>{const d=day(at);return d>=from&&d<=to}
  const filtered=orders.filter(o=>inRange(o.payment?.at||o.createdAt))
  // Compliments are not sales; they live in the compliment budget on Today.
  const paid=filtered.filter(o=>o.payment&&isSale(o));const sales=paid.reduce((n,o)=>n+o.totals.total,0);const refunds=orders.filter(o=>o.refund&&inRange(o.refund.at)).reduce((n,o)=>n+o.totals.total,0);const outstanding=filtered.filter(o=>o.status==='open').reduce((n,o)=>n+o.totals.total,0);const discounts=paid.reduce((n,o)=>n+o.discount,0)
+ // RPT-7: the money taken per method, staff meals paid on the machine included, as the EDC slip and Akuntansi count it.
+ const received=filtered.filter(o=>o.payment&&o.payment.method!=='none'),staffPaid=received.filter(o=>!isSale(o)).reduce((n,o)=>n+o.totals.total,0)
  // TDY-4: food cost, waste and the usage gap for the same period, valued at the latest ingredient prices.
- const value=(kind:string)=>movements.filter(m=>m.kind===kind&&inRange(m.at)).reduce((n,m)=>n+m.qty*(costs.get(m.stockId)??0),0)
+ const catering=new Set(salesOrders.map(s=>s.id)) // CAT-7: a delivered catering order takes its ingredients, but its money is not counter sales
+ // QA PERF-6: a string compare on the widened range (as range.ts asks the server) drops most movements before the zone arithmetic.
+ const [lo,hi]=/^\d{4}-\d\d-\d\d$/.test(from)&&/^\d{4}-\d\d-\d\d$/.test(to)?rangeBounds(from,to):['','\uffff'],ranged=movements.filter(m=>m.at>=lo&&m.at<hi)
+ const value=(kind:string)=>ranged.filter(m=>m.kind===kind&&inRange(m.at)&&!(kind==='preparation'&&catering.has(m.recordId))).reduce((n,m)=>n+m.qty*(costs.get(m.stockId)??0),0)
  const cogs=-value('preparation')||0,waste=-value('waste')||0,gap=value('count')
- const expected=shift?expectedCash(shift,orders,cash):0
+ const expected=shift?expectedCash(shift,shiftOrders,cash):0
  // Per menu item: portions, takings with options, and what its ingredients cost at the latest prices (a margin only
  // when every ingredient of every portion has a price).
  const lineValue=(l:Line)=>l.qty*(l.price+l.modifiers.reduce((n,m)=>n+m.price,0))
@@ -52,13 +62,13 @@ export default function Reports(){
  // Count gaps per ingredient in the range, at the latest price. What the counts found missing (and nobody logged as
  // waste) is "used beyond recipes"; signs stay counted minus expected, as on the count review.
  const found=new Map<string,{qty:number;value:number}>()
- for(const m of movements)if(m.kind==='count'&&m.qty&&inRange(m.at)){const g=found.get(m.stockId)??{qty:0,value:0};g.qty+=m.qty;g.value+=m.qty*(costs.get(m.stockId)??0);found.set(m.stockId,g)}
+ for(const m of ranged)if(m.kind==='count'&&m.qty&&inRange(m.at)){const g=found.get(m.stockId)??{qty:0,value:0};g.qty+=m.qty;g.value+=m.qty*(costs.get(m.stockId)??0);found.set(m.stockId,g)}
  const gaps=[...found].flatMap(([id,g])=>{const s=stockItems.find(x=>x.id===id);return s&&g.qty?[{s,...g}]:[]}).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value))
  const lost=-gaps.reduce((n,g)=>n+Math.min(0,g.value),0)||0
  const cashGaps=shifts.filter(s=>s.status==='closed'&&s.variance&&inRange(s.closedAt!)).sort((a,b)=>b.closedAt!.localeCompare(a.closedAt!))
- const stockValue=stockItems.reduce((n,s)=>n+Math.max(0,movements.filter(m=>m.stockId===s.id).reduce((q,m)=>q+m.qty,0))*(costs.get(s.id)??0),0)
+ const stockValue=stockItems.reduce((n,s)=>n+Math.max(0,balance(s.id))*(costs.get(s.id)??0),0)
  // Exception report: every correction in the range, who asked and who approved it.
- const audit=[...filtered.filter(o=>o.status==='void').map(o=>({at:o.updatedAt,what:`Batal ${o.label||o.receiptId} · ${rupiah(o.totals.total)}`,why:o.voidReason||'',who:o.cashier,by:o.voidApprovedBy})),...filtered.filter(o=>o.discount>0).map(o=>({at:o.updatedAt,what:`Diskon ${rupiah(o.discount)} · ${o.label||o.receiptId}`,why:o.discountReason,who:o.cashier,by:o.discountApprovedBy})),...orders.filter(o=>o.refund&&inRange(o.refund.at)).map(o=>({at:o.refund!.at,what:`Refund ${rupiah(o.totals.total)} · ${o.label||o.receiptId}`,why:o.refund!.reason,who:o.cashier,by:o.refund!.approvedBy})),...cash.filter(c=>c.amount<0&&inRange(c.at)).map(c=>({at:c.at,what:`Kas keluar ${rupiah(-c.amount)}`,why:c.reason,who:shifts.find(s=>s.id===c.shiftId)?.cashier||'',by:c.approvedBy})),...shifts.filter(s=>s.status==='closed'&&s.variance&&inRange(s.closedAt!)).map(s=>({at:s.closedAt!,what:`Selisih ${s.settlements?'EDC':'kas'} ${rupiah(s.variance!)}`,why:s.settlements?s.settlements.map(x=>`EDC ${x.edc}: slip ${rupiah(x.slip)}, Takar ${rupiah(x.expected)}`).join(' · '):`Dihitung ${rupiah(s.counted||0)}, seharusnya ${rupiah(s.expected||0)}`,who:s.cashier,by:s.varianceApprovedBy}))].sort((a,b)=>b.at.localeCompare(a.at))
+ const audit=[...filtered.filter(o=>o.status==='void').map(o=>({at:o.updatedAt,what:`Batal ${o.label||o.receiptId} · ${rupiah(o.totals.total)}`,why:o.voidReason||'',who:o.cashier,by:o.voidApprovedBy})),...filtered.filter(o=>o.discount>0).map(o=>({at:o.updatedAt,what:`Diskon ${rupiah(o.discount)} · ${o.label||o.receiptId}`,why:o.discountReason,who:o.cashier,by:o.discountApprovedBy})),...orders.filter(o=>o.refund&&inRange(o.refund.at)).map(o=>({at:o.refund!.at,what:`Refund ${rupiah(o.totals.total)} · ${o.label||o.receiptId}`,why:o.refund!.reason,who:o.cashier,by:o.refund!.approvedBy})),...orders.filter(o=>inRange(o.updatedAt)).flatMap(o=>o.lines.filter(l=>l.cancelled&&l.voidReason).map(l=>({at:o.updatedAt,what:`Batal item ${l.qty}× ${l.name} · ${o.label||o.receiptId}`,why:l.voidReason!,who:o.cashier,by:l.voidApprovedBy}))),...cash.filter(c=>c.amount<0&&inRange(c.at)).map(c=>({at:c.at,what:`Kas keluar ${rupiah(-c.amount)}`,why:c.reason,who:shifts.find(s=>s.id===c.shiftId)?.cashier||'',by:c.approvedBy})),...shifts.filter(s=>s.status==='closed'&&s.variance&&inRange(s.closedAt!)).map(s=>({at:s.closedAt!,what:`Selisih ${s.settlements?'EDC':'kas'} ${rupiah(s.variance!)}`,why:s.settlements?s.settlements.map(x=>`EDC ${x.edc}: slip ${rupiah(x.slip)}, Takar ${rupiah(x.expected)}`).join(' · '):`Dihitung ${rupiah(s.counted||0)}, seharusnya ${rupiah(s.expected||0)}`,who:s.cashier,by:s.varianceApprovedBy}))].sort((a,b)=>b.at.localeCompare(a.at))
  async function moveCash(approval?:Approval){const value=Number(amount)*(direction==='out'?-1:1)
   if(value<0&&!manager&&!approval){setAsk({action:'cashout',amount:-value,what:`Kas keluar ${rupiah(-value)} · ${reason.trim()}`});return}
   await act(async()=>{await commands.cashMove(value,reason,approval);setCashDialog(false);setAmount('');setReason('')},'Mutasi kas tersimpan')}
@@ -66,7 +76,8 @@ export default function Reports(){
  async function close(approval?:Approval){const gap=Math.abs(Number(counted)-expected),limit=settings?.varianceLimit??10000
   if(!manager&&!approval&&gap>limit){setAsk({action:'variance',amount:gap,what:'Selisih kas di atas batas; manajer perlu menyetujui penutupan sif'});return}
   await act(async()=>{await commands.closeShift(Number(counted),approval);setClosing(false)},manager?'Sif ditutup. Jangan lupa ekspor dan backup.':'Sif ditutup. Hitungan tersimpan untuk diperiksa manajer. Jangan lupa ekspor dan backup.')}
- function reportExport(){download(`takar-laporan-${from}-${to}.csv`,csv([['ID struk',`Waktu (${settings?.timezone||JAKARTA})`,'Kasir','Status','Metode','Subtotal','Diskon','Layanan','Pajak','Total'],...filtered.map(o=>[o.receiptId,stamp(o.payment?.at||o.createdAt,settings?.timezone),o.cashier,o.status,o.payment?.method||'',o.totals.subtotal,o.discount,o.totals.service,o.totals.tax,o.totals.total])]),'text/csv')}
+ function reportExport(){const rows=[...new Set([...filtered,...orders.filter(o=>o.refund&&inRange(o.refund.at))])],jenis=(o:typeof rows[number])=>o.mode==='dinein'?'Makan di sini':o.mode==='takeaway'?'Bungkus':o.compliment?.kind==='family'?'Keluarga pemilik':'Staff meal'
+  download(`takar-laporan-${from}-${to}.csv`,csv([['ID struk',`Waktu (${settings?.timezone||JAKARTA})`,'Kasir','Status','Metode','Subtotal','Diskon','Layanan','Pajak','Total','Jenis','Waktu refund'],...rows.map(o=>[o.receiptId,stamp(o.payment?.at||o.createdAt,settings?.timezone),o.cashier,o.status,o.payment?.method||'',o.totals.subtotal,o.discount,o.totals.service,o.totals.tax,o.totals.total,jenis(o),o.refund?stamp(o.refund.at,settings?.timezone):''])]),'text/csv')}
  // PDF = the browser's print of a plain page with the same numbers as the screen.
  // Pilot rule: on the till with a shift open even a manager sees the cashier's view; the laptop shows everything.
  const boss=manager&&!(user.primary&&Boolean(shift))
@@ -78,9 +89,10 @@ export default function Reports(){
  return <section className={`page-content${boss?' reports-page':''}`}>
   {(boss||!till.edc||!shift)&&<div className="page-heading"><div><p className="eyebrow">Gambaran hari Anda</p><h1>{boss?'Laporan':till.edc?'Tutup sif':'Sif & kas'}</h1><p className="muted">{boss?range:till.edc?`Transaksi hari ini, hitung stok, lalu cocokkan ${till.cash?'laci dan ':''}settlement tiap EDC.`:'Modal laci, kas masuk dan keluar, dan tutup sif Anda.'}</p></div>
    {boss&&<div className="report-actions"><Select ariaLabel="Periode" value={period} onChange={pick} options={[{value:'day',label:'Hari ini'},{value:'week',label:'Minggu ini'},{value:'month',label:'Bulan ini'},{value:'custom',label:'Rentang lain'}]}/>
-    <button type="button" className="icon-button" aria-label="Cetak / PDF" title="Cetak / PDF" onClick={printReport}><Printer size={18}/></button><button type="button" className="dark-button" title="Unduh CSV pesanan di rentang ini" onClick={reportExport}>Ekspor</button></div>}</div>}
+    <button type="button" className="icon-button" aria-label="Cetak / PDF" title="Cetak / PDF" onClick={printReport}><Printer size={18}/></button><button type="button" className="dark-button" title="Unduh CSV pesanan di rentang ini" disabled={loading} onClick={reportExport}>Ekspor</button></div>}</div>}
   {boss&&<>
    {period==='custom'&&<div className="report-filter"><label>Dari tanggal<input type="date" value={from} onChange={e=>{setFrom(e.target.value);setRemote(null)}}/></label><label>Sampai tanggal<input type="date" value={to} onChange={e=>{setTo(e.target.value);setRemote(null)}}/></label></div>}
+   {notice&&<p className="callout" role="status">{notice}</p>}{loading&&<p className="muted small" role="status">Memuat pesanan dari server...</p>}
    {/* Figma M4: three tiles, sales per day and the best sellers; on the right what counts found, the biggest gaps and cash gaps. */}
    <div className="report-grid">
     <div className="report-main">
@@ -97,7 +109,7 @@ export default function Reports(){
       </div>:<p className="muted">{days.length?'Grafik per hari untuk rentang sampai satu tahun.':'Pilih rentang tanggal yang benar.'}</p>}
      </article>
      <article className="panel"><div className="panel-heading"><h2>Menu terlaris</h2></div>
-      {best.length?<div className="table-scroll"><table className="data-table plain-table top-items"><thead><tr><th>Menu</th><th className="num">Terjual</th><th className="num">Penjualan</th>{margins&&<th className="num">Margin</th>}</tr></thead><tbody>
+      {best.length?<div className="table-scroll" tabIndex={0}><table className="data-table plain-table top-items"><thead><tr><th>Menu</th><th className="num">Terjual</th><th className="num">Penjualan</th>{margins&&<th className="num">Margin</th>}</tr></thead><tbody>
        {best.map(b=>{const m=menu.find(x=>x.id===b.id),margin=b.known&&b.total?(b.total-b.cost)/b.total:undefined;return <tr key={b.id}><td><span className="top-item">{m&&<img src={menuPicture(m)} alt=""/>}<strong>{b.name}</strong></span></td><td className="num">{b.qty}</td><td className="num">{rupiah(b.total)}</td>{margins&&<td className={`num ${margin===undefined?'muted':margin<0?'neg':'pos'}`}>{margin===undefined?'—':`${Math.round(margin*100)}%`}</td>}</tr>})}
       </tbody></table></div>:<p className="muted">Menu terlaris muncul setelah pembayaran pertama.</p>}
      </article>
@@ -120,7 +132,7 @@ export default function Reports(){
    {till.cash&&<article className="panel"><div className="panel-heading"><h2>Laci kas</h2><span className="badge">{shift?'Sif aktif':'Tidak ada sif aktif'}</span></div>
     {shift?<><p className="small muted">Dibuka {when(shift.openedAt,settings?.timezone)} oleh {shift.cashier}</p><div className="bill-row"><span>Modal kas awal</span><strong>{rupiah(shift.opening)}</strong></div>
      {/* A cashier counts blind: with sales and the expected total on screen the count tends to match them. */}
-     {boss&&<><div className="bill-row"><span>Penjualan tunai bersih</span><strong>{rupiah(orders.filter(o=>o.shiftId===shift.id&&o.payment?.method==='cash'&&o.status!=='refunded').reduce((n,o)=>n+o.totals.total,0))}</strong></div><div className="bill-row"><span>Kas masuk / keluar</span><strong>{rupiah(cash.filter(c=>c.shiftId===shift.id).reduce((n,c)=>n+c.amount,0))}</strong></div><div className="bill-total"><span>Kas yang seharusnya</span><strong>{rupiah(expected)}</strong></div></>}
+     {boss&&<><div className="bill-row"><span>Penjualan tunai bersih</span><strong>{rupiah(shiftOrders.filter(o=>o.payment?.method==='cash'&&o.status!=='refunded').reduce((n,o)=>n+o.totals.total,0))}</strong></div><div className="bill-row"><span>Kas masuk / keluar</span><strong>{rupiah(cash.filter(c=>c.shiftId===shift.id).reduce((n,c)=>n+c.amount,0))}</strong></div><div className="bill-total"><span>Kas yang seharusnya</span><strong>{rupiah(expected)}</strong></div></>}
      {shift.actor===user.id||manager?<div className="button-row"><Button variant="secondary" onClick={()=>setCashDialog(true)}>Catat kas masuk / keluar</Button>{!till.edc&&<Button onClick={()=>setClosing(true)}>Tutup sif</Button>}</div>:<p className="callout">Laci dipegang {shift.cashier}; hanya dia (atau manajer) yang bisa mencatat kas dan menutup sif.</p>}</>
     :<p className="muted">Buka sif dari kasir untuk mencatat modal dan penerimaan tunai.</p>}
     <div className="history-list">{shifts.filter(s=>s.status==='closed').slice(-3).reverse().map(s=><div key={s.id}><span>{when(s.closedAt!,settings?.timezone,{dateStyle:'medium'})}<small className="muted"> · {s.cashier}</small><br/>Dihitung {rupiah(s.counted||0)}</span>{boss&&<strong>Selisih {rupiah(s.variance||0)}{s.varianceApprovedBy?` · ${s.varianceApprovedBy}`:''}</strong>}</div>)}</div>
@@ -129,12 +141,13 @@ export default function Reports(){
     <article className="panel"><div className="panel-heading"><h2>Koreksi & persetujuan</h2><span className="badge">{audit.length}</span></div>
      {audit.length?<div className="audit-list">{audit.slice(0,50).map((a,i)=><div key={i}><span><strong>{a.what}</strong><small className="muted"> · {when(a.at,settings?.timezone)}</small><br/>{a.why} · kasir {a.who}{a.by?` · disetujui ${a.by}`:''}</span></div>)}</div>:<p className="muted">Belum ada pembatalan, diskon, refund, kas keluar, atau selisih kas di rentang ini.</p>}</article>
     <article className="panel"><div className="panel-heading"><h2>Metode pembayaran</h2></div>
-     {(['cash','qris','card'] as const).filter(m=>m!=='cash'||till.cash||paid.some(o=>o.payment?.method==='cash')).map(m=><div className="payment-row" key={m}><span>{m==='cash'?'Tunai':`${m==='qris'?'QRIS':'Kartu'}${till.edc?' di EDC':' · manual'}`}</span><strong>{rupiah(paid.filter(o=>o.payment?.method===m).reduce((n,o)=>n+o.totals.total,0))}</strong></div>)}
+     {(['cash','qris','card'] as const).filter(m=>m!=='cash'||till.cash||received.some(o=>o.payment?.method==='cash')).map(m=><div className="payment-row" key={m}><span>{m==='cash'?'Tunai':`${m==='qris'?'QRIS':'Kartu'}${till.edc?' di EDC':' · manual'}`}</span><strong>{rupiah(received.filter(o=>o.payment?.method===m).reduce((n,o)=>n+o.totals.total,0))}</strong></div>)}
+     {staffPaid>0&&<p className="small muted">Termasuk makan staf yang dibayar, {rupiah(staffPaid)}: uang masuk di mesin dan laci, bukan penjualan.</p>}
      <div className="bill-row"><span>Rata-rata per pesanan</span><span>{rupiah(paid.length?Math.round(sales/paid.length):0)}</span></div><div className="bill-row"><span>Pembayaran bersih, setelah refund</span><span>{rupiah(sales-refunds)}</span></div><div className="bill-row"><span>Belum dibayar, {filtered.filter(o=>o.status==='open').length} pesanan terbuka</span><span>{rupiah(outstanding)}</span></div>
      <div className="bill-row"><span>Total diskon</span><span>{rupiah(discounts)}</span></div><div className="bill-row"><span>Pengembalian dana</span><span>{rupiah(refunds)}</span></div>
      <p className="small muted">Penjualan dan biaya bahan bukan laba bersih. Biaya operasional lain belum dihitung.</p></article>
     <article className="panel"><div className="panel-heading"><h2>Dasar laporan</h2>{!user.demo&&<Button variant="secondary" size="sm" onClick={()=>act(async()=>{const {data,error}=await supabase!.rpc('sales_report',{from_day:from,to_day:to});if(error)throw error;setRemote(data)},'Ringkasan server diperbarui')}>Ambil ringkasan server</Button>}</div>
-     <p className="report-completeness"><AlertCircle size={16}/>{user.demo?'Data demo lokal':pending?`Termasuk transaksi lokal; ${pending} operasi belum tersinkron`:'Riwayat lokal maksimal 500 pesanan; gunakan ringkasan server untuk angka lengkap'}. Sinkron terakhir: {lastSync?when(lastSync,settings?.timezone):'belum ada'}.</p>
+     <p className="report-completeness"><AlertCircle size={16}/>{user.demo?'Data demo lokal':pending?`Termasuk transaksi lokal; ${pending} operasi belum tersinkron`:notice?'Hanya data perangkat ini':'Pesanan dibaca dari server'}. Sinkron terakhir: {lastSync?when(lastSync,settings?.timezone):'belum ada'}.</p>
      {remote&&<div className="callout">Server: {remote.transactions} transaksi · penjualan {rupiah(remote.sales)} · refund {rupiah(remote.refunds)} · tertagih {rupiah(remote.outstanding)}. Tidak termasuk operasi lokal yang belum tersinkron.</div>}
      <p className="muted">Hari usaha berganti pukul {String(settings?.cutoff??4).padStart(2,'0')}.00 ({settings?.timezone}). Penjualan dihitung saat pembayaran; pesanan terbuka berdasarkan waktu pesanan; refund pada hari refund.</p><p className="muted">Data operasional dimulai {settings?.goLive}. Ekspor CSV adalah laporan dari data yang tersedia di perangkat, bukan backup database lengkap.</p></article>
    </>}
@@ -149,7 +162,7 @@ export default function Reports(){
   <Dialog open={cashDialog} onOpenChange={setCashDialog} title="Mutasi laci kas">
    <Select label="Jenis" value={direction} onChange={setDirection} options={[{value:'out',label:'Kas keluar'},{value:'in',label:'Kas masuk'}]}/>
    <label>Jumlah<Money value={amount} onChange={setAmount}/></label>
-   <label>Alasan<input value={reason} onChange={e=>setReason(e.target.value)}/></label>
+   <label>Alasan<input maxLength={300} value={reason} onChange={e=>setReason(e.target.value)}/></label>
    <p className="small muted">Pembelian yang sudah dicatat “dari laci kas” tidak perlu dicatat lagi.{!boss&&direction==='out'&&' Kas keluar memerlukan PIN manajer.'}</p>
    <Button className="full" loading={busy} disabled={busy||!reason.trim()||!amount} onClick={()=>moveCash()}>Simpan mutasi</Button>
   </Dialog>

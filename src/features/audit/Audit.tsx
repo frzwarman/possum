@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { SkeletonRows } from '../../components/ui/loading'
 import { Navigate } from '@tanstack/react-router'
 import { ReceiptText, RefreshCw, ScrollText, Search } from 'lucide-react'
-import { useApp } from '../../app/context'
+import { useApp, useMovements } from '../../app/context'
 import { Button } from '../../components/ui/button'
 import { Select } from '../../components/ui/select'
 import { businessDay, complimentDiscount, lineUse, menuType, orderTotals, quantity, rupiah, stamp, when } from '../../domain/calculate'
@@ -12,30 +12,43 @@ import { csv, download } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
 interface Entry { id: string; kind: string; at: string; actor: string; actorName: string; role?: string; device?: string; mode?: string | null; approvedBy?: string | null; payload: Record<string, unknown> }
 interface View { chip: string; tone: string; title: string; detail: string; reason?: string; change?: [string, string][] }
-const KINDS: Record<string, string> = { 'order.void': 'Pembatalan', 'order.voidline': 'Pembatalan item', 'refund.record': 'Refund', 'order.save': 'Diskon', 'shift.cash': 'Kas keluar/masuk', 'stock.record': 'Stok', 'count.record': 'Hitung stok', 'catalog.publish': 'Menu & bahan', 'catalog.remove': 'Menu dihapus', 'settings.update': 'Pengaturan', 'shift.close': 'Tutup sif' }
+const KINDS: Record<string, string> = { 'order.void': 'Pembatalan', 'order.voidline': 'Pembatalan item', 'refund.record': 'Refund', 'order.save': 'Diskon', 'shift.cash': 'Kas keluar/masuk', 'stock.record': 'Stok', 'count.record': 'Hitung stok', 'catalog.publish': 'Menu & bahan', 'catalog.remove': 'Menu dihapus', 'settings.update': 'Pengaturan', 'shift.close': 'Tutup sif', 'shift.open': 'Buka sif', 'purchase.receive': 'Pembelian dari laci', 'purchase.pay': 'Bayar pembelian dari laci', 'salesorder.pay': 'Bayar katering ke laci', 'salesorder.cancel': 'Katering dibatalkan', 'transfer.send': 'Kirim stok', 'production.record': 'Produksi', 'staff.change': 'Peran staf', 'device.enroll': 'Perangkat dipasangkan', 'device.revoke': 'Perangkat dicabut', 'ledger.remove': 'Catatan kas dihapus' }
+// Money in or out of the drawer through a purchase or a catering order is sensitive only when it is the drawer's.
+const DRAWER = ['purchase.receive', 'purchase.pay', 'salesorder.pay', 'salesorder.cancel']
 // Figma M3 filter pills, each over the audit kinds it covers; Pengaturan shows only when there is one.
-const GROUPS: [string, string[]][] = [['Pembatalan', ['order.void', 'order.voidline', 'refund.record']], ['Diskon', ['order.save']], ['Stok', ['stock.record', 'count.record']], ['Menu & harga', ['catalog.publish', 'catalog.remove']], ['Kas', ['shift.cash', 'shift.close']], ['Pengaturan', ['settings.update']]]
+const GROUPS: [string, string[]][] = [['Pembatalan', ['order.void', 'order.voidline', 'refund.record']], ['Diskon', ['order.save']], ['Stok', ['stock.record', 'count.record', 'transfer.send', 'production.record']], ['Menu & harga', ['catalog.publish', 'catalog.remove']], ['Kas', ['shift.cash', 'shift.close', 'shift.open', ...DRAWER, 'ledger.remove']], ['Pengaturan', ['settings.update']], ['Akses', ['staff.change', 'device.enroll', 'device.revoke']]]
 const STOCK: Record<string, string> = { waste: 'Terbuang', adjustment: 'Penyesuaian', count: 'Stok', purchase: 'Stok masuk', opening: 'Stok awal' }
 const DEVICE: Record<string, string> = { pos: 'Kasir utama', station: 'Tablet stasiun', office: 'Back office (laptop)', phone: 'Ponsel stok' }
+const PAGE = 1000
 const PERIODS = [{ value: '0', label: 'Hari ini' }, { value: '6', label: '7 hari terakhir' }, { value: '29', label: '30 hari terakhir' }, { value: 'custom', label: 'Rentang lain' }]
 const pairs = (...list: unknown[]) => list.filter((p): p is [string, string] => Array.isArray(p) && Boolean(p[1]))
 // CTL-3: every sensitive action, who did it, from which device, who approved it; nobody can edit it.
 export default function Audit() {
- const { user, settings, outbox, db, orders, shifts, cash, stockItems, menu, movements, costs, counts } = useApp()
+ const { user, settings, outbox, db, orders, shifts, cash, stockItems, menu, costs, counts } = useApp()
+ const movements=useMovements()
  const tz = settings?.timezone
  const day = (iso: string) => businessDay(iso, tz, settings?.cutoff), today = day(new Date().toISOString())
  const back = (n: number) => { const d = new Date(today + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10) }
+ const shift = (d: string, n: number) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return Number.isNaN(+x) ? '' : x.toISOString().slice(0, 10) }, back94 = (d: string) => shift(d, -93), ahead94 = (d: string) => shift(d, 93)
  const [from, setFrom] = useState(() => back(6))
  const [to, setTo] = useState(today)
  const [custom, setCustom] = useState(false)
  const [rows, setRows] = useState<Entry[]>([])
  const [source, setSource] = useState<'server' | 'local'>(user.demo ? 'local' : 'server')
- const [query, setQuery] = useState(''); const [group, setGroup] = useState(''); const [pick, setPick] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
+ const [query, setQuery] = useState(''); const [group, setGroup] = useState(''); const [pick, setPick] = useState(''); const [error, setError] = useState<{ text: string; local: boolean }>(); const [busy, setBusy] = useState(false); const ticket = useRef(0)
  // Offline, or in the demo: what this device itself sent, from its own outbox (one database per person, so all theirs).
  async function loadLocal() {
   const ops = await db.outbox.toArray()
-  setRows(ops.filter((op) => day(op.occurredAt) >= from && day(op.occurredAt) <= to && (op.kind in KINDS) && (op.kind !== 'order.save' || ((op.payload.order as { discount?: number } | undefined)?.discount ?? 0) > 0))
-   .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+  // The till saves an order again at "Ke stasiun" and at "Bayar": a discount is one entry, however many saves carry it.
+  const was = new Map<string, string>()
+  const list = ops.filter((op) => day(op.occurredAt) >= from && day(op.occurredAt) <= to).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt)).filter((op) => {
+   if (!(op.kind in KINDS)) return false
+   if (DRAWER.includes(op.kind)) return op.payload.payment === 'drawer'
+   if (op.kind !== 'order.save') return true
+   const o = op.payload.order as { id?: string; discount?: number; discountReason?: string } | undefined, key = `${o?.discount ?? 0}|${o?.discountReason ?? ''}`, same = was.get(o?.id ?? '') === key
+   was.set(o?.id ?? '', key); return (o?.discount ?? 0) > 0 && !same
+  })
+  setRows(list.reverse()
    .map((op) => ({ id: op.id, kind: op.kind, at: op.occurredAt, actor: op.actor, actorName: op.actor === user.id ? user.name : op.actor.slice(0, 8), role: op.actor === user.id ? user.role : undefined, mode: user.mode ?? (user.primary ? 'pos' : null), approvedBy: approverOf(op.kind, op.payload, op.id), payload: op.payload })))
  }
  const approverOf = (kind: string, p: Record<string, unknown>, id: string) => {
@@ -48,14 +61,25 @@ export default function Audit() {
   if (kind === 'count.record') return counts.find((c) => c.id === p.id)?.approvedBy ?? null
   return null
  }
+ // QA RPT-5, SQL-06, RPT-11: the server sends at most 1.000 entries a call; ask again from the last one until a page is short,
+ // so the list and the export hold them all. Only an unreachable server falls back to this device's own log; any other
+ // answer is shown as it is.
  async function load() {
-  setBusy(true); setError('')
+  const mine = ++ticket.current; setBusy(true); setError(undefined)
   try {
+   if ((Date.parse(to) - Date.parse(from)) / 864e5 > 93) { setRows([]); setError({ text: 'Rentang log audit paling lama 94 hari.', local: false }); return }
    if (source === 'local' || !supabase) { await loadLocal(); return }
-   const { data, error } = await supabase.rpc('audit_log', { from_day: from, to_day: to })
-   if (error) throw error
-   setRows(data as unknown as Entry[])
-  } catch (e) { setError(e instanceof Error ? e.message : 'Gagal memuat log'); await loadLocal() } finally { setBusy(false) }
+   const all: Entry[] = []
+   for (let page = 0; ; page++) {
+    const last = all.at(-1)
+    const { data, error } = await supabase.rpc('audit_log', { from_day: from, to_day: to, page: PAGE, ...(last && { after_at: last.at, after_id: last.id }) })
+    if (mine !== ticket.current) return
+    if (error) { if (error.code) { setRows([]); setError({ text: error.message === 'Audit range limited to 94 days' ? 'Rentang log audit paling lama 94 hari.' : `Log audit gagal dimuat: ${error.message}`, local: false }); return } throw new Error(error.message || 'Gagal memuat log') }
+    const got = data as unknown as Entry[]; all.push(...got); setRows([...all])
+    if (got.length < PAGE) return
+    if (page >= 99) { setError({ text: 'Terlalu banyak entri untuk dimuat; persempit rentangnya.', local: false }); return }
+   }
+  } catch (e) { if (mine !== ticket.current) return; setError({ text: e instanceof Error ? e.message : 'Gagal memuat log', local: true }); await loadLocal() } finally { if (mine === ticket.current) setBusy(false) }
  }
  useEffect(() => { void load() /* eslint-disable-line react-hooks/exhaustive-deps */ }, [from, to, source])
  if (!can(user.role, 'audit')) return <Navigate to="/pos" />
@@ -106,6 +130,17 @@ export default function Audit() {
     return { chip, tone: 'warning', title: `${chip} ${rupiah(Math.abs(p.amount))}`, detail: `${chip} ${rupiah(Math.abs(p.amount))}. ${p.reason}`, reason: p.reason } }
    case 'shift.close': { const s = shifts.find((x) => x.id === p.id), gap = s?.variance
     return { chip: gap ? 'Selisih kas' : 'Tutup sif', tone: gap ? 'warning' : 'good', title: s ? `Sif ${s.cashier} ditutup` : 'Sif ditutup', detail: gap === undefined ? `Sif ditutup, dihitung ${rupiah(p.counted ?? 0)}` : gap ? `Sif ditutup, ${gap < 0 ? 'kurang' : 'lebih'} ${rupiah(Math.abs(gap))}` : 'Sif ditutup, pas', change: pairs(s?.expected !== undefined && ['Seharusnya → dihitung', `${rupiah(s.expected)} → ${rupiah(s.counted ?? 0)}`], ...(s?.settlements ?? []).filter((x) => x.slip !== x.expected).map((x) => [`EDC ${x.edc}`, `slip ${rupiah(x.slip)}, tercatat ${rupiah(x.expected)}`])) } }
+   case 'shift.open': return { chip: 'Buka sif', tone: 'neutral', title: 'Sif dibuka', detail: `Sif dibuka dengan modal kas ${rupiah(p.opening ?? 0)}` }
+   case 'purchase.receive': case 'purchase.pay': return { chip: 'Kas', tone: 'warning', title: 'Pembelian dibayar dari laci', detail: `Pembelian dibayar dari laci kas${p.amount ? `, ${rupiah(p.amount)}` : ''}` }
+   case 'salesorder.pay': return { chip: 'Kas', tone: 'warning', title: 'Pembayaran katering ke laci', detail: `Pembayaran katering ${rupiah(p.amount ?? 0)} masuk ke laci kas` }
+   case 'salesorder.cancel': return { chip: 'Kas', tone: 'warning', title: 'Katering dibatalkan', detail: `Pesanan katering dibatalkan${p.refund ? `, ${rupiah(p.refund)} dikembalikan dari laci kas` : ''}. ${p.reason ?? ''}`, reason: p.reason }
+   case 'transfer.send': return { chip: 'Stok', tone: 'neutral', title: 'Stok dikirim', detail: 'Stok dikirim ke outlet lain' }
+   case 'production.record': return { chip: 'Stok', tone: 'neutral', title: 'Produksi', detail: `Produksi ${item(p.stockId)?.name ?? p.stockId ?? ''}${p.qty ? ` ${quantity(p.qty)} ${item(p.stockId)?.unit ?? ''}` : ''}`.trimEnd(), reason: p.note }
+   case 'staff.change': { const was = roleLabel[p.from as Role] ?? p.from, now = roleLabel[p.to as Role] ?? p.to
+    return { chip: 'Akses', tone: 'warning', title: `Peran ${p.name}`, detail: p.from !== p.to ? `${p.name}: ${was} → ${now}` : `${p.name} ${p.active ? 'diaktifkan' : 'dinonaktifkan'}`, change: pairs(['Peran', `${was} → ${now}`], p.wasActive !== p.active && ['Akun', p.active ? 'aktif' : 'nonaktif']) } }
+   case 'device.enroll': return { chip: 'Akses', tone: 'warning', title: 'Perangkat dipasangkan', detail: `Perangkat dipasangkan sebagai ${DEVICE[p.mode] ?? p.mode}`, change: pairs(['Perangkat', String(p.device ?? '').slice(0, 8)]) }
+   case 'device.revoke': return { chip: 'Akses', tone: 'warning', title: 'Perangkat dicabut', detail: `Perangkat ${DEVICE[p.mode] ?? p.mode ?? ''} dicabut`.trimEnd() }
+   case 'ledger.remove': return { chip: 'Kas', tone: 'warning', title: 'Catatan kas dihapus', detail: `Catatan ${p.entryKind} ${rupiah(p.amount ?? 0)} tanggal ${p.day} dihapus${p.note ? `. ${p.note}` : ''}` }
    default: return { chip: KINDS[e.kind] ?? e.kind, tone: 'neutral', title: KINDS[e.kind] ?? e.kind, detail: '' }
   }
  }
@@ -115,7 +150,7 @@ export default function Audit() {
  const view = (r: Entry) => views.get(r.id)!
  const q = query.trim().toLowerCase()
  const found = q ? rows.filter((r) => { const v = view(r); return [v.chip, v.title, v.detail, v.reason, r.actorName, r.approvedBy, KINDS[r.kind]].join(' ').toLowerCase().includes(q) }) : rows
- const groups = GROUPS.map(([label, kinds]) => ({ label, kinds, n: found.filter((r) => kinds.includes(r.kind)).length })).filter((g) => g.label !== 'Pengaturan' || g.n || group === g.label)
+ const groups = GROUPS.map(([label, kinds]) => ({ label, kinds, n: found.filter((r) => kinds.includes(r.kind)).length })).filter((g) => (g.label !== 'Pengaturan' && g.label !== 'Akses') || g.n || group === g.label)
  const shown = group ? found.filter((r) => GROUPS.find(([l]) => l === group)?.[1].includes(r.kind)) : found
  const picked = shown.find((r) => r.id === pick) ?? shown[0]
  const period = custom ? 'custom' : (to === today && PERIODS.find((x) => x.value !== 'custom' && from === back(+x.value))?.value) || 'custom'
@@ -148,9 +183,9 @@ export default function Audit() {
   <div className="audit-filters">
    <div className="search-box compact"><Search size={18} /><input aria-label="Cari di log audit" placeholder="Cari pesanan, menu, orang" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
    <div className="pill-tabs">{[{ id: '', label: 'Semua', n: found.length }, ...groups.map((g) => ({ id: g.label, label: g.label, n: g.n }))].map((g) => <button key={g.label} type="button" className={group === g.id ? 'active' : ''} aria-pressed={group === g.id} onClick={() => setGroup(g.id)}>{g.label}<small>{g.n}</small></button>)}</div>
-   {period === 'custom' && <div className="audit-range"><input type="date" aria-label="Dari tanggal" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /><span>sampai</span><input type="date" aria-label="Sampai tanggal" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></div>}
+   {period === 'custom' && <div className="audit-range"><input type="date" aria-label="Dari tanggal" value={from} min={back94(to)} max={to} onChange={(e) => setFrom(e.target.value)} /><span>sampai</span><input type="date" aria-label="Sampai tanggal" value={to} min={from} max={ahead94(from)} onChange={(e) => setTo(e.target.value)} /></div>}
   </div>
-  {error && <p className="callout">Server tidak terjangkau ({error}); menampilkan catatan perangkat ini.</p>}
+  {error && <p className="callout" role="alert">{error.local ? `Server tidak terjangkau (${error.text}); menampilkan catatan perangkat ini.` : error.text}</p>}
   <div className="audit-grid">
    <article className="panel audit-log">
     {shown.length ? <div className="table-scroll"><table className="data-table plain-table audit-table"><thead><tr><th>Waktu</th><th>Aksi</th><th>Detail</th><th>Oleh</th><th>Disetujui</th></tr></thead><tbody>
@@ -159,7 +194,7 @@ export default function Audit() {
        <td className="audit-time">{time(r.at)}</td><td><span className={`dot-chip ${x.tone}`}>{x.chip}</span></td><td>{x.detail}</td><td data-label="Oleh"><strong>{r.actorName}</strong></td><td data-label="Disetujui">{r.approvedBy ? <strong>{approved(r, ', PIN')}</strong> : '—'}</td></tr>
        {on && <tr className="audit-inline"><td colSpan={5}>{entry}</td></tr>}</Fragment> })}
     </tbody></table></div> : busy ? <SkeletonRows label="Memuat log audit" count={5} /> : <p className="muted">{rows.length ? 'Tidak ada yang cocok dengan pencarian atau filter ini.' : 'Tidak ada catatan di rentang ini.'}</p>}
-    <p className="audit-note"><ScrollText size={14} /><span>{source === 'local' && outbox.length > 0 ? `${outbox.length} operasi belum tersinkron ikut ditampilkan. ` : ''}Catatan server ditulis sekali dan tidak pernah diubah; ekspor pemulihan di Lainnya memuat salinannya dari perangkat ini.</span></p>
+    <p className="audit-note"><ScrollText size={14} /><span>{rows.length ? `${rows.length} entri${busy ? ', memuat...' : ''}. ` : ''}{source === 'local' && outbox.length > 0 ? `${outbox.length} operasi belum tersinkron ikut ditampilkan. ` : ''}Catatan server ditulis sekali dan tidak pernah diubah; ekspor pemulihan di Lainnya memuat salinannya dari perangkat ini.</span></p>
    </article>
    <aside className="panel audit-detail">{entry || <p className="muted">Rincian catatan yang dipilih muncul di sini.</p>}</aside>
   </div>

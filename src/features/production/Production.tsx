@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link,Navigate } from '@tanstack/react-router'
 import { CookingPot,Clock,ListChecks } from 'lucide-react'
-import { useApp } from '../../app/context'
+import { useApp, useMovements } from '../../app/context'
 import { Button } from '../../components/ui/button'
 import { Dialog } from '../../components/ui/dialog'
 import { canMake,convert,expiring,prepList,quantity,rupiah,when } from '../../domain/calculate'
@@ -13,7 +13,8 @@ const words=(xs:string[])=>xs.length>1?`${xs.slice(0,-1).join(', ')} dan ${xs.at
 // F4: a prep item (sambal, ayam ungkep) is stocked. One batch takes its inputs out of stock and puts
 // the actual yield in; the gap to the recipe yield is written into the movement's reason.
 export default function Production(){
- const {stockItems,movements,settings,commands,act,busy,user,costs,balance}=useApp()
+ const {stockItems,settings,commands,act,busy,user,costs,balance}=useApp()
+ const movements=useMovements()
  const [run,setRun]=useState<{item:StockItem;batches:number}>()
  if(!can(user.role,'prep'))return <Navigate to="/pos"/>
  const stock=(id:string)=>stockItems.find(s=>s.id===id)

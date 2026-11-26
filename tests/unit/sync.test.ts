@@ -5,7 +5,7 @@ import { logout } from '../../src/app/context'
 // serverTransport and logout talk to Supabase: a stand-in client whose session and RPC answers each test sets.
 type Answer={data:unknown;error:{code:string;message:string}|null}
 const server=vi.hoisted(()=>({session:null as {user:{id:string}}|null,error:null as unknown,signOuts:[] as unknown[],accounts:{} as Record<string,{password:string;id:string}>,rpc:async(_name:string):Promise<Answer>=>({data:null,error:{code:'PGRST000',message:'Failed to fetch'}})}))
-vi.mock('../../src/lib/supabase',()=>({configured:true,telegramBot:'',supabase:{rpc:(name:string)=>server.rpc(name),auth:{getSession:async()=>({data:{session:server.session},error:server.error}),
+vi.mock('../../src/lib/supabase',()=>({configured:true,telegramBot:'',supabase:{rpc:(name:string)=>server.rpc(name),from:()=>({select:()=>({eq:()=>({in:async()=>({data:[],error:null})})})}),auth:{getSession:async()=>({data:{session:server.session},error:server.error}),
  signInWithPassword:async({email,password}:{email:string;password:string})=>{const a=server.accounts[email];if(a?.password!==password)return {data:{user:null,session:null},error:{message:'Invalid login credentials'}};server.session={user:{id:a.id}};server.error=null;return {data:{user:{id:a.id},session:server.session},error:null}},
  signOut:async(options:unknown)=>{server.signOuts.push(options);server.session=null;return {error:null}}}}}))
 afterEach(()=>vi.useRealTimers())
@@ -212,9 +212,9 @@ describe('pull: what other paired devices did', () => {
     const { db, commands } = await seed(user)
     await commands.openShift(200000)
     let pulls = 0
-    await synchronize(db, user, recorder().transport, async () => { pulls++; return empty(new Date().toISOString()) })
+    await synchronize(db, user, async () => { throw boom('Failed to fetch', 'Network') }, async () => { pulls++; return empty(new Date().toISOString()) })
     expect(pulls).toBe(0)
-    // an installation upgraded in place gets a cursor now, so it pulls from the next tick on
+    // an installation upgraded in place (its queue not sent yet) gets a cursor now; one with an empty queue loads everything again (SYNC-09), so it pulls from the next tick on
     expect((await db.meta.get('pullCursor'))?.value).toBeTruthy()
   })
 })

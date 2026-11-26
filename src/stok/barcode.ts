@@ -27,6 +27,9 @@ export const rearm = (gate: ScanGate, now: number): ScanGate => ({ ...gate, seen
 // The unit a scanned code stands for: the pack it is printed on, or the bahan's base unit when it was taught as
 // "satuan" (or its pack is gone). Never the bahan's first pack: a bottle's code must not open a delivery in dus.
 export const unitOf = (hit: { item: PhoneStock; pack?: Pack }): string => hit.pack?.name ?? hit.item.unit
+// The same question for a count: the box that gets the cursor is the pack the code is printed on, or '' (the open
+// pack, counted in single units) for a "satuan" code. Twelve typed after scanning one egg must not count twelve trays.
+export const boxOf = (hit: { pack?: Pack }): string => hit.pack?.name ?? ''
 
 // The bahan a code belongs to and, when the code is printed on a pack that still exists, that pack.
 // A pack renamed or removed in Takar leaves the code pointing at the bahan in its base unit.

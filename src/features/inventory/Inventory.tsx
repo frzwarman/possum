@@ -1,7 +1,7 @@
 import { useRef,useState } from 'react'
 import { Link,Navigate } from '@tanstack/react-router'
 import { Package,Plus,ArrowDownLeft,History,AlertTriangle,Camera,Trash2,CookingPot,ClipboardList,Search,Check,Truck,Coffee,Clock,ArrowRight } from 'lucide-react'
-import { useApp } from '../../app/context'
+import { useApp, useMovements } from '../../app/context'
 import { Button } from '../../components/ui/button'
 import { Money } from '../../components/ui/money'
 import { Select } from '../../components/ui/select'
@@ -21,7 +21,8 @@ const words=(xs:string[])=>xs.length>1?`${xs.slice(0,-1).join(', ')} dan ${xs.at
 // Figma C7: what is out or running low first, the count before closing and the prep list beside it, then every ingredient.
 // Figma M6: tapping an ingredient shows it on this page (no route), with every movement and a running balance.
 export default function Inventory(){
- const {stockItems,movements,settings,commands,act,busy,shift,shifts,orders,user,balance,costs,menu,canMake,counts,purchaseOrders}=useApp()
+ const {stockItems,settings,commands,act,busy,shift,shifts,orders,user,balance,costs,menu,canMake,counts,purchaseOrders}=useApp()
+ const movements=useMovements()
  const [selected,setSelected]=useState<StockItem>();const [detail,setDetail]=useState<string>();const [prep,setPrep]=useState<{item?:StockItem;batches?:number}>()
  const [kind,setKind]=useState<'purchase'|'waste'|'count'|'adjustment'|'opening'>('purchase');const [amountText,setAmount]=useState('');const [unit,setUnit]=useState('');const [reason,setReason]=useState('');const [cost,setCost]=useState('0');const [drawer,setDrawer]=useState(false);const [negative,setNegative]=useState(false);const [photo,setPhoto]=useState<string>();const [photoBusy,setPhotoBusy]=useState(false)
  const [confirm,setConfirm]=useState<'high'|'low'>()
@@ -34,7 +35,9 @@ export default function Inventory(){
  const units=(s:StockItem)=>[{value:s.unit,label:s.unit},...(s.unit==='g'?[{value:'kg',label:'kg (1.000 g)'}]:s.unit==='ml'?[{value:'l',label:'liter (1.000 ml)'}]:[]),...(s.packs??[]).map(p=>({value:p.name,label:`${p.name} (${quantity(p.qty)} ${s.unit})`}))]
  const deliveries=(id:string)=>movements.filter(m=>m.stockId===id&&m.kind==='purchase'&&m.qty>0).sort((a,b)=>a.at.localeCompare(b.at)).map(m=>m.qty)
  const pace=(s:StockItem)=>daysLeft(balance(s.id),usagePerDay(movements,s.id))
- function open(s:StockItem){setSelected(s);setAmount('');setUnit(s.packs?.[0]?.name??s.unit);setKind(inventory?'purchase':'waste');setReason('');setCost('0');setDrawer(false);setNegative(false);setPhoto(undefined);setConfirm(undefined)}
+ // STK-14: only a delivery starts in the purchase pack; waste, counts and adjustments start in the base unit ("200" is 200 ml, not 200 cartons).
+ const unitFor=(s:StockItem,k:typeof kind)=>k==='purchase'?s.packs?.[0]?.name??s.unit:s.unit
+ function open(s:StockItem){setSelected(s);setAmount('');setKind(inventory?'purchase':'waste');setUnit(unitFor(s,inventory?'purchase':'waste'));setReason('');setCost('0');setDrawer(false);setNegative(false);setPhoto(undefined);setConfirm(undefined)}
  const parsed=()=>{if(!selected)return 0;try{return amountText==='0'||amountText===''?0:convert(amountText,unit,selected.unit,selected.packs)}catch{return 0}}
  async function save(){if(!selected)return
   await act(async()=>{let qty=kind==='count'&&amountText.trim()==='0'?0:convert(amountText,unit,selected.unit,selected.packs)
@@ -51,15 +54,16 @@ export default function Inventory(){
  const record=<>
   <Dialog open={Boolean(selected)} onOpenChange={()=>setSelected(undefined)} title={selected?.name||'Catat stok'} description="Setiap perubahan memiliki alasan dan jejak pencatatan.">
    {selected&&<>
-    <Select label="Jenis pencatatan" value={kind} onChange={v=>{setKind(v as typeof kind);setConfirm(undefined)}} options={[...(inventory?[{value:'purchase',label:'Kiriman / pembelian'},{value:'opening',label:'Saldo awal'}]:[]),{value:'waste',label:'Terbuang / rusak'},...(inventory?[{value:'count',label:'Hasil hitung fisik'},{value:'adjustment',label:'Penyesuaian'}]:[])]}/>
+    {/* STK-08: each role sees only the kinds the server lets it book (stockRecord: waste for crew, purchase for admin, the rest managers). */}
+    <Select label="Jenis pencatatan" value={kind} onChange={v=>{setKind(v as typeof kind);setUnit(unitFor(selected,v as typeof kind));setConfirm(undefined)}} options={[...(inventory?[{value:'purchase',label:'Kiriman / pembelian'}]:[]),...(inventory&&can(user.role,'approve')?[{value:'opening',label:'Saldo awal'}]:[]),{value:'waste',label:'Terbuang / rusak'},...(inventory&&can(user.role,'approve')?[{value:'count',label:'Hasil hitung fisik'},{value:'adjustment',label:'Penyesuaian'}]:[])]}/>
     <div className="form-grid">
      <label>{kind==='count'?'Jumlah fisik saat ini':'Jumlah'}<input inputMode="decimal" value={amountText} onChange={e=>{setAmount(e.target.value);setConfirm(undefined)}} placeholder="0"/></label>
      <Select label="Satuan" value={unit} onChange={v=>{setUnit(v);setConfirm(undefined)}} options={units(selected)}/>
     </div>
     {amountText&&<p className="small muted">= {quantity(parsed())} {selected.unit}{kind==='count'?` (sekarang ${quantity(balance(selected.id))} ${selected.unit})`:''}</p>}
     {kind==='adjustment'&&<label className="check-row"><input type="checkbox" checked={negative} onChange={e=>setNegative(e.target.checked)}/>Kurangi stok</label>}
-    {kind==='waste'?<><div className="reason-chips">{WASTE.map(r=><button key={r} className={reason===r?'active':''} aria-pressed={reason===r} onClick={()=>setReason(r)}>{r}</button>)}</div><label>Catatan (opsional)<input value={WASTE.includes(reason)?'':reason} onChange={e=>setReason(e.target.value)} placeholder="atau tulis alasan lain"/></label></>
-    :<label>{kind==='purchase'?'Pemasok / nota':'Alasan'}<input value={reason} onChange={e=>setReason(e.target.value)} placeholder={kind==='purchase'?'Contoh: CV Beras Makmur, nota 1203':'Contoh: hitung ulang rak'}/></label>}
+    {kind==='waste'?<><div className="reason-chips">{WASTE.map(r=><button key={r} className={reason===r?'active':''} aria-pressed={reason===r} onClick={()=>setReason(r)}>{r}</button>)}</div><label>Catatan (opsional)<input maxLength={200} value={WASTE.includes(reason)?'':reason} onChange={e=>setReason(e.target.value)} placeholder="atau tulis alasan lain"/></label></>
+    :<label>{kind==='purchase'?'Pemasok / nota':'Alasan'}<input maxLength={200} value={reason} onChange={e=>setReason(e.target.value)} placeholder={kind==='purchase'?'Contoh: CV Beras Makmur, nota 1203':'Contoh: hitung ulang rak'}/></label>}
     {kind==='purchase'&&<>
      <label>Harga total kiriman<Money value={cost} onChange={setCost}/></label>
      {parsed()>0&&Number(cost)>0&&<p className="small muted">≈ {rupiah(Math.round(Number(cost)*1000/parsed()))}/{selected.unit}</p>}
