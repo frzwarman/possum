@@ -19,7 +19,9 @@ export function Shell(){const {user,settings,shift,outbox,lastSync,online,gone,n
  // The till shows the 88 px icon rail from the design; the laptop gets the full back-office sidebar.
  // The accountant works at a laptop too, on two read-only pages: the books and the audit log.
  const books=can(user.role,'accounting')&&!office,ledger={to:'/accounting',label:'Akuntansi',icon:Calculator},trail={to:'/audit',label:'Log audit',icon:FileClock}
- const rail=!((office||books)&&!tillLocked)
+ // Admin stok and Kepala dapur stay on the icon rail like the crew (focus); only owner and manager get the full sidebar.
+ const wide=office&&can(user.role,'approve')
+ const rail=!((wide||books)&&!tillLocked)
  // CTL-4: a shared till or station tablet locks after the store's idle minutes (default 2, 0 = never); the same
  // person unlocks with their PIN. The secret is checked offline against the hash kept at sign-in, for everyone
  // (AUTH-02, SYNC-07); a session from before that kept none, so it asks the server. A hash marked 'pw:' is of a
@@ -40,7 +42,10 @@ export function Shell(){const {user,settings,shift,outbox,lastSync,online,gone,n
   const b=await signOutBlockers(db,user)
   if(b.rejected){setSwitchNote({text:`Server menolak ${b.rejected} operasi ${user.name}. Buka dengan PIN, lalu buang di Lainnya → Sinkron & backup (berkas pemulihan disimpan dan PIN manajer diminta), baru ganti pengguna.`,confirm:false});return}
   if(b.unsent){setSwitchNote({text:`${b.unsent} operasi ${user.name} belum terkirim ke server. Buka dengan PIN, sambungkan internet sampai tersinkron, lalu ganti pengguna.`,confirm:false});return}
-  if(!confirmed&&(b.shift||b.cart)){setSwitchNote({text:[b.shift?`Sif ${user.name} masih terbuka: orang berikutnya tidak bisa berjualan sampai ${user.name} atau manajer menutupnya.`:'',b.cart?'Pesanan baru di keranjang akan tertinggal.':''].filter(Boolean).join(' '),confirm:true});return}
+  if(!confirmed&&b.shift){setSwitchNote({text:`Sif ${user.name} masih terbuka: orang berikutnya tidak bisa menutupnya sampai ${user.name} atau manajer. Pesanan di keranjang diteruskan ke pengguna berikutnya.`,confirm:true});return}
+  // Hand the unpaid cart to whoever signs in next on this till (the local database is deleted at logout): a free
+  // person can finish and charge it. Pos.tsx picks it up once.
+  try{const d=await db.drafts.get('current');if(d&&!d.orderId&&d.lines.some(l=>!l.cancelled))localStorage.setItem('takar-handoff',JSON.stringify({...d,by:undefined,at:Date.now()}))}catch{/* private mode */}
   await logout(db)
  }
  async function unlock(value=pin){setChecking(true);setWrong('')
@@ -67,7 +72,7 @@ const {needRefresh:[needRefresh],updateServiceWorker}=useRegisterSW();const [lat
  // in that order with no group captions; the pages the pilot design leaves out follow (the till here gets its own icon,
  // since the 4-square grid now means Menu & resep). AUTH-12: a link shows only when the page opens for that role
  // (Hari ini, Laporan and Penjualan need 'reports'; Pembelian, Katering and Transfer need 'documents').
- const groups=office&&!tillLocked?[{caption:'Navigasi',links:[...(can(user.role,'reports')?[{to:'/today',label:'Hari ini',icon:House}]:[]),{to:'/menu',label:'Menu & resep',icon:LayoutGrid},...(can(user.role,'settings')?[{to:'/discounts',label:'Diskon',icon:BadgePercent}]:[]),{to:'/inventory',label:'Stok',icon:Package},{to:'/counts',label:'Hitung stok',icon:ClipboardList},...(can(user.role,'reports')?[{to:'/reports',label:'Laporan',icon:ChartNoAxesCombined}]:[]),...(can(user.role,'accounting')?[ledger]:[]),...(can(user.role,'audit')?[trail]:[]),{to:'/team',label:'Tim & perangkat',icon:Users},...work.map(l=>l.to==='/pos'?{...l,icon:ShoppingBag}:l),{to:'/production',label:'Produksi',icon:CookingPot},...(can(user.role,'reports')?[{to:'/sales',label:'Penjualan',icon:TrendingUp}]:[]),...(can(user.role,'documents')?[{to:'/purchases',label:'Pembelian',icon:Truck},{to:'/catering',label:'Katering',icon:CalendarClock},{to:'/transfers',label:'Transfer',icon:ArrowLeftRight}]:[]),more]}]:[{caption:'Ruang kerja',links:sell?till:books?[ledger,trail,more]:[...work,...stockWork,more]}];const links=groups.flatMap(g=>g.links)
+ const groups=wide&&!tillLocked?[{caption:'Navigasi',links:[...(can(user.role,'reports')?[{to:'/today',label:'Hari ini',icon:House}]:[]),{to:'/menu',label:'Menu & resep',icon:LayoutGrid},...(can(user.role,'settings')?[{to:'/discounts',label:'Diskon',icon:BadgePercent}]:[]),{to:'/inventory',label:'Stok',icon:Package},{to:'/counts',label:'Hitung stok',icon:ClipboardList},...(can(user.role,'reports')?[{to:'/reports',label:'Laporan',icon:ChartNoAxesCombined}]:[]),...(can(user.role,'accounting')?[ledger]:[]),...(can(user.role,'audit')?[trail]:[]),{to:'/team',label:'Tim & perangkat',icon:Users},...work.map(l=>l.to==='/pos'?{...l,icon:ShoppingBag}:l),{to:'/production',label:'Produksi',icon:CookingPot},...(can(user.role,'reports')?[{to:'/sales',label:'Penjualan',icon:TrendingUp}]:[]),...(can(user.role,'documents')?[{to:'/purchases',label:'Pembelian',icon:Truck},{to:'/catering',label:'Katering',icon:CalendarClock},{to:'/transfers',label:'Transfer',icon:ArrowLeftRight}]:[]),more]}]:[{caption:'Ruang kerja',links:sell?till:books?[ledger,trail,more]:[...work,...stockWork,more]}];const links=groups.flatMap(g=>g.links)
  // The phone's bottom bar keeps Lainnya, which the rail reaches through the avatar.
  const bottom=links.some(l=>l.to==='/settings')?links:[...links,more]
  // A phone bar holds five: past that (owner, manager on the laptop view) the first four plus a Menu sheet with the rest.

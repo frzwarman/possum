@@ -106,7 +106,18 @@ export default function Pos() {
   useEffect(() => {
     void db.drafts.get("current").then((d) => {
       if (!initialized.current) {
-        setDraft(d ?? fresh(pager));
+        let carried: Draft | undefined;
+        if (!d) {
+          // The cart the previous person left at "Ganti pengguna" (Shell.tsx); taken once, only if fresh.
+          try {
+            const h = JSON.parse(localStorage.getItem("takar-handoff") || "null");
+            localStorage.removeItem("takar-handoff");
+            if (h && Date.now() - h.at < 12 * 3600000) { const { at: _, ...rest } = h; carried = rest as Draft; }
+          } catch { /* private mode or bad json */ }
+        }
+        // Saved right away: leaving the till (Pesanan, Stok) and coming back reads the cart from the database.
+        if (carried) void db.drafts.put(carried);
+        setDraft(d ?? carried ?? fresh(pager));
         initialized.current = true;
       }
     });
