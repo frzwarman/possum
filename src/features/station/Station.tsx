@@ -5,7 +5,7 @@ import { useApp, useMovements } from '../../app/context'
 import { Button } from '../../components/ui/button'
 import { Dialog } from '../../components/ui/dialog'
 import { Select } from '../../components/ui/select'
-import { convert, expiring, onBoard, prepList, quantity, when } from '../../domain/calculate'
+import { convert, expiring, onBoard, orderNo, prepList, quantity, when } from '../../domain/calculate'
 import type { Order, Station as Kind, StockItem } from '../../domain/types'
 import { Receipt, modeLabel } from '../orders/Receipt'
 const UNDO_MS=4000
@@ -26,7 +26,7 @@ export default function Station(){
  const [held,setHeld]=useState<{id:string;label:string}[]>([]);const waiting=useRef(new Map<string,{t:ReturnType<typeof setTimeout>;go:()=>void}>())
  const bump=(o:Order)=>{if(waiting.current.has(o.id))return;const st=station,shown=o.lines.filter(l=>l.prepared&&!l.cancelled&&!l.readyAt&&(l.station??'kitchen')===st).map(l=>l.id),go=()=>{const w=waiting.current.get(o.id);if(!w)return;clearTimeout(w.t);waiting.current.delete(o.id)
   commands.ready(o.id,st,shown).then(()=>{setNotice('Tiket siap; kasir bisa memanggil pager');if(!user.demo)void sync()}).catch(e=>setError(e instanceof Error?e.message:'Tindakan gagal. Data belum tersimpan.')).finally(()=>setHeld(h=>h.filter(x=>x.id!==o.id)))}
-  waiting.current.set(o.id,{t:setTimeout(go,UNDO_MS),go});setHeld(h=>[...h,{id:o.id,label:o.label||o.receiptId.slice(-6)}])}
+  waiting.current.set(o.id,{t:setTimeout(go,UNDO_MS),go});setHeld(h=>[...h,{id:o.id,label:o.label||orderNo(o)}])}
  const undo=(id:string)=>{const w=waiting.current.get(id);if(w)clearTimeout(w.t);waiting.current.delete(id);setHeld(h=>h.filter(x=>x.id!==id))}
  useEffect(()=>{const w=waiting.current;return()=>{[...w.values()].forEach(x=>x.go())}},[])
  // STN-15: a ticket stopped after it reached this station (the order voided, or its line taken off) stays as a notice for two minutes.
@@ -58,13 +58,13 @@ export default function Station(){
   {held.map(h=><p className="callout" role="status" key={h.id}>Tiket {h.label} ditandai siap. <button type="button" className="text-button" onClick={()=>undo(h.id)}>Urungkan</button></p>)}
   <div className="station-grid">
    {stopped.map(o=><article className="ticket late" key={o.id}>
-    <div className="ticket-head"><h2>{o.label||o.receiptId.slice(-6)}</h2><span className="ticket-age">Dibatalkan</span></div>
+    <div className="ticket-head"><h2>{o.label||orderNo(o)}</h2><span className="ticket-age">Dibatalkan</span></div>
     <p className="muted small">Jangan dibuat. {o.status==='void'?'Pesanan dibatalkan.':'Menu ini dibatalkan.'}</p>
     <div>{o.lines.filter(l=>l.prepared&&!l.readyAt&&mine(l)&&(o.status==='void'||l.cancelled)).map(l=><div className="ticket-line" key={l.id}><strong>{l.qty}× {l.name}</strong></div>)}</div>
     <Button variant="secondary" className="full" onClick={()=>setDismissed(d=>[...d,o.id+o.updatedAt])}>Mengerti</Button>
    </article>)}
    {tickets.map(o=><article className={`ticket ${minutes(o)>target?'late':''}`} key={o.id}>
-    <div className="ticket-head"><h2>{o.label||o.receiptId.slice(-6)}</h2><span className="ticket-age">{minutes(o)} mnt{minutes(o)>target?' · terlambat':''}</span></div>
+    <div className="ticket-head"><h2>{o.label||orderNo(o)}</h2><span className="ticket-age">{minutes(o)} mnt{minutes(o)>target?' · terlambat':''}</span></div>
     <p className="muted small">{modeLabel(o)} · {when(sentAt(o),settings?.timezone,{hour:'2-digit',minute:'2-digit'})}</p>
     <div>{o.lines.filter(l=>l.prepared&&!l.cancelled&&!l.readyAt&&mine(l)).map(l=><div className="ticket-line" key={l.id}><strong>{l.qty}× {l.name}</strong>{l.modifiers.length>0&&<small>{l.modifiers.map(m=>m.name).join(', ')}</small>}{l.note&&<small className="line-note">{l.note}</small>}</div>)}</div>
     <div className="button-row">

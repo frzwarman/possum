@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, Navigate } from '@tanstack/react-router'
 import { Bell, ChartColumn, Percent, Trash2, CircleAlert, Milk, Ban, Scale, ChefHat, Clock, ArrowRight, ClipboardList } from 'lucide-react'
 import { useApp, useMovements } from '../../app/context'
-import { businessDay, countsDue, daysLeft, expiring, isSale, itemStation, niceStep, quantity, rupiah, usagePerDay, when } from '../../domain/calculate'
+import { businessDay, countsDue, daysLeft, expiring, isSale, itemStation, niceStep, quantity, refundOf, rupiah, usagePerDay, when } from '../../domain/calculate'
 import { can } from '../../domain/permissions'
 import type { ReactNode } from 'react'
 // Figma M1 "Today": three numbers, sales by hour, what needs the manager, what runs low; on the right the count that
@@ -27,7 +27,7 @@ export default function Today(){
  // AUTH-12: the access table gives 'Hari ini' (sales and money) to owner and manager only; the rest of the office goes to the menu.
  if(!can(user.role,'reports'))return <Navigate to={can(user.role,'backoffice')?'/menu':'/pos'}/>
  // STN-12, RPT-6: Penjualan is what was paid today, a refund apart (as Laporan and the server count it).
- const paid=orders.filter(o=>o.payment&&day(o.payment.at)===today&&isSale(o)),sales=paid.reduce((n,o)=>n+o.totals.total,0),refunded=orders.filter(o=>o.refund&&day(o.refund.at)===today).reduce((n,o)=>n+o.totals.total,0)
+ const paid=orders.filter(o=>o.payment&&day(o.payment.at)===today&&isSale(o)),sales=paid.reduce((n,o)=>n+o.totals.total,0),refunded=orders.filter(o=>o.refund&&day(o.refund.at)===today).reduce((n,o)=>n+refundOf(o),0)
  const catering=new Set(salesOrders.map(s=>s.id)) // CAT-7: catering takes ingredients too, but its money is not counter sales
  // QA PERF-6: a business day began less than 36 h ago; a string compare drops the rest before the zone arithmetic.
  const dayStart=new Date(Date.now()-36*36e5).toISOString(),todays=movements.filter(m=>m.at>=dayStart)
@@ -50,7 +50,7 @@ export default function Today(){
  const hourOf=(iso:string)=>Number(new Date(iso).toLocaleString('en-GB',{timeZone:tz,hour:'2-digit',hourCycle:'h23'}))
  const station=(id:string)=>{const m=menu.find(x=>x.id===id);return m?itemStation(m):'kitchen'}
  const byHour=new Map<number,{kitchen:number;bar:number}>()
- for(const o of paid)for(const l of o.lines)if(!l.cancelled){const h=hourOf(o.payment!.at),v=(l.price+l.modifiers.reduce((n,m)=>n+m.price,0))*l.qty,s=station(l.itemId)==='bar'?'bar':'kitchen',b=byHour.get(h)??{kitchen:0,bar:0};b[s]+=v;byHour.set(h,b)}
+ for(const o of paid)for(const l of o.lines)if(!l.cancelled){const h=hourOf(o.payment!.at),v=(l.price+l.modifiers.reduce((n,m)=>n+m.price,0))*l.qty,s=station(l.itemId)==='bar'?'bar':'kitchen',b=byHour.get(h)??{kitchen:0,bar:0};b[s]+=v*(o.totals.subtotal?o.totals.total/o.totals.subtotal:1);byHour.set(h,b)}
  const seen=[...byHour.keys(),hourOf(now.toISOString())],first=Math.min(7,...seen),last=Math.max(first+8,...seen)
  const hours=Array.from({length:last-first+1},(_,i)=>first+i),peak=Math.max(0,...[...byHour.values()].flatMap(b=>[b.kitchen,b.bar]))||400_000
  const step=niceStep(peak),top=step*4

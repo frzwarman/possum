@@ -1,4 +1,4 @@
-import { isSale, lineUse, menuType } from "./calculate";
+import { isSale, lineUse, menuType, refundOf } from "./calculate";
 import type { CashMovement, Ingredient, MenuItem, MenuType, Movement, Order, PurchaseOrder, SalesOrder, Shift, StockItem } from "./types";
 
 // The books for a range of business days. A signed-in store gets them complete from the server (accounting_data): a
@@ -72,7 +72,7 @@ export function recap(orders: BookOrder[], r: Range): DayRow[] {
       else { x.staff += t.total; x.compliments += t.discount; }
       if (method && method !== "none") x[method] += t.total;
     }
-    if (back) { const x = row(back); x.refunds += t.total; if (method && method !== "none") x[method] -= t.total; }
+    if (back) { const x = row(back), a = refundOf(o); x.refunds += a; if (method && method !== "none") x[method] -= a; }
   }
   for (const x of rows.values()) { x.net = x.gross - x.discount; x.received = x.total + x.staff - x.refunds; }
   return [...rows.values()].sort((a, b) => a.day.localeCompare(b.day));
@@ -243,9 +243,11 @@ export function journal(books: Books, menu: MenuItem[], r: Range, before: Stock 
       } else if (till) post(paid, "JUAL", "Penjualan kasir", "staff", -t.total);
     }
     if (back && till) {
-      post(back, "RETUR", "Pengembalian dana", till, -t.total);
-      if (isSale(o)) { post(back, "RETUR", "Pengembalian dana", "returns", t.subtotal - t.discount); post(back, "RETUR", "Pengembalian dana", "service", t.service); post(back, "RETUR", "Pengembalian dana", "tax", t.tax); }
-      else post(back, "RETUR", "Pengembalian dana", "staff", t.total);
+      // A partial refund reverses the sale in proportion; the tax takes the rounding so the journal stays balanced.
+      const a = refundOf(o), f = t.total ? a / t.total : 1, net = Math.round((t.subtotal - t.discount) * f), svc = Math.round(t.service * f);
+      post(back, "RETUR", "Pengembalian dana", till, -a);
+      if (isSale(o)) { post(back, "RETUR", "Pengembalian dana", "returns", net); post(back, "RETUR", "Pengembalian dana", "service", svc); post(back, "RETUR", "Pengembalian dana", "tax", a - net - svc); }
+      else post(back, "RETUR", "Pengembalian dana", "staff", a);
     }
   }
 

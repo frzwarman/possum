@@ -182,7 +182,7 @@ describe('pull: what other paired devices did', () => {
     const { transport } = recorder()
     await synchronize(db, user, transport, async () => empty(new Date().toISOString()))
     const mine = await db.movements.where('recordId').equals(order.id).toArray()
-    await commands.closeShift(200000) // pending until the next push: the server's older copy must not win
+    await commands.closeShift(200000, undefined, undefined, 'Selisih dicatat') // pending until the next push: the server's older copy must not win
     const other = { ...order, id: 'order-from-server', label: 'Pager 99', shiftId: 'shift-elsewhere' }
     const pulled = { ...empty(new Date().toISOString()), orders: [other, { ...order, label: 'SERVER' }], movements: mine.map((m) => ({ ...m, cost: 0 })) }
     const since: string[] = []

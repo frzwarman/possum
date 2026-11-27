@@ -41,7 +41,7 @@ export function DiscountDialog({ open, onClose, draft, settings, manager, type, 
   const why = reason === "Lainnya" ? other.trim() : reason;
   const applied = draft.discount > 0 || Boolean(draft.discountId);
   return (
-    <Dialog open={open} onOpenChange={onClose} title="Diskon" description={`${draft.lines.filter((l) => !l.cancelled).length} menu · ${rupiah(subtotal)} sebelum pajak`} className="discount-dialog">
+    <Dialog open={open} onOpenChange={onClose} title="Diskon" description={`${draft.lines.filter((l) => !l.cancelled).length} menu · ${rupiah(subtotal)}${settings?.taxBps || settings?.serviceBps ? " sebelum pajak" : ""}`} className="discount-dialog">
       <div className="segmented discount-tabs" role="group" aria-label="Jenis diskon">
         <button type="button" className={tab === "saved" ? "active" : ""} aria-pressed={tab === "saved"} onClick={() => setTab("saved")}>Tersimpan {running.length}</button>
         <button type="button" className={tab === "manual" ? "active" : ""} aria-pressed={tab === "manual"} onClick={() => setTab("manual")}>Manual</button>
@@ -105,7 +105,7 @@ export function DiscountDialog({ open, onClose, draft, settings, manager, type, 
           {reason === "Lainnya" && <label>Alasan lain<input value={other} maxLength={60} onChange={(e) => setOther(e.target.value)} /></label>}
           <div className="discount-sum">
             <span>Diskon, {scope === "order" ? "seluruh pesanan" : scope === "beverage" ? "minuman" : "makanan"}{kind === "percent" ? ` ${Number(value) || 0}%` : ""}</span><b>−{rupiah(manual)}</b>
-            <span>Total baru, termasuk pajak</span><strong>{rupiah(bill(manual).total)}</strong>
+            <span>Total baru{settings?.taxBps || settings?.serviceBps ? ", termasuk pajak" : ""}</span><strong>{rupiah(bill(manual).total)}</strong>
           </div>
           {!manager && <p className="small muted">Diskon manual perlu persetujuan manajer: PIN-nya di kasir, atau lewat Telegram bila tidak di tempat. Sama seperti pembatalan.</p>}
           <Button className="full" disabled={!manual || !why || (kind === "percent" && Number(value) > 100)} onClick={() => onPick({ discount: manual, reason: why, rule: { kind, value: Math.min(Number(value), 1e9), scope } })}>

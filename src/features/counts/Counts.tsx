@@ -78,14 +78,14 @@ export default function Counts(){
    const v=e.loose.trim()&&Number.isFinite(n)?String(r).replace('.',','):e.loose;void type(s.id,{...e,loose:v,big:!e.big})}
   const hint=(x:StockItem)=>[...(session.area==='Semua area'&&x.area?[x.area]:[]),...(x.production?['prep']:[]),...(x.packs?.length?x.packs.map(p=>`${p.name} ${nice(p.qty,x.unit)}`):[x.unit])].join(', ')
   const words=(x:StockItem,v:number)=>{const t=typed[x.id]??blank,parts=(x.packs??[]).filter(p=>(t.packs[p.name]??'').trim()).map(p=>`${t.packs[p.name]} ${p.name}`);return parts.length?`${[...parts,...(t.loose.trim()?[`${t.loose} ${unitName(t.big?BIG[x.unit]:x.unit)}`]:[])].join(' + ')} = ${nice(v,x.unit)}`:nice(v,x.unit)}
-  const closing=shift&&!counts.some(c=>c.id!==session.id&&c.status!=='draft'&&(c.submittedAt??c.approvedAt??'')>=shift.openedAt),by=who(session.startedBy)
+  const closing=shift&&!counts.some(c=>c.id!==session.id&&c.status!=='draft'&&(c.submittedAt??c.approvedAt??'')>=shift.openedAt),by=who(session.startedBy),incomplete=Boolean(closing)&&counted<lines.length // the count before closing covers every bahan (zero is a count)
   return <section className="count-screen" aria-labelledby="count-title">
    <header className="count-top">
     <button type="button" className="count-back" aria-label="Kembali ke Hitung stok" onClick={()=>setSession(undefined)}><ArrowLeft size={20}/></button>
     <div className="count-title"><h1 id="count-title">Hitung: {session.area}</h1><p>{closing?'Hitung sebelum tutup, dimulai':'Dimulai'}{by?` ${by}`:''} {hhmm(session.startedAt)}.{closing?' Sif bisa ditutup setelah hitungan ini dikirim.':''}</p></div>
-    <div className="count-progress"><span>{counted} dari {lines.length} dihitung</span><i role="progressbar" aria-label="Bahan dihitung" aria-valuemin={0} aria-valuemax={lines.length} aria-valuenow={counted}><b style={{width:`${counted/lines.length*100}%`}}/></i></div>
+    <div className="count-progress"><span>{counted} dari {lines.length} dihitung{incomplete?' · semua bahan wajib dihitung sebelum tutup':''}</span><i role="progressbar" aria-label="Bahan dihitung" aria-valuemin={0} aria-valuemax={lines.length} aria-valuenow={counted}><b style={{width:`${counted/lines.length*100}%`}}/></i></div>
     <div className="count-actions"><Button variant="secondary" onClick={()=>setSession(undefined)}><Clock size={20}/> Jeda</Button>
-     <Button variant="secondary" loading={busy} disabled={busy||!counted} onClick={()=>submit()}><Check size={20}/> Kirim untuk ditinjau</Button></div>
+     <Button variant="secondary" loading={busy} disabled={busy||!counted||incomplete} title={incomplete?`${lines.length-counted} bahan belum dihitung`:undefined} onClick={()=>submit()}><Check size={20}/> Kirim untuk ditinjau</Button></div>
    </header>
    <div className="count-body">
     <article className="count-entry" ref={entry}>
@@ -97,7 +97,7 @@ export default function Counts(){
      <p className={`count-total${problem?' negative':''}`} aria-live="polite">{problem||(total===undefined?'Belum dihitung':`= ${quantity(total)} ${s.unit}`)}</p>
      <div className="count-keypad">{['1','2','3','4','5','6','7','8','9',',','0'].map(k=><button type="button" key={k} aria-label={k===','?'Koma':undefined} onClick={()=>press(k)}>{k}</button>)}<button type="button" onClick={()=>press('del')}>Hapus</button></div>
      {next?<Button className="btn-accent full count-next" onClick={()=>go(next)}><ChevronRight size={20}/> Berikutnya: {item(next.stockId)?.name}</Button>
-      :<Button className="btn-accent full count-next" loading={busy} disabled={busy||!counted} onClick={()=>submit()}><Check size={20}/> Selesai menghitung</Button>}
+      :<Button className="btn-accent full count-next" loading={busy} disabled={busy||!counted||incomplete} onClick={()=>submit()}><Check size={20}/> Selesai menghitung</Button>}
     </article>
     <div className="count-list">{lines.map((l,n)=>{const x=item(l.stockId)!,got=l.counted!==undefined;return <button type="button" key={l.stockId} className={`count-line${n===i?' current':''}${got?' counted':''}`} aria-current={n===i||undefined} onClick={()=>{go(l);entry.current?.scrollIntoView({block:'nearest',behavior:'smooth'})}}>
      {got&&n!==i?<Check size={16}/>:<ChevronRight size={16}/>}<span><strong>{x.name}</strong><small>{hint(x)}</small></span>

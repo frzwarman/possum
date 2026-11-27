@@ -276,3 +276,7 @@ a.team-row:hover{background:var(--bg-muted)}
 .example-line small{display:block;font-size:12px;color:var(--text-secondary)}
 .example-line.total{border:0;color:#3F6212}
 @media(max-width:900px){.discount-form{grid-template-columns:1fr}.discount-dates{grid-template-columns:1fr 1fr}}
+
+/* The browser's own "Choose File / No file chosen" (English) is hidden; the label above it is the whole target. */
+.upload-label{position:relative}
+.upload-label>input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0}

@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { CreditCard,QrCode,Gift,Lock,Search,ClipboardList,AlertTriangle,Wallet,ChevronDown } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useApp } from '../../app/context'
-import { expectedCash,isSale,rupiah,settlementGap,settlements,tills,when } from '../../domain/calculate'
+import { expectedCash,isSale,orderNo,rupiah,settlementGap,settlements,tills,when } from '../../domain/calculate'
 import { Button } from '../../components/ui/button'
 import { Money } from '../../components/ui/money'
 import { Select } from '../../components/ui/select'
@@ -18,7 +18,7 @@ export function CloseShift({heading=false}:{heading?:boolean}){
  const {settings,shift,shifts,counts,cash:moves,commands,act,busy,manager,user,stockItems}=useApp()
  // QA TILL-07, PERF-3: the shift's own orders, never the app's newest-500 window.
  const orders=useShiftOrders(shift?.id)
- const [slips,setSlips]=useState<Record<string,string>>({});const [drawer,setDrawer]=useState('');const [query,setQuery]=useState('');const [kind,setKind]=useState('all');const [edc,setEdc]=useState('');const [byAmount,setByAmount]=useState(true);const [time,setTime]=useState('');const [ask,setAsk]=useState<ApprovalRequest>()
+ const [slips,setSlips]=useState<Record<string,string>>({});const [drawer,setDrawer]=useState('');const [gapNote,setGapNote]=useState('');const [query,setQuery]=useState('');const [kind,setKind]=useState('all');const [edc,setEdc]=useState('');const [byAmount,setByAmount]=useState(true);const [time,setTime]=useState('');const [ask,setAsk]=useState<ApprovalRequest>()
  const {cash,edcs}=tills(settings)
  // No shift open: say so with the one next step, then the last shifts as a table — one column per EDC (and the
  // drawer), a chip for the gap. Cashiers count blind, so the gap column is for managers only.
@@ -41,16 +41,20 @@ export function CloseShift({heading=false}:{heading?:boolean}){
  // The count before closing: any count this cashier started and sent since the shift opened.
  // The count before closing: any count sent since the shift opened. A store with no ingredients yet has nothing to count.
  const done=counts.filter(c=>c.status!=='draft'&&(c.submittedAt??c.approvedAt??'')>=shift.openedAt).map(c=>c.submittedAt??c.approvedAt!).sort().at(-1),counted=!stockItems.length||Boolean(done)
+ // Only a count still waiting for the manager is mentioned after closing (an approved one is done).
+ const pendingCount=counts.some(c=>c.status==='submitted'&&(c.submittedAt??'')>=shift.openedAt)
  const tz=settings?.timezone,hhmm=(iso:string)=>when(iso,tz,{hour:'2-digit',minute:'2-digit'}),hour=(iso:string)=>Number(new Date(iso).toLocaleString('en-GB',{timeZone:tz,hour:'2-digit',hourCycle:'h23'}))
  const inTime=(iso:string)=>!time||(time==='morning'?hour(iso)<12:time==='afternoon'?hour(iso)>=12&&hour(iso)<17:hour(iso)>=17)
  // RPT-4: a machine that took payments this shift is on the screen (and in the close) even when settings no longer list it.
  const machines=[...new Set([...edcs,...paid.flatMap(o=>o.payment?.edc?[o.payment.edc]:[])])]
  const amounts=Object.fromEntries(machines.map(e=>[e,Number(slips[e]||0)])),list=settlements(shift.id,orders,amounts,edcs),cashGap=cash?Math.abs(Number(drawer||0)-expectedCash(shift,orders,moves)):0,gap=settlementGap(list)+cashGap,limit=settings?.varianceLimit??10000
- const shown=paid.filter(o=>(kind==='all'||(kind==='compliment'?o.mode==='compliment':o.payment?.method===kind))&&(!edc||o.payment?.edc===edc)&&inTime(o.payment!.at)&&[o.receiptId.slice(-6),o.label,o.name,o.payment?.approvalCode].join(' ').toLowerCase().includes(query.trim().toLowerCase())).sort((a,b)=>byAmount?b.totals.total-a.totals.total:b.payment!.at.localeCompare(a.payment!.at))
+ const shown=paid.filter(o=>(kind==='all'||(kind==='compliment'?o.mode==='compliment':o.payment?.method===kind))&&(!edc||o.payment?.edc===edc)&&inTime(o.payment!.at)&&[orderNo(o),o.label,o.name,o.payment?.approvalCode].join(' ').toLowerCase().includes(query.trim().toLowerCase())).sort((a,b)=>byAmount?b.totals.total-a.totals.total:b.payment!.at.localeCompare(a.payment!.at))
+ // D8: same closing rules cash or cashless: a ticket still being made on a paid order also holds the close.
+ const kitchenOpen=settings?.stationTablets?paid.filter(o=>o.lines.some(l=>l.prepared&&!l.cancelled&&!l.readyAt)).length:0
  const blank=machines.filter(e=>slips[e]===undefined||slips[e]==='')
- const missing=[...(!counted?['Kirim hitung stok dulu (Stok → Hitung stok).']:[]),...(open>0?[`Bayar atau batalkan ${open} pesanan terbuka di Pesanan.`]:[]),...(blank.length?[`Isi slip ${blank.map(e=>`EDC ${e}`).join(', ')}. Ketik 0 bila mesinnya tidak dipakai.`]:[]),...(cash&&drawer===''?['Isi uang tunai di laci.']:[]),...(!(shift.actor===user.id||manager)?[`Hanya ${shift.cashier} atau manajer yang bisa menutup sif ini.`]:[])]
+ const missing=[...(!counted?['Kirim hitung stok dulu (Stok → Hitung stok).']:[]),...(open>0?[`Bayar atau batalkan ${open} pesanan terbuka di Pesanan.`]:[]),...(kitchenOpen>0?[`Tandai siap ${kitchenOpen} pesanan yang tiketnya belum selesai di Pesanan.`]:[]),...(blank.length?[`Isi slip ${blank.map(e=>`EDC ${e}`).join(', ')}. Ketik 0 bila mesinnya tidak dipakai.`]:[]),...(cash&&drawer===''?['Isi uang tunai di laci.']:[]),...(gap>limit&&!gapNote.trim()?['Tulis catatan selisih di bawah (kas atau slip EDC di atas batas).']:[]),...(!(shift.actor===user.id||manager)?[`Hanya ${shift.cashier} atau manajer yang bisa menutup sif ini.`]:[])]
  async function close(approval?:Approval){if(!manager&&!approval&&gap>limit){setAsk({action:'variance',amount:gap,what:cash?'Selisih kas atau EDC di atas batas; manajer perlu menyetujui penutupan sif':`Selisih EDC ${rupiah(gap)}; manajer perlu menyetujui penutupan sif`});return}
-  await act(async()=>{await commands.closeShift(cash?Number(drawer||0):0,approval,amounts);setSlips({});setDrawer('')},'Sif ditutup. Hasil hitung stok menunggu persetujuan manajer.')}
+  await act(async()=>{await commands.closeShift(cash?Number(drawer||0):0,approval,amounts,gapNote);setSlips({});setDrawer('');setGapNote('')},pendingCount?'Sif ditutup. Hasil hitung stok menunggu persetujuan manajer.':'Sif ditutup.')}
  const tile=(icon:ReactNode,label:string,list:Order[],tone:string)=><article className={`metric tone-${tone}`}><span>{icon} {label}</span><strong>{rupiah(sum(list))}</strong><small>{list.length} pembayaran</small></article>
  return <>
   {/* Figma C9: who and since when, whether the count is in, and whether anything is still open. */}
@@ -68,7 +72,7 @@ export function CloseShift({heading=false}:{heading?:boolean}){
     <div className="filter-row"><div className="pill-tabs">{[['all','Semua'],...(cash?[['cash','Tunai']]:[]),['card','Kartu'],['qris','QRIS'],['compliment','Compliment']].map(([id,label])=><button key={id} className={kind===id?'active':''} aria-pressed={kind===id} onClick={()=>setKind(id)}>{label}</button>)}</div>
      <div className="pill-selects"><Select ariaLabel="EDC" value={edc} onChange={setEdc} options={[{value:'',label:'EDC: semua'},...machines.map(e=>({value:e,label:`EDC ${e}`}))]}/><Select ariaLabel="Waktu" value={time} onChange={setTime} options={[{value:'',label:'Waktu: sepanjang hari'},{value:'morning',label:'Pagi, sebelum 12.00'},{value:'afternoon',label:'Siang, 12.00 sampai 17.00'},{value:'evening',label:'Malam, setelah 17.00'}]}/></div></div>
     <div className="table-scroll"><table className="data-table plain-table dense"><thead><tr><th>Pesanan</th><th>Waktu</th><th>Pembayaran</th><th>EDC</th><th className="num"><button type="button" className="sort-head" onClick={()=>setByAmount(!byAmount)}>{byAmount?'Nominal: terbesar':'Waktu: terbaru'}<ChevronDown size={14}/></button></th></tr></thead><tbody>
-     {shown.slice(0,50).map(o=><tr key={o.id} title={o.payment?.approvalCode?`Approval ${o.payment.approvalCode}`:undefined}><td><strong>#{o.receiptId.slice(-6).toUpperCase()}</strong></td><td>{hhmm(o.payment!.at)}</td><td className={o.mode==='compliment'?'muted':''}>{o.mode==='compliment'?'Compliment':payLabel(o).split(',')[0]}</td><td>{o.mode==='compliment'?(o.compliment?.kind==='family'?'Keluarga pemilik':'Staff meal'):o.payment?.edc??'—'}{o.payment?.approvalCode&&<small className="muted"> · {o.payment.approvalCode}</small>}</td><td className="num"><strong>{rupiah(o.totals.total)}</strong></td></tr>)}
+     {shown.slice(0,50).map(o=><tr key={o.id} title={o.payment?.approvalCode?`Approval ${o.payment.approvalCode}`:undefined}><td><strong>#{orderNo(o)}</strong></td><td>{hhmm(o.payment!.at)}</td><td className={o.mode==='compliment'&&o.payment?.method==='none'?'muted':''}>{o.mode==='compliment'&&o.payment?.method==='none'?'Compliment':payLabel(o).split(',')[0]}</td><td>{o.mode==='compliment'&&o.payment?.method==='none'?(o.compliment?.kind==='family'?'Keluarga pemilik':'Staff meal'):o.payment?.edc??(o.mode==='compliment'?o.compliment?.kind==='family'?'Keluarga pemilik':'Staff meal':'—')}{o.payment?.approvalCode&&<small className="muted"> · {o.payment.approvalCode}</small>}</td><td className="num"><strong>{rupiah(o.totals.total)}</strong></td></tr>)}
     </tbody></table></div>
     <p className="small muted">{shown.length?`Menampilkan ${Math.min(50,shown.length)} dari ${shown.length}. Detail, item dan cetak ulang ada di Pesanan.`:'Belum ada transaksi lunas di sif ini.'}</p>
    </article>
@@ -83,6 +87,7 @@ export function CloseShift({heading=false}:{heading?:boolean}){
     {!counted&&<p className="settle-note"><ClipboardList size={16}/><span>Hitung stok dulu sebelum menutup sif. <Link to="/counts" className="text-button">Ke Hitung stok</Link></span></p>}
     <Button className="full btn-accent close-button" loading={busy} disabled={busy||missing.length>0} onClick={()=>close()}><Lock size={17}/> Tutup sif</Button>
     {/* Say exactly what still blocks the close, instead of a grey button with no reason. */}
+    {gap>limit&&<label>Catatan selisih (wajib)<textarea maxLength={200} value={gapNote} onChange={e=>setGapNote(e.target.value)} placeholder={`Selisih ${rupiah(gap)} di atas batas ${rupiah(limit)}: apa yang terjadi?`}/></label>}
     {missing.length>0&&<div className="close-missing"><strong>Belum bisa ditutup:</strong><ul>{missing.map(m=><li key={m}>{m}</li>)}</ul></div>}
    </article>
   </div>

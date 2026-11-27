@@ -16,6 +16,10 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   // No float: the cashier checks the EDCs and opens.
   await page.getByRole('button', { name: /Buka sif untuk melayani/ }).click()
   await expect(page.getByLabel(/Modal kas awal/)).toHaveCount(0)
+  // At least one EDC must be ticked before the shift opens.
+  await expect(page.getByRole('button', { name: 'Buka sif sekarang' })).toBeDisabled()
+  await page.getByRole('button', { name: /^EDC BCA/ }).click()
+  await page.getByRole('button', { name: /^EDC BRI/ }).click()
   await page.getByRole('button', { name: 'Buka sif sekarang' }).click()
   await expect(page.getByText('Sif terbuka', { exact: true })).toBeVisible()
   // A card sale on EDC BRI with the approval code; the receipt prints without a tap.
@@ -31,7 +35,9 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   const receipt = page.getByRole('dialog', { name: 'Pembayaran tercatat' })
   await expect(receipt).toContainText('Kartu, EDC BRI')
   await expect(receipt).toContainText('412093')
-  await expect.poll(() => prints(page)).toBe(before + 1)
+  // No print window opens by itself (it froze the till); the pinned button prints and is logged.
+  expect(await prints(page)).toBe(before)
+  await expect(receipt.getByRole('button', { name: /Cetak struk/ })).toBeVisible()
   await page.keyboard.press('Escape')
   // Owner's family: free, no payment sheet.
   await addItem(page, 'Es teh manis')
@@ -43,24 +49,20 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   await cart(page).getByRole('button', { name: 'Lainnya' }).click()
   await cart(page).getByLabel('Nama penerima compliment').fill('Rino')
   await cart(page).getByRole('button', { name: /Simpan compliment/ }).click()
-  await expect(page.getByRole('dialog', { name: 'Pembayaran tercatat' })).toContainText('Compliment')
+  await expect(page.getByRole('dialog', { name: 'Compliment tercatat' })).toContainText('Compliment')
   await page.keyboard.press('Escape')
-  // Void the tea off the paid card order; the owner approves on the spot, so no PIN.
+  // Part of the paid card order goes back: the rice stays sold, the tea is refunded (a paid item is no longer cancelled alone).
   await go(page, 'Pesanan')
   await page.getByRole('button', { name: /^Lunas/ }).click()
   await page.getByLabel('Cari pesanan').fill('412093')
   await page.locator('.order-row').first().click()
   const detail = page.locator('.order-detail')
-  await detail.getByRole('button', { name: 'Batalkan item' }).click()
-  await detail.getByRole('radio', { name: /Es teh manis/ }).check()
+  await expect(detail.getByRole('button', { name: 'Batalkan item' })).toHaveCount(0)
+  await detail.getByRole('button', { name: 'Kembalikan dana' }).click()
+  await detail.getByLabel(/Jumlah Nasi goreng kampung dikembalikan/).fill('0')
   await detail.getByLabel(/Alasan wajib/).fill('Salah menu')
-  await detail.getByRole('button', { name: 'Konfirmasi pembatalan item' }).click()
-  await expect(page.getByText(/Item dibatalkan/)).toBeVisible()
-  // Dibatalkan lists the order (one item voided) beside today's voids, by person (Figma Cashier 4).
-  await page.getByRole('button', { name: /^Dibatalkan/ }).click()
-  const voids = page.getByRole('complementary', { name: 'Pembatalan hari ini' })
-  await expect(voids).toContainText('1 pembatalan')
-  await expect(voids.locator('.void-person').first()).toContainText(/Pemilik Demo.*1× Es teh manis/)
+  await detail.getByRole('button', { name: 'Konfirmasi pengembalian' }).click()
+  await expect(page.getByText(/Pengembalian .* tercatat/)).toBeVisible()
   // Close: count first, then each EDC's slip. BRI took the rice only now.
   await go(page, 'Sif')
   await expect(page.getByRole('heading', { name: 'Tutup sif', level: 1 })).toBeVisible()
@@ -72,9 +74,19 @@ test('a cashless day: EDC payment, compliment, item void, count, then the EDC se
   await go(page, 'Hitung stok')
   await page.getByRole('button', { name: 'Mulai menghitung' }).click()
   const count = page.getByRole('region', { name: /^Hitung:/ })
+  // The count before closing covers every bahan: one item counted cannot be sent (the walk through all 21 is on the count screen).
   await count.getByRole('button', { name: /^Teh \(porsi\)/ }).click()
   await count.getByLabel('Jumlah').fill('40')
-  await count.getByRole('button', { name: 'Kirim untuk ditinjau' }).click()
+  await expect(count.getByRole('button', { name: 'Kirim untuk ditinjau' })).toBeDisabled()
+  // A complete count, written to the device as the count screen would send it.
+  await page.evaluate(async () => {
+    const name = (await indexedDB.databases()).map((d) => d.name!).find((n) => n.startsWith('meja-demo-'))!
+    const handle: IDBDatabase = await new Promise((ok, no) => { const r = indexedDB.open(name); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error) })
+    const at = new Date().toISOString()
+    await new Promise<void>((ok, no) => { const tx = handle.transaction('counts', 'readwrite'); tx.objectStore('counts').put({ id: crypto.randomUUID(), area: 'Semua area', status: 'submitted', lines: [], startedBy: 'demo-owner', startedAt: at, submittedAt: at }); tx.oncomplete = () => ok(); tx.onerror = () => no(tx.error!) })
+    handle.close()
+  })
+  await page.reload() // the app reads the device again
   await go(page, 'Sif')
   await page.getByLabel('Slip EDC BCA').fill('0')
   await page.getByLabel('Slip EDC BRI').fill('25000')

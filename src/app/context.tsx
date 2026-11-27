@@ -48,6 +48,8 @@ function useModel(base:Identity){
  const timer=setInterval(()=>{if(document.visibilityState==='visible')void sync()},user.mode==='station'?5000:user.primary?10000:30000);return()=>{active=false;clearInterval(timer);window.removeEventListener('online',network);window.removeEventListener('offline',network);document.removeEventListener('visibilitychange',foreground)}},[db,user])
  async function act<T>(action:()=>Promise<T>,message?:string):Promise<T|undefined>{if(busy)return;setBusy(true);setError('');try{const value=await action();if(!user.demo)void sync();if(message)setNotice(message);return value}catch(e){setError(e instanceof Error?e.message:'Tindakan gagal. Data belum tersimpan.');return undefined}finally{setBusy(false)}}
  useEffect(()=>{if(notice){const t=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(t)}},[notice])
+ // D6: an error toast sits over the buttons at the bottom; it closes itself so the next tap lands on the button.
+ useEffect(()=>{if(error){const t=setTimeout(()=>setError(''),6000);return()=>clearTimeout(t)}},[error])
  return {user,db,commands,movedNote:moved?.note??'',pullFailed,logo,menu,hydrating:[menuRows,orderRows,shiftRows,ledger,stockRows].includes(undefined),settings,orders,purchaseOrders,suppliers,salesOrders,transfers,counts,outlets,costs,shifts,shift,stockItems,cash,outbox,lastSync:lastSync?.value,device,balances,balance,canMake,station,setStation,notice,error,busy,online,gone,act,sync,skew,setNotice,setError,
   // manager = may approve (owner, manager); office = may open the back office (owner, manager, admin, chef).
   manager:can(user.role,'approve'),office:can(user.role,'backoffice')}

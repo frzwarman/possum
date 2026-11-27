@@ -458,7 +458,7 @@ export class Lounge {
     for (const [e, v] of edc) slips[e] = v + (w.rand.chance(0.05) ? -w.rand.pick([1000, 15000]) : 0)
     const counted = Math.max(0, cash + gapCash), gap = Math.abs(counted - cash) + [...edc].reduce((n, [e, v]) => n + Math.abs(slips[e] - v), 0)
     const a = cashier && gap > (settings.varianceLimit ?? 10000) ? await w.approve(this.till, this.approver('ziggy'), 'variance', { amount: gap }) : undefined
-    const closed = await w.act(this.till, 'shift.close', (c) => c.closeShift(counted, a, (settings.edcs ?? []).length ? slips : undefined))
+    const closed = await w.act(this.till, 'shift.close', (c) => c.closeShift(counted, a, (settings.edcs ?? []).length ? slips : undefined, 'Selisih dicatat (simulasi)'))
     if (!closed) return
     const os = o.shifts.get(shift.id)!
     Object.assign(os, { closedAt: closed.closedAt, counted, slips })
@@ -502,7 +502,7 @@ export class Lounge {
     for (const id of open) await this.pay(id, true, this.till2)
     await w.sync(this.till2)
     const cash = o.expectedCash(shift.id)
-    const closed = await w.act(this.till2, 'shift.close', (c) => c.closeShift(cash))
+    const closed = await w.act(this.till2, 'shift.close', (c) => c.closeShift(cash, undefined, undefined, 'Selisih dicatat (simulasi)'))
     if (closed) Object.assign(o.shifts.get(shift.id)!, { closedAt: closed.closedAt, counted: cash })
     if (closed && closed.expected !== cash) this.mismatch(day, 'Dago shift close: expected cash', cash, closed.expected)
     await w.sync(this.till2)

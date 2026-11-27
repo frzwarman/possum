@@ -146,6 +146,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
     setNotice,
     busy,
     gone,
+    suppliers,
   } = useApp();
   // Owner and manager tune the restaurant; chef and admin keep menu and ingredients; everyone has sync and device.
   const tillLocked = user.primary && Boolean(shift);
@@ -171,7 +172,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
   const [item, setItem] = useState<MenuItem>();
   const [stock, setStock] = useState<StockItem>();
   const [width, setWidth] = useState<58 | 80>(settings?.receiptWidth || 80);
-  const [importType, setImportType] = useState<"menu" | "stock">("menu");
+  const [importType, setImportType] = useState<"menu" | "stock" | "supplier">("menu");
   const [preview, setPreview] = useState<Record<string, string>[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -326,6 +327,11 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             ["Nasi kuning", "food", 18000],
             ["Es teh", "beverage", 8000],
           ])
+        : importType === "supplier"
+        ? csv([
+            ["name", "phone", "address", "note"],
+            ["CV Sumber Pangan", "0812 3456 789", "Jl. Pasar Baru 12", "Kirim Senin & Kamis"],
+          ])
         : csv([
             ["name", "unit", "quantity", "threshold", "area", "pack_name", "pack_qty"],
             ["Beras", "g", 10000, 2000, "Dry store", "karung", 25000],
@@ -371,12 +377,17 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
       // The columns say which template a file follows: a bahan file picked while "Menu" is selected switches over
       // instead of failing every row on a missing price.
       const head = Object.keys(rows[0] ?? {});
-      const type: typeof importType = head.includes("price") ? "menu" : head.includes("unit") && head.includes("quantity") ? "stock" : importType;
+      const type: typeof importType = head.includes("price") ? "menu" : head.includes("unit") && head.includes("quantity") ? "stock" : !head.includes("unit") && (head.includes("phone") || head.includes("address")) ? "supplier" : importType;
       if (type !== importType) setImportType(type);
       const errs: string[] = [];
       // Quantities and pack sizes are kept as the plain number they will be saved as ("1.500" is 1500); the preview shows them back.
       if (type === "stock" && !found) rows = rows.map((r) => ({ ...r, ...Object.fromEntries(["quantity", "threshold", "pack_qty"].map((k) => [k, importAmount(r[k] ?? "") ?? r[k] ?? ""])) }));
       rows.forEach((r, i) => {
+        if (type === "supplier") {
+          if (!r.name?.trim() || r.name.length > 100) errs.push(`Baris ${i + 2}: name wajib, maksimal 100 karakter`);
+          else if (!/^[0-9+ ()-]*$/.test(r.phone ?? "") || (r.phone ?? "").length > 30) errs.push(`Baris ${i + 2}: phone hanya angka, spasi, +, -, dan tanda kurung`);
+          return;
+        }
         const parsed = (
           type === "menu" ? menuImportSchema : stockImportSchema
         ).safeParse(r);
@@ -393,7 +404,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
         const at = rows.findIndex((r) => Number(r.quantity) > 0);
         if (at >= 0) errs.push(`Baris ${at + 2}: saldo awal hanya bisa dicatat pemilik atau manajer. Kosongkan kolom quantity (isi 0) atau minta manajer mengimpor.`);
       }
-      const taken = rows.filter((r) => (type === "menu" ? menu : stockItems).some((m) => m.name.toLowerCase() === r.name.toLowerCase())).map((r) => r.name);
+      const taken = rows.filter((r) => (type === "menu" ? menu : type === "supplier" ? suppliers : stockItems).some((m) => m.name.toLowerCase() === r.name.toLowerCase())).map((r) => r.name);
       // A COGS tab picked again brings recipes for menus already made from it: those menus get the recipe and nothing
       // else changes. Any other file only adds, so a name already taken stops it.
       if (taken.length && found?.kind === "menu")
@@ -413,7 +424,10 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
         throw new Error("Perbaiki CSV dahulu");
       if (importType === "stock" && !can(user.role, "approve") && preview.some((r) => Number(r.quantity) > 0))
         throw new Error("Saldo awal hanya bisa dicatat pemilik atau manajer. Kosongkan kolom quantity.");
-      if (importType === "menu") {
+      if (importType === "supplier") {
+        // Saved one by one; a name that is already a supplier was turned away at the preview.
+        for (const r of preview) await commands.saveSupplier({ id: uid(), name: r.name, phone: r.phone ?? "", address: r.address ?? "", note: r.note ?? "", active: true });
+      } else if (importType === "menu") {
         const existing = new Map(menu.map((m) => [m.name.toLowerCase(), m]));
         const updated = new Map<string, MenuItem>();
         const added = preview.flatMap((r, i) => {
@@ -1001,16 +1015,18 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             </label>
             <div className="form-grid">
               <label>
-                Pajak (basis poin)
-                <input type="number" {...form.register("taxBps")} />
+                Pajak (%)
+                {/* Typed as a percent; stored as basis points (1% = 100). */}
+                <input type="number" min={0} max={100} step="0.01" inputMode="decimal" value={(Number(form.watch("taxBps")) || 0) / 100} onChange={(e) => form.setValue("taxBps", Math.round(Number(e.target.value) * 100), { shouldDirty: true, shouldValidate: true })} />
               </label>
               <label>
-                Layanan (basis poin)
-                <input type="number" {...form.register("serviceBps")} />
+                Layanan (%)
+                {/* Typed as a percent; stored as basis points (1% = 100). */}
+                <input type="number" min={0} max={100} step="0.01" inputMode="decimal" value={(Number(form.watch("serviceBps")) || 0) / 100} onChange={(e) => form.setValue("serviceBps", Math.round(Number(e.target.value) * 100), { shouldDirty: true, shouldValidate: true })} />
               </label>
             </div>
             <p className="small muted">
-              0 = nonaktif. 100 basis poin = 1%. Pajak dihitung setelah diskon
+              0 = nonaktif. Pajak dihitung setelah diskon
               dan layanan; pembulatan setengah ke atas per tagihan.
             </p>
             <div className="form-grid">
@@ -1114,7 +1130,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
                 </li>
               </ol>
               <p className="callout">
-                Laporan dimulai pada tanggal operasional. Meja tidak membuat
+                Laporan dimulai pada tanggal operasional. Takar tidak membuat
                 riwayat penjualan sebelum tanggal tersebut.
               </p>
             </article>
@@ -1237,6 +1253,7 @@ export default function SettingsPage({ only }: { only?: "menu" | "team" } = {}) 
             options={[
               { value: "menu", label: "Menu" },
               { value: "stock", label: "Bahan & saldo awal" },
+              { value: "supplier", label: "Pemasok" },
             ]}
           />
           <Button variant="secondary" onClick={template}>

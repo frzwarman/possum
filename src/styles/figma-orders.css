@@ -180,3 +180,15 @@
 .void-person .avatar.critical{background:#FCE4E4;color:#B42318}
 .void-person small.critical-text{color:#B42318}
 .void-note{padding-top:8px;border-top:1px solid var(--border)}
+
+/* D7: Cetak struk stays in view at the bottom of the receipt window, however long the receipt. */
+.receipt-actions{position:sticky;bottom:0;z-index:1;background:var(--surface,#fff);padding:12px 0 4px;margin-top:8px}
+.line-note-add{background:none;border:0;padding:0;min-height:36px;font:inherit;font-size:13px;line-height:18px;color:var(--text-secondary);display:inline-flex;align-items:center;gap:6px;cursor:pointer;text-align:left;border-radius:8px}
+.line-note-add:hover{color:var(--text);text-decoration:underline;text-underline-offset:3px}
+.line-note-input{width:100%;margin:4px 0;min-height:44px;font-size:16px}
+/* The refund form: one row per item with a small counter, amounts in tabular figures. */
+.refund-lines{display:flex;flex-direction:column;gap:8px;margin-bottom:4px}
+.refund-lines .detail-line{align-items:center}
+.refund-lines .detail-line>span:last-child{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.refund-lines input[type=number]{width:64px;min-height:44px;text-align:center;font-size:16px;font-variant-numeric:tabular-nums}
+.detail-form input[inputmode=numeric]{font-variant-numeric:tabular-nums}

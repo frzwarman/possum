@@ -871,3 +871,8 @@ label.slip-field{flex-direction:row;justify-self:end;width:auto}
 .text-button:has(>svg:only-child){min-width:44px;min-height:44px;justify-content:center;padding:0}
 .sync-status{min-width:44px;min-height:44px;justify-content:center}
 .panel-heading .text-link{display:inline-flex;align-items:center;min-height:44px;margin:-12px 0}
+
+/* D11/D12: the "Perlu Anda" text wraps instead of being cut off; the payment window keeps one height across Tunai, Kartu and QRIS. */
+.needs-panel .need-row{align-items:flex-start}
+.needs-panel .need-row>span:nth-child(2){white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.dialog-content.pay-dialog{min-height:min(580px,calc(100dvh - 32px))}

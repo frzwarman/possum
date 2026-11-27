@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { AlertCircle,ChartColumn,Milk,Package,Percent,Printer,Trash2 } from 'lucide-react'
 import { useApp, useMovements } from '../../app/context'
-import { JAKARTA,businessDay,expectedCash,isSale,itemStation,lineUse,niceStep,quantity,tills,rupiah,stamp,when } from '../../domain/calculate'
+import { JAKARTA,businessDay,expectedCash,isSale,itemStation,lineUse,niceStep,quantity,refundOf,tills,rupiah,stamp,when } from '../../domain/calculate'
 import { menuPicture } from '../../lib/menu-photo'
 import { CloseShift } from './CloseShift'
 import { rangeBounds,useRangeOrders,useShiftOrders } from './range'
@@ -31,7 +31,7 @@ export default function Reports(){
  const inRange=(at:string)=>{const d=day(at);return d>=from&&d<=to}
  const filtered=orders.filter(o=>inRange(o.payment?.at||o.createdAt))
  // Compliments are not sales; they live in the compliment budget on Today.
- const paid=filtered.filter(o=>o.payment&&isSale(o));const sales=paid.reduce((n,o)=>n+o.totals.total,0);const refunds=orders.filter(o=>o.refund&&inRange(o.refund.at)).reduce((n,o)=>n+o.totals.total,0);const outstanding=filtered.filter(o=>o.status==='open').reduce((n,o)=>n+o.totals.total,0);const discounts=paid.reduce((n,o)=>n+o.discount,0)
+ const paid=filtered.filter(o=>o.payment&&isSale(o));const sales=paid.reduce((n,o)=>n+o.totals.total,0);const refunds=orders.filter(o=>o.refund&&inRange(o.refund.at)).reduce((n,o)=>n+refundOf(o),0);const outstanding=filtered.filter(o=>o.status==='open').reduce((n,o)=>n+o.totals.total,0);const discounts=paid.reduce((n,o)=>n+o.discount,0)
  // RPT-7: the money taken per method, staff meals paid on the machine included, as the EDC slip and Akuntansi count it.
  const received=filtered.filter(o=>o.payment&&o.payment.method!=='none'),staffPaid=received.filter(o=>!isSale(o)).reduce((n,o)=>n+o.totals.total,0)
  // TDY-4: food cost, waste and the usage gap for the same period, valued at the latest ingredient prices.
@@ -54,7 +54,8 @@ export default function Reports(){
  const station=(id:string)=>{const m=menu.find(x=>x.id===id);return m?itemStation(m):'kitchen'}
  const days:string[]=[];for(let d=from;/^\d{4}-\d\d-\d\d$/.test(d)&&d<=to&&days.length<367;d=new Date(Date.parse(d)+864e5).toISOString().slice(0,10))days.push(d)
  const byDay=new Map<string,{kitchen:number;bar:number}>()
- for(const o of paid)for(const l of o.lines)if(!l.cancelled){const k=day(o.payment!.at),b=byDay.get(k)??{kitchen:0,bar:0};b[station(l.itemId)==='bar'?'bar':'kitchen']+=lineValue(l);byDay.set(k,b)}
+ // The bars add up to the headline: each line carries its share of the order's discount, tax and service.
+ for(const o of paid)for(const l of o.lines)if(!l.cancelled){const k=day(o.payment!.at),b=byDay.get(k)??{kitchen:0,bar:0};b[station(l.itemId)==='bar'?'bar':'kitchen']+=lineValue(l)*(o.totals.subtotal?o.totals.total/o.totals.subtotal:1);byDay.set(k,b)}
  const step=niceStep(Math.max(0,...[...byDay.values()].flatMap(b=>[b.kitchen,b.bar]))||400_000),top=step*4,every=Math.ceil(days.length/16)
  const on=(d:string,o:Intl.DateTimeFormatOptions)=>new Intl.DateTimeFormat('id-ID',{timeZone:'UTC',...o}).format(new Date(d+'T12:00:00Z'))
  const named=(d:string,month=true)=>`${on(d,{weekday:'long'})} ${Number(d.slice(8))}${month?` ${on(d,{month:'long'})}`:''}`
@@ -77,7 +78,7 @@ export default function Reports(){
   if(!manager&&!approval&&gap>limit){setAsk({action:'variance',amount:gap,what:'Selisih kas di atas batas; manajer perlu menyetujui penutupan sif'});return}
   await act(async()=>{await commands.closeShift(Number(counted),approval);setClosing(false)},manager?'Sif ditutup. Jangan lupa ekspor dan backup.':'Sif ditutup. Hitungan tersimpan untuk diperiksa manajer. Jangan lupa ekspor dan backup.')}
  function reportExport(){const rows=[...new Set([...filtered,...orders.filter(o=>o.refund&&inRange(o.refund.at))])],jenis=(o:typeof rows[number])=>o.mode==='dinein'?'Makan di sini':o.mode==='takeaway'?'Bungkus':o.compliment?.kind==='family'?'Keluarga pemilik':'Staff meal'
-  download(`takar-laporan-${from}-${to}.csv`,csv([['ID struk',`Waktu (${settings?.timezone||JAKARTA})`,'Kasir','Status','Metode','Subtotal','Diskon','Layanan','Pajak','Total','Jenis','Waktu refund'],...rows.map(o=>[o.receiptId,stamp(o.payment?.at||o.createdAt,settings?.timezone),o.cashier,o.status,o.payment?.method||'',o.totals.subtotal,o.discount,o.totals.service,o.totals.tax,o.totals.total,jenis(o),o.refund?stamp(o.refund.at,settings?.timezone):''])]),'text/csv')}
+  download(`takar-laporan-${from}-${to}.csv`,csv([['ID struk',`Waktu (${settings?.timezone||JAKARTA})`,'Kasir','Status','Metode','Subtotal','Diskon','Layanan','Pajak','Total','Jenis','Waktu refund','Nilai refund'],...rows.map(o=>[o.receiptId,stamp(o.payment?.at||o.createdAt,settings?.timezone),o.cashier,o.status,o.payment?.method||'',o.totals.subtotal,o.discount,o.totals.service,o.totals.tax,o.totals.total,jenis(o),o.refund?stamp(o.refund.at,settings?.timezone):'',o.refund?refundOf(o):''])]),'text/csv')}
  // PDF = the browser's print of a plain page with the same numbers as the screen.
  // Pilot rule: on the till with a shift open even a manager sees the cashier's view; the laptop shows everything.
  const boss=manager&&!(user.primary&&Boolean(shift))
@@ -132,7 +133,7 @@ export default function Reports(){
    {till.cash&&<article className="panel"><div className="panel-heading"><h2>Laci kas</h2><span className="badge">{shift?'Sif aktif':'Tidak ada sif aktif'}</span></div>
     {shift?<><p className="small muted">Dibuka {when(shift.openedAt,settings?.timezone)} oleh {shift.cashier}</p><div className="bill-row"><span>Modal kas awal</span><strong>{rupiah(shift.opening)}</strong></div>
      {/* A cashier counts blind: with sales and the expected total on screen the count tends to match them. */}
-     {boss&&<><div className="bill-row"><span>Penjualan tunai bersih</span><strong>{rupiah(shiftOrders.filter(o=>o.payment?.method==='cash'&&o.status!=='refunded').reduce((n,o)=>n+o.totals.total,0))}</strong></div><div className="bill-row"><span>Kas masuk / keluar</span><strong>{rupiah(cash.filter(c=>c.shiftId===shift.id).reduce((n,c)=>n+c.amount,0))}</strong></div><div className="bill-total"><span>Kas yang seharusnya</span><strong>{rupiah(expected)}</strong></div></>}
+     {boss&&<><div className="bill-row"><span>Penjualan tunai bersih</span><strong>{rupiah(shiftOrders.filter(o=>o.payment?.method==='cash'&&o.status!=='refunded').reduce((n,o)=>n+o.totals.total-refundOf(o),0))}</strong></div><div className="bill-row"><span>Kas masuk / keluar</span><strong>{rupiah(cash.filter(c=>c.shiftId===shift.id).reduce((n,c)=>n+c.amount,0))}</strong></div><div className="bill-total"><span>Kas yang seharusnya</span><strong>{rupiah(expected)}</strong></div></>}
      {shift.actor===user.id||manager?<div className="button-row"><Button variant="secondary" onClick={()=>setCashDialog(true)}>Catat kas masuk / keluar</Button>{!till.edc&&<Button onClick={()=>setClosing(true)}>Tutup sif</Button>}</div>:<p className="callout">Laci dipegang {shift.cashier}; hanya dia (atau manajer) yang bisa mencatat kas dan menutup sif.</p>}</>
     :<p className="muted">Buka sif dari kasir untuk mencatat modal dan penerimaan tunai.</p>}
     <div className="history-list">{shifts.filter(s=>s.status==='closed').slice(-3).reverse().map(s=><div key={s.id}><span>{when(s.closedAt!,settings?.timezone,{dateStyle:'medium'})}<small className="muted"> · {s.cashier}</small><br/>Dihitung {rupiah(s.counted||0)}</span>{boss&&<strong>Selisih {rupiah(s.variance||0)}{s.varianceApprovedBy?` · ${s.varianceApprovedBy}`:''}</strong>}</div>)}</div>

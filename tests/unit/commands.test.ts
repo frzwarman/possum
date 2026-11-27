@@ -85,6 +85,21 @@ describe('one transaction per command',()=>{
   expect((await db.outbox.toArray()).filter(o=>o.kind==='order.save')).toHaveLength(1)
   expect(order.receiptId).toMatch(/^MJ-/)
  })
+ it('a gap over the limit cannot be closed without a note, even by the owner',async()=>{
+  const {commands}=await seed(identity())
+  await commands.openShift(200000);await tick()
+  await expect(commands.closeShift(100000)).rejects.toThrow('catatan selisih')
+  const closed=await commands.closeShift(100000,undefined,undefined,'Uang kembalian salah')
+  expect(closed.varianceNote).toBe('Uang kembalian salah')
+ })
+ it('numbers the day\'s orders 1, 2, 3 for staff to say aloud, and keeps the number when an order is saved again',async()=>{
+  const {commands}=await seed(identity())
+  await commands.openShift(200000);await tick()
+  const one=await commands.save(draft([line()])),two=await commands.save(draft([line()]))
+  expect([one.no,two.no]).toEqual([1,2])
+  const again=await commands.save({...draft([line()]),orderId:one.id,revision:one.revision})
+  expect(again.no).toBe(1)
+ })
  it('rolls back the domain record when the mutation throws',async()=>{
   const {db,commands}=await seed(identity())
   await commands.openShift(200000);await tick()
@@ -401,7 +416,7 @@ describe('counts, cash gaps and recipe-less menus need a manager',()=>{
   await commands.openShift(100000);await tick()
   await expect(commands.closeShift(200000)).rejects.toThrow('Perlu persetujuan manajer')
   expect(await db.shifts.where('status').equals('open').count()).toBe(1)
-  const closed=await commands.closeShift(200000,await commands.approve('demo-owner',DEMO_PIN,'variance',{amount:100000}))
+  const closed=await commands.closeShift(200000,await commands.approve('demo-owner',DEMO_PIN,'variance',{amount:100000}),undefined,'Laci kurang, dihitung ulang')
   expect([closed.variance,closed.varianceApprovedBy]).toEqual([100000,'Pemilik Demo'])
   await commands.openShift(100000);await tick()
   expect((await commands.closeShift(110000)).variance).toBe(10000)
@@ -494,7 +509,7 @@ describe('cashless: EDC, compliments, line voids and the settlement',()=>{
   await commands.pay(b.id,'cash',10000,true);await tick()
   // Drawer 6.000 short and the slip 6.000 over: the PIN covers 12.000, not a net zero.
   await expect(commands.closeShift(100000,undefined,{BCA:12000})).rejects.toThrow('Perlu persetujuan manajer')
-  const closed=await commands.closeShift(100000,await commands.approve('demo-owner',DEMO_PIN,'variance',{amount:12000}),{BCA:12000})
+  const closed=await commands.closeShift(100000,await commands.approve('demo-owner',DEMO_PIN,'variance',{amount:12000}),{BCA:12000},'Slip BCA lebih')
   expect([closed.counted,closed.expected,closed.variance]).toEqual([112000,112000,0])
  })
  async function cashless(role:'manager'|'cashier'='manager'){const s=await seed(identity({role,demo:true}));await s.db.settings.put({...(await s.db.settings.get('settings'))!,cashless:true,edcs:['BCA','BRI','Mandiri'],taxBps:1000});await s.commands.openShift(0);await tick();return s}
@@ -550,7 +565,7 @@ describe('cashless: EDC, compliments, line voids and the settlement',()=>{
   const b=await made(commands,[tea()]);const paidB=await commands.pay(b.id,'qris',0,true,{edc:'BRI'});await tick()
   const slips={BCA:paidA.totals.total+20000,BRI:paidB.totals.total-3000}
   await expect(commands.closeShift(0,undefined,slips)).rejects.toThrow('Perlu persetujuan manajer')
-  const closed=await commands.closeShift(0,await commands.approve('demo-owner',DEMO_PIN,'variance',{amount:23000}),slips)
+  const closed=await commands.closeShift(0,await commands.approve('demo-owner',DEMO_PIN,'variance',{amount:23000}),slips,'Dua slip selisih')
   expect([closed.variance,closed.settlements]).toEqual([17000,[{edc:'BCA',expected:paidA.totals.total,slip:slips.BCA},{edc:'BRI',expected:paidB.totals.total,slip:slips.BRI},{edc:'Mandiri',expected:0,slip:0}]])
   expect((await db.outbox.toArray()).find(op=>op.kind==='shift.close')?.payload).toMatchObject({settlements:[{edc:'BCA',slip:slips.BCA},{edc:'BRI',slip:slips.BRI},{edc:'Mandiri',slip:0}]})
  })

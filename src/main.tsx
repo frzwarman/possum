@@ -1,4 +1,4 @@
-import { lazy,Suspense,useState,type ReactNode } from 'react'
+import { lazy,Suspense,useEffect,useState,type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createRootRoute,createRoute,createRouter,RouterProvider,Navigate } from '@tanstack/react-router'
 import { AppProvider,useApp } from './app/context'
@@ -42,7 +42,9 @@ const Accounting=lazy(()=>import('./features/accounting/Accounting'))
 const skeleton=<PageSkeleton/>
 // A station tablet starts on its station; everyone else on the till.
 // The cashier tablet never opens the manager screens while a shift is open (pilot rule).
-function Office({children}:{children:ReactNode}){const {user,shift}=useApp();return user.primary&&shift?<Navigate to="/pos"/>:<>{children}</>}
+// The till tablet with a shift open stays on the till; say why instead of bouncing silently (the laptop is not locked).
+function Locked(){const {setNotice}=useApp();useEffect(()=>{setNotice('Sif sedang terbuka di perangkat kasir ini: halaman manajer dibuka dari laptop, atau tutup sif dulu.')},[setNotice]);return <Navigate to="/pos"/>}
+function Office({children}:{children:ReactNode}){const {user,shift}=useApp();return user.primary&&shift?<Locked/>:<>{children}</>}
 // Tickets go to stations only when the store has bar and kitchen tablets on, or this device is one. Otherwise the
 // crew works from Stok (waste, prep, counts) and the cashier tells them what to make, as in the Ziggy pilot.
 function StationGate(){const {user,settings}=useApp();if(!can(user.role,'station'))return <Navigate to="/accounting"/>;if(settings&&!settings.stationTablets&&user.mode!=='station')return <Navigate to={can(user.role,'sell')?'/pos':'/inventory'}/>;return <Suspense fallback={skeleton}><Station/></Suspense>}

@@ -8,7 +8,7 @@ import { ApprovalDialog, type ApprovalRequest } from "../../app/Approval";
 import { Button } from "../../components/ui/button";
 import { Money } from "../../components/ui/money";
 import { Dialog } from "../../components/ui/dialog";
-import { businessDay, complimentDiscount, discountFor, tills, describeDelta, itemStation, lineUse, menuType, nextPager, orderTotals, quantity, rupiah, search } from "../../domain/calculate";
+import { businessDay, complimentDiscount, discountFor, tills, describeDelta, itemStation, lineUse, menuType, nextPager, orderNo, orderTotals, quantity, rupiah, search } from "../../domain/calculate";
 import { team } from "../auth/Login";
 import { menuPicture } from "../../lib/menu-photo";
 import type { Compliment, Draft, Line, MenuItem, MenuType, Modifier, OptionGroup, Order } from "../../domain/types";
@@ -41,6 +41,8 @@ export default function Pos() {
   const [selected, setSelected] = useState<MenuItem>();
   const [note, setNote] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
+  // D10: a note on any unsent cart line (not only items with options): which line is being edited, and its text.
+  const [lineNote, setLineNote] = useState<{ id: string; text: string } | null>(null);
   const [pick, setPick] = useState(1);
   const [mods, setMods] = useState<string[]>([]);
   const [checkout, setCheckout] = useState<Order>();
@@ -346,7 +348,7 @@ export default function Pos() {
       <div className="cart-heading">
         <div>
           <h2>{draft.orderId ? "Pesanan tersimpan" : "Pesanan baru"}</h2>
-          <span className="muted small">{saved_ ? `#${saved_.receiptId.slice(-6).toUpperCase()}, ${saved_.cashier}, ${clock(saved_.createdAt)}` : `${user.name}, ${clock(new Date().toISOString())}`}</span>
+          <span className="muted small">{saved_ ? `#${orderNo(saved_)}, ${saved_.cashier}, ${clock(saved_.createdAt)}` : `${user.name}, ${clock(new Date().toISOString())}`}</span>
         </div>
         {/* Figma C2: the footer carries only the bill and one pay button; keeping a tab open, a manager's discount
             and starting the next order live behind this menu. */}
@@ -417,7 +419,17 @@ export default function Pos() {
                 </div>
                 {l.modifiers.length > 0 && <p className="line-options">{options(l)}</p>}
                 {comp && <p className="line-options">{comp.kind === "family" ? "Keluarga pemilik: gratis" : drink(l) ? "Minuman staf: gratis" : "Makanan staf: 50%"}</p>}
-                {l.note && <p className="line-note">{l.note}</p>}
+                {lineNote?.id === l.id ? (
+                  <input className="line-note-input" autoFocus aria-label={`Catatan untuk ${l.name}`} maxLength={300} placeholder="Contoh: tidak pedas, tanpa bawang" value={lineNote.text}
+                    onChange={(e) => setLineNote({ id: l.id, text: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Escape") setLineNote(null); }}
+                    onBlur={() => { const text = lineNote.text.trim(); setLineNote(null); if (text !== (l.note ?? "")) void update({ ...draft, lines: draft.lines.map((x) => (x.id === l.id ? { ...x, note: text } : x)) }); }} />
+                ) : (
+                  <>
+                    {l.note && <p className="line-note">{l.note}</p>}
+                    {!l.prepared && <button type="button" className="line-note-add" onClick={() => setLineNote({ id: l.id, text: l.note ?? "" })}><NotebookPen size={14} /> {l.note ? "Ubah catatan" : "Tambah catatan"}</button>}
+                  </>
+                )}
                 <div className="line-bottom">
                   {/* The station badge tells the cashier where the line is made, even before it is sent. */}
                   {!l.prepared && <span className={`badge badge-${l.station ?? itemStation(menu.find((m) => m.id === l.itemId) ?? { category: "" })}`}>{(l.station ?? itemStation(menu.find((m) => m.id === l.itemId) ?? { category: "" })) === "bar" ? "Bar" : "Dapur"}</span>}
@@ -631,7 +643,7 @@ export default function Pos() {
           </>
         )}
       </Dialog>
-      {receipt && <Receipt order={receipt} auto={edcMode} onClose={() => setReceipt(undefined)} />}
+      {receipt && <Receipt order={receipt} onClose={() => setReceipt(undefined)} />}
     </div>
   );
 }

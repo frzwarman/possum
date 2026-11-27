@@ -108,11 +108,13 @@ export type OrderMode = 'dinein' | 'takeaway' | 'compliment'
 export interface Compliment { kind: 'staff' | 'family'; who: string }
 export interface OrderPayment { method: 'cash' | 'qris' | 'card' | 'none'; tendered: number; change: number; verified: boolean; at: string; edc?: string; approvalCode?: string }
 export interface Order {
+  /** The day's running number, from 1 each business day: what is said aloud and shown (receiptId stays the unique key). */
+  no?: number;
  id: string; restaurantId: string; shiftId: string; actor: string; cashier: string; revision: number; receiptId: string; label: string; name?: string; mode: OrderMode; compliment?: Compliment
  lines: Line[]; status: 'open' | 'paid' | 'void' | 'refunded'; prep: 'new' | 'preparing' | 'ready'; discount: number; discountReason: string; settings: Settings; totals: Totals
  createdAt: string; updatedAt: string
  payment?: OrderPayment
- refund?: { reason: string; at: string; actor: string; approvedBy?: string }; voidReason?: string; voidApprovedBy?: string; discountApprovedBy?: string
+ refund?: { reason: string; at: string; actor: string; approvedBy?: string; amount?: number; method?: string; lines?: { id: string; qty: number }[] }; voidReason?: string; voidApprovedBy?: string; discountApprovedBy?: string
  // The saved discount on this order, if any: its amount follows the order's lines by the discount's own rule.
  discountId?: string
  discountRule?: DiscountRule
@@ -120,7 +122,7 @@ export interface Order {
  // saved discount under it needs no new approval; above it the till asks again. Absent on orders approved before this.
  discountApproved?: number
 }
-export interface Shift { id: string; actor: string; cashier: string; openedAt: string; expiresAt: string; opening: number; status: 'open' | 'closed'; closedAt?: string; counted?: number; expected?: number; variance?: number; varianceApprovedBy?: string
+export interface Shift { id: string; actor: string; cashier: string; openedAt: string; expiresAt: string; opening: number; status: 'open' | 'closed'; closedAt?: string; counted?: number; expected?: number; variance?: number; varianceApprovedBy?: string; varianceNote?: string
  // Cashless close: what Takar recorded on each EDC against the total on that EDC's settlement slip.
  settlements?: Settlement[] }
 export interface Settlement { edc: string; expected: number; slip: number }

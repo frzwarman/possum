@@ -27,7 +27,7 @@ async function oneSale(page: Page) {
 }
 const copy = (o: any, i: number, edit: Record<string, unknown> = {}) => {
   const at = new Date(Date.now() - (i + 1) * 2000).toISOString(), id = crypto.randomUUID()
-  return { ...o, id, receiptId: 'MJ-' + id.toUpperCase(), label: `Pager ${i + 2}`, createdAt: at, updatedAt: at, payment: { ...o.payment, at }, lines: o.lines.map((l: any) => ({ ...l, id: crypto.randomUUID() })), ...edit }
+  return { ...o, id, receiptId: 'MJ-' + id.toUpperCase(), no: i + 2, label: `Pager ${i + 2}`, createdAt: at, updatedAt: at, payment: { ...o.payment, at }, lines: o.lines.map((l: any) => ({ ...l, id: crypto.randomUUID() })), ...edit }
 }
 const metric = (page: Page, label: string | RegExp) => page.locator('.metric').filter({ hasText: label }).first()
 
@@ -62,8 +62,8 @@ test('RPT-1, CAT-3, PERF-4, RPT-2, CAT-4, STN-12: 600 more orders in one day sho
   // Pesanan: today's line counts every order, and the oldest one is found by its number as printed on the receipt.
   await go(page, 'Pesanan')
   await expect(page.locator('.page-heading .muted')).toContainText(rp(sales))
-  const oldest = extra.at(-1)!, no = oldest.receiptId.slice(-6).toUpperCase()
-  await page.getByLabel('Cari pesanan').fill('#' + no)
+  const oldest = extra.at(-1)!, no = String(oldest.no).padStart(3, '0')
+  await page.getByLabel('Cari pesanan').fill('#' + oldest.receiptId.slice(-6).toUpperCase())
   await expect(page.locator('.orders-table tbody tr')).toHaveCount(1)
   await expect(page.locator('.orders-table .col-no button')).toHaveText(no)
 })
@@ -89,7 +89,8 @@ test('RPT-4: an EDC that took payments but is no longer in settings keeps a work
   await put(page, 'settings', [{ ...s, cashless: true, edcs: ['BCA'] }])
   const card = (edc: string) => ({ ...order.payment, method: 'card', edc, approvalCode: '654321', tendered: price, change: 0 })
   await put(page, 'shifts', [{ ...shift, opening: 0 }]) // a cashless shift has no float
-  await put(page, 'orders', [{ ...order, payment: card('BCA') }, copy({ ...order, payment: card('Mandiri') }, 0)])
+  const made = (o: any) => ({ ...o, lines: o.lines.map((l: any) => ({ ...l, readyAt: l.readyAt ?? new Date().toISOString() })) }) // no kitchen ticket still open at the close
+  await put(page, 'orders', [made({ ...order, payment: card('BCA') }), made(copy({ ...order, payment: card('Mandiri') }, 0))])
   await put(page, 'counts', [{ id: crypto.randomUUID(), area: 'Bar', status: 'submitted', lines: [], startedBy: 'demo-owner', startedAt: shift.openedAt, submittedAt: new Date().toISOString() }])
   await page.goto('/reports')
   const mandiri = page.locator('.settle-row').filter({ hasText: 'EDC Mandiri' })

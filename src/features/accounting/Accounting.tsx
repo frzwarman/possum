@@ -23,7 +23,7 @@ interface Sheet { id: string; label: string; head: string[]; kinds: Kind[]; rows
 // A credit balance of nothing is −0 once its sign is turned; it must not print as "-Rp0".
 const rupiah = (v: number) => money(v || 0);
 type Chart = Record<Account, readonly [string, string]>;
-const show = (v: Cell, k: Kind) => (v === "" ? "" : k === "rp" ? rupiah(v as number) : k === "qty" ? quantity(v as number) : k === "pct" ? `${Math.round((v as number) * 100)}%` : String(v));
+const show = (v: Cell, k: Kind) => (v === "" ? "" : k === "rp" ? rupiah(v as number) : k === "qty" ? quantity(v as number) : k === "pct" ? `${Math.round((v as number) * 100)}%` : typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T12:00:00Z`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : String(v)); // dates read like the other pages (26 Nov 2026); exports keep ISO
 // For a file: quantities in whole units, a share as a fraction (Excel formats it) or as a percentage (CSV).
 export const plain = (v: Cell, k: Kind, percent = false) => (typeof v !== "number" || k === "text" || k === "rp" || k === "num" ? v : k === "qty" ? (v as number) / 1000 : percent ? Math.round((v as number) * 1000) / 10 : v);
 const FORMAT: Record<Kind, Format> = { text: "text", rp: "int", num: "int", qty: "dec", pct: "pct" };

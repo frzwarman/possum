@@ -24,7 +24,7 @@ test('the owner pairs the till and sells for cash; the server keeps it and a cas
   expect(await stack.sql(`select sum(qty)::int as qty from public.stock_movements where stock_id = 'rice' and kind <> 'opening'`)).toEqual([{ qty: -100000 }])
   await expect.poll(() => outbox(page), tick).toEqual([])
 
-  const sold = Date.now(), [{ no }] = await stack.sql<{ no: string }>(`select upper(right(snapshot->>'receiptId', 6)) as no from public.orders`)
+  const sold = Date.now(), [{ no }] = await stack.sql<{ no: string }>(`select lpad(snapshot->>'no', 3, '0') as no from public.orders`)
   await tablet.goto('/orders')
   await expect(tablet.locator('.order-row').filter({ hasText: no })).toBeVisible(tick)
   expect(stack.calls('pull').some(c => c.user === cashier.id && c.at > sold && c.status === 200)).toBe(true)

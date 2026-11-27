@@ -43,7 +43,7 @@ export const isSale=(o:Pick<Order,'mode'>)=>o.mode!=='compliment'
 // Cashless close: per EDC, what Takar recorded (paid orders on that machine) against the total on its settlement slip.
 export function settlements(shiftId:string,orders:Order[],slips:Record<string,number>,edcs:string[]=[]):Settlement[]{
  const expected=new Map<string,number>(edcs.map(e=>[e,0]))
- for(const o of orders)if(o.shiftId===shiftId&&o.status==='paid'&&o.payment?.edc)expected.set(o.payment.edc,(expected.get(o.payment.edc)||0)+o.totals.total)
+ for(const o of orders)if(o.shiftId===shiftId&&o.status==='paid'&&o.payment?.edc)expected.set(o.payment.edc,(expected.get(o.payment.edc)||0)+o.totals.total-refundOf(o))
  for(const e of Object.keys(slips))if(!expected.has(e))expected.set(e,0)
  return [...expected].map(([edc,n])=>({edc,expected:n,slip:slips[edc]??0}))
 }
@@ -74,8 +74,12 @@ export function consumption(lines:Line[],packaging:Ingredient[]=[]) {
  return [...map].map(([stockId,qty])=>({stockId,qty}))
 }
 export function refundStock():Ingredient[]{return []}
+// What went back to the guest: the whole total unless the refund was partial (one refund per order; a partial one leaves it 'paid').
+// The short number staff say and read; orders from before the running number fall back to the end of the receipt ID.
+export const orderNo=(o:{no?:number;receiptId:string})=>o.no!==undefined?String(o.no).padStart(3,'0'):o.receiptId.slice(-6).toUpperCase()
+export const refundOf=(o:Pick<Order,'refund'|'totals'>)=>o.refund?o.refund.amount??o.totals.total:0
 export function expectedCash(shift:Shift,orders:Order[],moves:CashMovement[]) {
- return shift.opening+orders.filter(o=>o.shiftId===shift.id&&o.payment?.method==='cash'&&o.status!=='refunded').reduce((n,o)=>n+o.totals.total,0)+moves.filter(m=>m.shiftId===shift.id).reduce((n,m)=>n+m.amount,0)
+ return shift.opening+orders.filter(o=>o.shiftId===shift.id&&o.payment?.method==='cash'&&o.status!=='refunded').reduce((n,o)=>n+o.totals.total-refundOf(o),0)+moves.filter(m=>m.shiftId===shift.id).reduce((n,m)=>n+m.amount,0)
 }
 // Screens format every row on every render, and building an Intl formatter costs 40-150 µs: build each one once.
 // ponytail: the map never shrinks; its keys are the option sets the screens use times the restaurant's timezone.

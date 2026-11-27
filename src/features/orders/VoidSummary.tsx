@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useApp } from '../../app/context'
-import { businessDay,rupiah,when } from '../../domain/calculate'
+import { businessDay,orderNo,rupiah,when } from '../../domain/calculate'
 import type { Order } from '../../domain/types'
 import { lineTotal } from './Receipt'
 
@@ -9,7 +9,7 @@ import { lineTotal } from './Receipt'
 // cashier whose order it was. A voided item is one void; a whole order voided is one too.
 type Void={who:string;items:number;amount:number;what:string;no:string}
 const voidsOf=(o:Order):Void[]=>{
- const no=o.receiptId.slice(-6).toUpperCase()
+ const no=orderNo(o)
  if(o.status==='void')return [{who:o.cashier,items:o.lines.filter(l=>!l.cancelled).reduce((n,l)=>n+l.qty,0),amount:o.totals.total,what:'seluruh pesanan',no}]
  return o.lines.filter(l=>l.cancelled).map(l=>({who:o.cashier,items:l.qty,amount:lineTotal(l),what:`${l.qty}× ${l.name}`,no}))
 }

@@ -37,7 +37,7 @@ export function OpenShift(){
     {edc&&<div className="ready-list">{edcs.map(e=>{const on=checked.includes(e);return <button type="button" key={e} className={`ready-row ${on?'ok':''}`} aria-pressed={on} onClick={()=>setChecked(on?checked.filter(x=>x!==e):[...checked,e])}>
      {on?<CircleCheck size={20}/>:<span className="ready-dot"/>}<span><strong>EDC {e}</strong><small>{on?'Kartu dan QRIS, kertas terisi':'Ketuk bila menyala dan kertas terisi'}</small></span></button>})}</div>}
     {cash&&<label>Modal kas awal<Money value={opening} onChange={setOpening}/></label>}
-    <Button className="full btn-accent" loading={busy} disabled={busy||!user.primary} onClick={()=>open()}><Check size={18}/> Buka sif sekarang</Button>
+    <Button className="full btn-accent" loading={busy} disabled={busy||!user.primary||(edc&&!checked.length)} onClick={()=>open()}><Check size={18}/> Buka sif sekarang</Button>{edc&&!checked.length&&<p className="small muted">Centang minimal satu mesin EDC yang siap dipakai.</p>}
     {!user.primary&&<p className="small muted center">Sif hanya bisa dibuka di perangkat kasir utama.</p>}
    </article>
    <article className="panel"><h2>Siap mulai</h2>
